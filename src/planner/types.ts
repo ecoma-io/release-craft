@@ -76,6 +76,11 @@ export interface LineConfig {
   readonly lifecycle: "active" | "frozen" | "retired";
   /** Present when the line was declared; absent for default-derived. */
   readonly declared: boolean;
+  /** §2.13 — the line's declared version band: which major (and optionally
+   * minor) series this line releases into. Absent for a single-line repo,
+   * whose line admits every admissible tag. Admission is band equality; an
+   * out-of-band tag is foreign, surfaced — never silently dropped (E-06). */
+  readonly versionBand?: { readonly major: number; readonly minor?: number };
 }
 
 /** Package metadata for the component axis (§2.15, PR-4). Manifest versions

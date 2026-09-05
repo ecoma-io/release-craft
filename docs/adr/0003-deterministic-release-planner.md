@@ -138,6 +138,16 @@ Three facts constrain everything below:
     line-side later triggers the three-surface amendment the D9 audit named
     (ADR-0002 vocabulary table, kernel value shape, invariant 8), loudly.
 
+16. **A line's version namespace is declared configuration — the version
+    band** (contract §2.13): `LineConfig.versionBand` names the major (and
+    optionally minor) series a line releases into (`1.9` → `{major: 1,
+minor: 9}`; `1.x` → `{major: 1}`); absence admits every admissible tag
+    (single-line repos). Admission is band equality; an unparseable or
+    out-of-band tag is foreign — surfaced, never consumed (S-03's `1.9.x`
+    tags stay out of `2.x`'s history, and vice versa; E-06). No grammar is
+    inferred from line ids or branch names — the band is data, the loader
+    never guesses.
+
 ## Consequences
 
 - The planner adds **no runtime dependency** and imports **nothing** outside
