@@ -187,11 +187,13 @@ fork mode) — is
   (decision-log D0); the tree holds `Version` alone. Every Phase 1/2 statement
   here is intent with a named phase, not a shipped capability; the README's
   status section remains the honest one.
-- **Four of the fifteen invariants are unexecutable today and stay so until
-  the execution phase is scheduled:** claim before mutation, attempts as
-  idempotency key, partial-failure recovery, and promotion-without-fabrication
-  are design commitments whose proving scenarios (E-01, E-02, E-06, E-07,
-  E-08, E-09, PR-01..PR-03) no current code can run.
+- **Five of the fifteen invariants are unexecutable today and stay so until
+  the execution phase is scheduled:** the attempt-and-tag half of invariant 1,
+  claim before mutation, attempts as idempotency key, partial-failure recovery,
+  and promotion-without-fabrication are design commitments whose proving
+  scenarios (S-04, E-01, E-02, E-06, E-07, E-08, E-09, PR-01..PR-03) no
+  current code can run. Invariant 1's planning half (zero declarations, plan
+  or decision record) is Phase 2 work.
 - **The model does not decide its hardest parameters.** Claim mechanism
   (fork 13), ledger and decision-record storage (fork 16), recovery doctrine
   (fork 5), change-id convention (fork 8), bootstrap default (forks 1–2), and
@@ -212,14 +214,20 @@ fork mode) — is
 - **Phase 1 builds the kernel-value kinds — and only them:** `Change`,
   `ChangeSet`, `ReleaseLine`, `Channel`, `Artifact` beside the existing
   `Version`, each under ADR-0001's three-layer purity and three-row law with
-  no new configuration. This settles decision-log U4. The barrel entrypoint
-  and its ADR-0001 decision-8 amendment land with the second primitive (D6);
-  any new source root sweeps `SOURCES` in the same PR (D3).
+  no new configuration. This settles decision-log U4. The Phase 1 PR carries
+  ADR-0001 amendments together (D6): the decision-8 barrel amendment, and
+  annotations reconciling decision 7's rationale ("the kernel does not know
+  channels exist" — the values now do, the progression policy still does not)
+  and the consequences' parenthetical on lines, channels, and transitions
+  staying outside `core/domain/` — which governs policy resolution, not the
+  pure value shapes locked here. Any new source root sweeps `SOURCES` in the
+  same PR (D3).
 - **Phase 2 builds the planner in `src/`:** the pure function with the
   `ReleasePlan | DecisionRecord` codomain, line-scoped tag-history truth,
   plan fingerprinting and supersession, and the default configuration that
-  keeps the trivial path at zero declarations. Decision records need a
-  storage answer (fork 16) at that point at the latest.
+  keeps the trivial path at zero declarations. The planner itself stays pure;
+  wherever decision records persist (fork 16), persistence lands as a thin
+  package-layer writer around the planner — never inside `core/domain/`.
 - **What stays out, per [#13](https://github.com/ecoma-io/release-craft/issues/13):**
   the hooks runtime (deferred vocabulary decision above), artifact publishing,
   GitHub Releases, resumable execution, and prerelease publishing. None of

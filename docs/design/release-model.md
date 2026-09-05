@@ -97,10 +97,12 @@ kernel's `Version` (OBSERVED: model-c
 **Verdict: SURVIVES-WITH-AMENDMENTS** (OBSERVED: model-c
 [verdict](_proposals/model-c.md#verdict-survives-with-amendments)): its
 [tally](_proposals/model-c.md#tally) is clean 20, needs-amendment 33, fail 0 —
-no scenario is unrepresentable, and the matrix's two hardest stress families
-(attempt + ledger + claims; plan as a first-class invalidatable object,
-[stress analysis](release-scenarios.md#stress-analysis)) land on native
-structure. Seven amendments are required, none touching the
+no scenario is unrepresentable, and two of the matrix's hardest stress
+families (attempt + ledger + claims; plan as a first-class invalidatable
+object — ranked 8 and 6 scenarios in the
+[stress analysis](release-scenarios.md#stress-analysis), whose top family,
+release line as the scoping unit, is native to all C-family structures) land
+on native structure. Seven amendments are required, none touching the
 planning/execution split: A1 decision records as a second planning output;
 A2 change identity and provenance; A3 a claim protocol in execution; A4
 artifact, generation, and evidence schema in the ledger; A5 stable line
@@ -128,12 +130,15 @@ twelve defining properties are C's five structural commitments plus the seven
 amendments (OBSERVED: model-c verdict). In full:
 
 **What a release is.** A release is an _entity with its own identity_, minted
-on a release line when a plan is executed — not a version string, not a
-publication event, not a branch state. Its identity is its own (line + sequence
-or an opaque id); it carries a `Version`, a change set, a source lineage,
-artifact generations, a lifecycle state, and channel memberships. Version
-equality is never release identity: the same number can name two events on two
-lines (M-11), and the same target can carry different content (E-11).
+on a release line when a plan's target is attempted — not a version string, not a
+publication event, not a branch state. Publication is one lifecycle state it may
+reach, never its birth; an attempt that voids (E-01) leaves a minted release
+that was abandoned, not a release that never existed. Its identity is its own
+(line + sequence or an opaque id); it carries a `Version`, a change set, a
+source lineage, artifact generations, a lifecycle state, and channel
+memberships. Version equality is never release identity: the same number can
+name two events on two lines (M-11), and the same target can carry different
+content (E-11).
 
 **What planning is.** A pure, deterministic, side-effect-free function:
 
@@ -229,19 +234,19 @@ taxonomy's relationship locks R1–R6 (OBSERVED:
 "Kind" places the term in the layering above; it also settles decision-log U4 —
 Phase 1 takes exactly the kernel-value kinds.
 
-| Term        | Definition (one sentence)                                                                                                                                                                                             | Kind              | Relationships                                                                                                  | Disposition |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------- | ----------- |
-| Version     | A strict SemVer 2.0.0 value as parsed by the kernel: bare, bounded to safe integers, with structural equality distinct from precedence (ADR-0001).                                                                    | kernel value      | The ordering and identity primitive every other term judges; exists today.                                     | **LOCK**    |
-| Change      | The atomic unit of work, carrying an identity stable across lines and cherry-picks plus its lineage and provenance (A2).                                                                                              | kernel value      | Member of change sets; releasedness is per (line, change).                                                     | **LOCK**    |
-| ChangeSet   | The enumerated group of changes a release instantiates, with the bump it implies (R4).                                                                                                                                | kernel value      | Carried by a plan; instantiated by a release; may be empty and inherited (PL-06, P-03).                        | **LOCK**    |
-| ReleaseLine | A durable, ordered stream of versions with a stable id, a head derived from its own tags, a lifecycle, and a policy (A5).                                                                                             | kernel value      | Orders versions; holds channel pointers; fed by branches through recorded feed mappings; carries stream state. | **LOCK**    |
-| Channel     | A named, mutable deliverability pointer a consumer reads; its moves are recorded events (R1).                                                                                                                         | kernel value      | Points at a release or artifact on a line; backend bindings (npm dist-tag, container tag) are adapters.        | **LOCK**    |
-| ReleasePlan | A persisted, inspectable, content-fingerprinted projection of what should release — target versions, change set, base bindings, preconditions, policy digest (A6).                                                    | planning concept  | Produced by the planner; consumed by attempts; superseded by later plans, never edited (PL-08).                | **LOCK**    |
-| Release     | The entity that exists when a plan's target is attempted and published on a line: identity distinct from its version, carrying change set, lineage, artifacts, lifecycle, channel memberships (R2).                   | execution concept | Has one version and one change set per generation; joins channels; is targeted by plans.                       | **LOCK**    |
-| Promotion   | A user-visible state change of an existing release without new content: a channel pointer move (channel mutation) or a maturity reclassification such as rc → stable (release event, `promoted-from` edge) (R5).      | execution concept | A transition kind; binds identity onto verified digests (PR-01) or records a new generation (PR-02).           | **LOCK**    |
-| Artifact    | One publishable output as a record of (kind, coordinates, content digest) (A4, R6).                                                                                                                                   | kernel value      | Belongs to a release's immutable generation; digest is content identity, coordinates are labels (AR-03).       | **LOCK**    |
-| Transition  | A guarded, attributed lifecycle state change on a release, channel, or attempt; the guard/attribution/record machinery is core-shaped, the specific state vocabularies are per-workflow policy data (taxonomy §1.14). | execution concept | The unit of durable state change; channels move only as transitions (PR-04).                                   | **LOCK**    |
-| Hook        | User code attached as a step in an attempt's step list, with declared pre- and postconditions; it can never mutate a plan (model-c question c).                                                                       | adapter           | Execution-side only; planning purity forbids it upstream.                                                      | **DEFER**   |
+| Term        | Definition (one sentence)                                                                                                                                                                                                                                                                                     | Kind              | Relationships                                                                                                  | Disposition |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------- | ----------- |
+| Version     | A strict SemVer 2.0.0 value as parsed by the kernel: bare, bounded to safe integers, with structural equality distinct from precedence (ADR-0001).                                                                                                                                                            | kernel value      | The ordering and identity primitive every other term judges; exists today.                                     | **LOCK**    |
+| Change      | The atomic unit of work, carrying an identity stable across lines and cherry-picks plus its lineage and provenance (A2).                                                                                                                                                                                      | kernel value      | Member of change sets; releasedness is per (line, change).                                                     | **LOCK**    |
+| ChangeSet   | The enumerated group of changes a release instantiates, with the bump it implies (R4).                                                                                                                                                                                                                        | kernel value      | Carried by a plan; instantiated by a release; may be empty and inherited (PL-06, P-03).                        | **LOCK**    |
+| ReleaseLine | A durable, ordered stream of versions with a stable id, a head derived from its own tags, a lifecycle, and a policy (A5).                                                                                                                                                                                     | kernel value      | Orders versions; holds channel pointers; fed by branches through recorded feed mappings; carries stream state. | **LOCK**    |
+| Channel     | A named, mutable deliverability pointer a consumer reads; its moves are recorded events (R1).                                                                                                                                                                                                                 | kernel value      | Points at a release or artifact on a line; backend bindings (npm dist-tag, container tag) are adapters.        | **LOCK**    |
+| ReleasePlan | A persisted, inspectable, content-fingerprinted projection of what should release — target versions, change set, base bindings, preconditions, policy digest (A6).                                                                                                                                            | planning concept  | Produced by the planner; consumed by attempts; superseded by later plans, never edited (PL-08).                | **LOCK**    |
+| Release     | The entity minted when a plan's target is attempted on a line — publication is a lifecycle state, not its birth: identity distinct from its version, carrying change set, lineage, artifacts, lifecycle, channel memberships (R2, E-01).                                                                      | execution concept | Has one version and one change set per generation; joins channels; is targeted by plans.                       | **LOCK**    |
+| Promotion   | A user-visible state change of an existing release without new content: a channel pointer move (channel mutation) or a maturity reclassification such as rc → stable (release event, `promoted-from` edge) (R5).                                                                                              | execution concept | A transition kind; binds identity onto verified digests (PR-01) or records a new generation (PR-02).           | **LOCK**    |
+| Artifact    | One publishable output as a record of (kind, coordinates, content digest) (A4, R6).                                                                                                                                                                                                                           | kernel value      | Belongs to a release's immutable generation; digest is content identity, coordinates are labels (AR-03).       | **LOCK**    |
+| Transition  | A guarded, attributed lifecycle state change on a release, channel, or attempt; the guard/attribution/record machinery is domain-shaped and execution-side — never `core/domain/` — and the specific state vocabularies are per-workflow policy data (taxonomy §1.14; ADR-0001's consequence on transitions). | execution concept | The unit of durable state change; channels move only as transitions (PR-04).                                   | **LOCK**    |
+| Hook        | User code attached as a step in an attempt's step list, with declared pre- and postconditions; it can never mutate a plan (model-c question c).                                                                                                                                                               | adapter           | Execution-side only; planning purity forbids it upstream.                                                      | **DEFER**   |
 
 ### Disposition notes
 
@@ -315,10 +320,13 @@ are per [#13](https://github.com/ecoma-io/release-craft/issues/13); every
 execution is scheduled.
 
 1. **Trivial-path zero declaration.** A repository with one branch, no release
-   configuration, and conventional commits produces releases end to end —
-   version computed, plan or decision record produced, attempt executed, tag
-   placed — without the user declaring a line, a channel, or a plan.
-   _Stress: S-01, S-03, S-04, S-05. First provable: Phase 2._
+   configuration, and conventional commits releases end to end — version
+   computed, plan or decision record produced, attempt executed, tag placed —
+   without the user declaring a line, a channel, or a plan.
+   _Stress: S-01, S-03, S-04, S-05. First provable: Phase 2 for the planning
+   half (computed version, plan or decision record, zero declarations); the
+   attempt-and-tag half is execution and proves out when execution is
+   scheduled._
 2. **Deterministic planning.** Given identical planning inputs — time and all
    policy digests included as input values — the planner returns a plan with an
    identical content fingerprint on every invocation, and never orders anything
@@ -326,7 +334,8 @@ execution is scheduled.
 3. **Planning without side effects.** The planner mutates nothing outside its
    return value — no file, ref, pull request, registry, or network — so running
    it twice over the same inputs leaves the world exactly as it was.
-   _Stress: E-05, PL-08, E-04. First provable: Phase 2._
+   _Stress: E-05, PL-04 (the planner's own outputs are not foreign input),
+   PL-08 (plans are consumed, never mutated). First provable: Phase 2._
 4. **Negative decisions are records.** Every no-op, refusal, block, and
    withholding is returned as a decision record carrying its cause, evaluated
    range, and the policy version that produced it — never silence, an
@@ -354,7 +363,9 @@ execution is scheduled.
    ordered by SemVer precedence — a `feat` mid-RC bumps the sequence, never a
    boolean, never a string parse. _Stress: P-01, P-02, P-04, P-06, P-07. First
    provable: Phase 1 — stream-key and ordering value semantics over the
-   kernel's `compare`._
+   kernel's `compare`. The stream state is kernel data carried by the
+   `ReleaseLine` value; "prerelease stream" as a planning concept names the
+   planner's view over that state, not a second home._
 9. **Change identity survives transport.** A change's identity is stable across
    cherry-picks, reformatting, and content divergence — one logical fix on
    three lines is one change with three per-line release states — and identity
@@ -393,11 +404,16 @@ execution is scheduled.
     First provable: Phase 2, gated on the package axis being scheduled (the
     matrix stamps the monorepo scenarios hypothetical-future)._
 15. **Provider isolation.** Neither the kernel's values nor the planner's
-    outputs name any provider artifact — branch, pull request, GitHub Release,
-    dist-tag, registry, or runner — providers appear only as adapters that feed
-    observations in and execute bindings out. _Stress: M-10, E-06, PR-04,
-    AR-03. First provable: Phase 2 for the planner's output schema; the kernel
-    half already holds by ADR-0001's import ban._
+    outputs name provider _state_ — branches, pull requests, GitHub Releases,
+    dist-tag moves, registry contents, or runners; providers appear only as
+    adapters that feed observations in and execute bindings out. Coordinates
+    and channel bindings are opaque declared configuration labels (AR-03's
+    registry coordinates included), never references a value or plan could
+    dereference or mutate. _Stress: M-10, E-06, PR-04, AR-03. First provable:
+    Phase 2 for the planner's output schema; the kernel half holds by
+    inspection of `Version` today and must be asserted by Phase 1's tests for
+    every new value — ADR-0001's import ban polices imports, not field
+    naming._
 
 ## Complexity budget
 
@@ -412,6 +428,11 @@ matrix's own scenarios:
   engine derives the default line (fed by the default branch) and computes over
   it; a chore-only runway yields a recorded no-op decision, not an error
   (S-01).
+- **The one decision the trivial path still asks.** The first-ever release is
+  the single exception to zero-decision: S-02 demands an explicit recorded
+  choice of `1.0.0` or `0.1.0` — silently deriving one is not valid — so the
+  bootstrap release carries one recorded operator decision, still zero
+  declarations.
 - **Version truth without configuration.** The next version comes from the
   line's tag history even when the manifest has drifted and a second feed
   branch exists — no line registry was declared by the user (S-03).
@@ -499,9 +520,18 @@ document: U4 by the kind column above, U6 by the boundary table below.)
    change-id, or both. Resolved by: the Change value's provenance parsing in
    Phase 1's adapter work — under the invariant that no fuzzy matching is ever
    admitted (M-05).
-5. **Bootstrap default and its record** (forks 1, 2). `1.0.0` or `0.1.0`, and
+5. **Bootstrap default and its record** (fork 2). `1.0.0` or `0.1.0`, and
    where the choice is recorded. Resolved by: default-policy design in Phase 2
    — S-02's demand for an explicit recorded decision is not negotiable away.
+   Fork 1 (chore-only history: recorded no-op versus a chore-triggered
+   release) is carried by the same Phase 2 default-policy design and is
+   stressed by S-01 and PL-06.
+   Fork 6 (rollback posture — channel move only, or a first-class re-release)
+   is resolved to its default here — rollback is a recorded channel move that
+   hides, never erases (PR-04); a first-class re-release, if ever wanted, is a
+   new release through the same planner. Fork 14 (one stale-plan policy or
+   several) is resolved to invariant 5's single rule: supersession is one
+   recorded relation, whatever invalidated the predecessor.
 6. **Stream restart on target move; fixed ladder or open identifiers** (forks
    3, 4). Resolved by: the line-policy schema in Phase 2 (P-05, P-02, M-08).
 7. **Nightly as line-release or artifact class** (fork 15). Resolved by: the
@@ -528,23 +558,36 @@ departure. The rule behind the table: release-please is a behavioral baseline
 to preserve or break with by decision — never an architecture to depend on
 (decision-log R1).
 
-| #   | release-please observable                                                               | Boundary | release-craft's commitment                                                                                                                          |
-| --- | --------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Conventional Commits signal: `feat` → minor, `fix` → patch, `!`/BREAKING CHANGE → major | Preserve | Default change classification in planning; same observable rules (baseline §17 KEEP).                                                               |
-| 2   | `Release-As` footer forces an exact version                                             | Preserve | Plan-input override with the same footer semantics.                                                                                                 |
-| 3   | Pre-1.0 dampening (breaking bumps minor before 1.0.0)                                   | Preserve | Line-policy default with the same config knobs.                                                                                                     |
-| 4   | CHANGELOG in conventionalcommits preset format                                          | Adapt    | Same output format, internally owned template — no external preset dependency (baseline §17 ADAPT).                                                 |
-| 5   | Release PR lifecycle `autorelease: pending` → merge → tag → tagged                      | Adapt    | The PR becomes one carrier of a `ReleasePlan`; non-PR flows exist; plan fingerprints and supersession replace label state (PL-08, model-b salvage). |
-| 6   | Monorepo grouped or separate releases, per-package tags                                 | Preserve | Package axis in planning, grouped and per-package both expressible (hypothetical-future stamp governs scheduling; PL-01, PL-02).                    |
-| 7   | Tag format knobs (`<component>-v<version>`, `include-v`, separators)                    | Preserve | Adapter-level formatting; the kernel parses the bare version component (open fork 11).                                                              |
-| 8   | Version state in a source-controlled file that survives runs                            | Adapt    | Same concept — durable per-line released state — as line registry and decision records; line tag history outranks any manifest projection (S-03).   |
-| 9   | Extra-file version updates (jsonpath/xpath/annotations)                                 | Preserve | Declared file operations in the plan.                                                                                                               |
-| 10  | Dependency-aware bumping (workspace plugins)                                            | Adapt    | Generic propagation over a declared dependency graph, not tied to npm or cargo (PL-02; baseline §17 ADAPT rows).                                    |
-| 11  | Two-JSON-file manifest + config state model                                             | Break    | release-craft's own state shapes: line registry, decision records, ledger — the two-file model is release-please-specific (baseline §18.2-1).       |
-| 12  | GitHub-coupled lifecycle (PR + GitHub Release as the path)                              | Break    | Providers are adapters; plans and attempts name no GitHub concept (invariant 15; baseline §18.2-2).                                                 |
-| 13  | Language-specific versioning strategies (node/python/rust/maven)                        | Break    | Generic strategy model with pluggable file updaters (baseline §18.2-4); snapshot/service-pack out of scope (§18.2-5).                               |
-| 14  | Prerelease asymmetry: minor/major bump drops the prerelease suffix                      | Break    | Streams compute the next prerelease per (line, target, stream) — the asymmetry is corrected by construction (invariant 8; baseline §18.2-6; P-04).  |
-| 15  | `autorelease:` label as in-progress state                                               | Break    | Attempt + ledger state instead — the stuck-label failure mode is the thing being replaced (baseline §11.5, §18.2-8; E-01, E-02).                    |
-| 16  | Fork-mode PR creation                                                                   | Break    | CI orchestration concern, out of the domain (baseline §18.2-7).                                                                                     |
-| 17  | Idempotent re-run after failure                                                         | Adapt    | Strengthened: idempotency keyed by (attempt, step) with verified done-ness, not ambient inference (invariants 12, 13; baseline §11.1).              |
-| 18  | Compute-at-merge (no stored plan)                                                       | Adapt    | Plans are stored, fingerprinted, and re-verified — execution re-verifies rather than recomputing (invariants 5, 13; PL-08, E-05).                   |
+| #   | release-please observable                                                               | Boundary | release-craft's commitment                                                                                                                                                                                                  |
+| --- | --------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Conventional Commits signal: `feat` → minor, `fix` → patch, `!`/BREAKING CHANGE → major | Preserve | Default change classification in planning; same observable rules (baseline §17 KEEP).                                                                                                                                       |
+| 2   | `Release-As` footer forces an exact version                                             | Preserve | Plan-input override with the same footer semantics.                                                                                                                                                                         |
+| 3   | Pre-1.0 dampening (breaking bumps minor before 1.0.0)                                   | Preserve | Line-policy default with the same config knobs.                                                                                                                                                                             |
+| 4   | CHANGELOG in conventionalcommits preset format                                          | Adapt    | Same output format, internally owned template — no external preset dependency (baseline §17 ADAPT).                                                                                                                         |
+| 5   | Release PR lifecycle `autorelease: pending` → merge → tag → tagged                      | Adapt    | The PR becomes one carrier of a `ReleasePlan`; non-PR flows exist; plan fingerprints and supersession replace label state (PL-08, model-b salvage).                                                                         |
+| 6   | Monorepo grouped or separate releases, per-package tags                                 | Preserve | Package axis in planning, grouped and per-package both expressible — grouping rules generalize beyond path-based per baseline §17's ADAPT on grouped releases (hypothetical-future stamp governs scheduling; PL-01, PL-02). |
+| 7   | Tag format knobs (`<component>-v<version>`, `include-v`, separators)                    | Preserve | Adapter-level formatting; the kernel parses the bare version component (open fork 11).                                                                                                                                      |
+| 8   | Version state in a source-controlled file that survives runs                            | Adapt    | Same concept — durable per-line released state — as line registry and decision records; line tag history outranks any manifest projection (S-03).                                                                           |
+| 9   | Extra-file version updates (jsonpath/xpath/annotations)                                 | Preserve | Declared file operations in the plan.                                                                                                                                                                                       |
+| 10  | Dependency-aware bumping (workspace plugins)                                            | Adapt    | Generic propagation over a declared dependency graph, not tied to npm or cargo (PL-02; baseline §17 ADAPT rows).                                                                                                            |
+| 11  | Two-JSON-file manifest + config state model                                             | Break    | release-craft's own state shapes: line registry, decision records, ledger — the two-file model is release-please-specific (baseline §18.2-1).                                                                               |
+| 12  | GitHub-coupled lifecycle (PR + GitHub Release as the path)                              | Break    | Providers are adapters; plans and attempts name no GitHub concept (invariant 15; baseline §18.2-2).                                                                                                                         |
+| 13  | Language-specific versioning strategies (node/python/rust/maven)                        | Break    | Generic strategy model with pluggable file updaters (baseline §18.2-4); snapshot/service-pack out of scope (§18.2-5).                                                                                                       |
+| 14  | Prerelease asymmetry: minor/major bump drops the prerelease suffix                      | Break    | Streams compute the next prerelease per (line, target, stream) — the asymmetry is corrected by construction (invariant 8; baseline §18.2-6; P-04).                                                                          |
+| 15  | `autorelease:` label as in-progress state                                               | Break    | Attempt + ledger state instead — the stuck-label failure mode is the thing being replaced (baseline §11.5, §18.2-8; E-01, E-02).                                                                                            |
+| 16  | Fork-mode PR creation                                                                   | Break    | CI orchestration concern, out of the domain (baseline §18.2-7).                                                                                                                                                             |
+| 17  | Idempotent re-run after failure                                                         | Adapt    | Strengthened: idempotency keyed by (attempt, step) with verified done-ness, not ambient inference (invariants 12, 13; baseline §11.1).                                                                                      |
+| 18  | Compute-at-merge (no stored plan)                                                       | Adapt    | Plans are stored, fingerprinted, and re-verified — execution re-verifies rather than recomputing (invariants 5, 13; PL-08, E-05).                                                                                           |
+
+Rows 1–18 track the baseline's §18 boundary items; the baseline's §17
+classification table is wider, and every §17 row not named above **inherits
+its baseline classification** (KEEP → preserve, ADAPT → adapt, OUT OF SCOPE →
+break) until a later decision explicitly breaks it — draft-PR support, PR
+title patterns, per-package config overrides, `initial-version`,
+`bootstrap-sha`/`last-release-sha`, `linked-versions`, the `always-bump-*`
+family, `force-tag-creation`, the `skip-*` toggles, `separate-pull-requests`,
+`always-update`, `sequential-calls`, `BEGIN_COMMIT_OVERRIDE`,
+`group-pull-request-title-pattern`, `sentence-case`, `changelog-sections`,
+the revert filter, search depths, and GitHub Action wiring included. No row
+is silently dropped: a Phase 2 implementer finds a disposition for every §17
+capability here or in §17 itself.
