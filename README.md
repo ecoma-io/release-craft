@@ -72,3 +72,5 @@ for what was adopted from the sibling repositories and why.
 ## License
 
 [Apache-2.0](LICENSE).
+
+<!-- Branch ruleset verification: this comment exercises the pull-request path end to end. -->
