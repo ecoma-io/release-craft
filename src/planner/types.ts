@@ -89,6 +89,21 @@ export interface ComponentMeta {
   readonly name: string;
   readonly manifestVersion: string;
   readonly paths: readonly string[];
+  /** D16 — declared dependency edges, read from manifests at input time:
+   * the packages this component depends on, with the range expression each
+   * relationship declares. PL-02's range math consumes these; an edge to a
+   * component not declared in `input.components` is a caller contract
+   * violation surfaced by the propagation planner. Absent = the component
+   * declares no dependencies. */
+  readonly dependencies?: readonly ComponentDependency[];
+}
+
+/** One declared dependency relationship (D16): the dependency's component
+ * name and its range expression in the declared grammar (`^x.y.z`,
+ * `~x.y.z`, exact `x.y.z`). */
+export interface ComponentDependency {
+  readonly name: string;
+  readonly range: string;
 }
 
 /** §2.1 — the recorded bootstrap decision (S-02). Its absence is not an
@@ -376,3 +391,173 @@ export type DecideLine = (
   input: PlanningInput,
   range: LineRange,
 ) => LineDecision;
+
+// ---------------------------------------------------------------------------
+// §2.13 (line state), §2.6 + §2.7 + §2.8 (targets), §2.15 (propagation),
+// §2.10 + §2.11 (plan identity) — the planning layer (PR-4)
+// ---------------------------------------------------------------------------
+
+/** One line's release state rebuilt from its projected history (§2.13): the
+ * released pointer is the highest admissible version by precedence (the
+ * kernel's own monotonic reading), and every prerelease tag contributes its
+ * stream key — target, identifier, sequence — the highest sequence per key
+ * winning. Stream state is rebuilt from tags at plan time, never carried
+ * across runs (invariant 6). */
+export interface LineState {
+  readonly pointer: Version | null;
+  readonly streams: readonly StreamKeyState[];
+}
+
+/** One observed stream key (§2.8): the target version the stream sits on,
+ * the prerelease identifier, and the highest sequence observed for the key. */
+export interface StreamKeyState {
+  readonly target: Version;
+  readonly identifier: string;
+  readonly sequence: number;
+}
+
+/** `state.ts` — rebuilds per-line release state from the projected history
+ * (§2.13): pointer from the highest admissible version, streams from the
+ * history's prerelease tags (a tag `1.2.0-rc.3` is key `(1.2.0, rc)` at
+ * sequence 3). Deterministic; identical histories rebuild identical state. */
+export type RebuildLineState = (history: LineHistory) => LineState;
+
+/** One planned prerelease stream (§2.8): the version the stream will mint,
+ * its tag, the seed used (fork 17 — recorded per stream), the pointer base
+ * the plan computed from (D9), and whether publishing this version moves
+ * the line's released pointer by precedence (M-08 vs P-02/P-07). */
+export interface PlannedStream {
+  readonly identifier: string;
+  readonly version: Version;
+  readonly tag: string;
+  readonly seed: string;
+  readonly pointerBase: string | null;
+  readonly movesPointer: boolean;
+}
+
+/** One line's planned targets (§2.6 + §2.8): the stable target when the
+ * line's decision releases, and every prerelease stream the operator's
+ * intents demand. `stable` is `null` for a line whose plan mints only
+ * prereleases. Tags follow the declared tag format (`policy.tagFormats`,
+ * fork 11) or the bare default. */
+export interface TargetPlan {
+  readonly stable: { readonly version: Version; readonly tag: string } | null;
+  readonly streams: readonly PlannedStream[];
+}
+
+/** `plan.ts` — computes one line's targets (§2.6, §2.7, §2.8): the stable
+ * version from the decision's bump applied to the rebuilt pointer through
+ * the kernel's bump doors, with §2.7's pre-1.0 dampening (breaking → minor
+ * below `1.0.0`); prerelease streams from the line's `prerelease` intents
+ * through the kernel's stream doors (`advanceStream`/`streamVersion`), the
+ * target moving per §2.8 (P-05), the ladder per declared policy, the seed
+ * per `policy.prereleaseSeed` (fork 17), the pointer standing unless the
+ * mint exceeds it by precedence (D9). Kernel rejections surface as the
+ * caller contract errors they are — target computation never invents
+ * fallbacks. */
+export type PlanTargets = (
+  decision: LineDecision,
+  state: LineState,
+  line: LineConfig,
+  policy: PolicyInput,
+) => TargetPlan;
+
+/** One propagation edge (§2.15): a release in `from` forces a bump in `to`
+ * because `to`'s declared range on `from` no longer accepts `from`'s new
+ * version. Edges are declared content — derivable, recorded, never
+ * implied (invariant 14). */
+export interface PropagationEdge {
+  readonly from: string;
+  readonly to: string;
+  readonly reason: "range-widening";
+}
+
+/** Negative evidence (§2.15, PL-03): a component that did not move, and the
+ * deterministic reason — no reverse dependency on a releasing component, or
+ * a declared range that still accepts the new version. */
+export interface NotMovedEvidence {
+  readonly component: string;
+  readonly why: "no-reverse-dependency" | "range-compatible";
+}
+
+/** The propagation plan (§2.15): the edges in topological order, the
+ * topological order of every affected component, and the negative evidence
+ * for everything that did not move. */
+export interface PropagationPlan {
+  readonly edges: readonly PropagationEdge[];
+  readonly order: readonly string[];
+  readonly notMoved: readonly NotMovedEvidence[];
+}
+
+/** `propagate.ts` — computes the propagation plan (§2.15) from the declared
+ * component graph (D16) and the lines' release decisions: a component
+ * release breaks its dependents' ranges exactly when the new version is
+ * outside the declared range expression (caret/tilde/exact); dependents
+ * widen (one minor), transitively, in topological order. Unknown dependency
+ * names are caller contract violations — this throws naming the edge. */
+export type PlanPropagation = (
+  components: readonly ComponentMeta[],
+  releases: readonly {
+    readonly component: string;
+    readonly version: Version;
+  }[],
+) => PropagationPlan;
+
+/** A plan precondition the executing side re-verifies (§2.10, §2.11, E-04):
+ * structured data, never prose. `tag-absent` is invariant 6's global tag
+ * namespace check (PL-08, E-11) — the target tag must not exist when the
+ * plan executes. */
+export type PlanPrecondition = { readonly kind: "tag-absent"; readonly tag: string };
+
+/** One line's entry in a plan (§2.11's closed tuple): the line id, the
+ * target the plan mints (stable, streams), the change set that produced it
+ * (members with id, lineage, type, bump — the decided inputs), the stream
+ * states with the seed and pointer base used, and the artifact
+ * declarations (declared labels only — never provider state, §2.16). */
+export interface PlanLine {
+  readonly lineId: string;
+  readonly stable: { readonly version: string; readonly tag: string } | null;
+  readonly streams: readonly PlannedStream[];
+  readonly changes: readonly {
+    readonly id: string;
+    readonly lineage: readonly string[];
+    readonly type: string;
+    readonly bump: Bump;
+  }[];
+  readonly propagation: PropagationPlan;
+  readonly preconditions: readonly PlanPrecondition[];
+  readonly artifacts: readonly string[];
+}
+
+/** The release plan (§2.11): content-fingerprinted (`planId`), persistable,
+ * provider-neutral (§2.16). `supersedes` is a recorded relation, never an
+ * edit (invariant 5); a regeneration landing on emptiness yields a plan
+ * with no lines that still carries `supersedes` (§2.10's no-op successor).
+ * `inputsFingerprint` fingerprints the input world (canonical JSON of the
+ * policy digest, the observed commits/refs/tags, the lines and components)
+ * so a stored plan can be re-judged against a changed world (E-04). */
+export interface ReleasePlan {
+  readonly planId: string;
+  readonly supersedes: string | null;
+  readonly policyDigest: string;
+  readonly inputsFingerprint: string;
+  readonly lines: readonly PlanLine[];
+}
+
+/** `identity.ts` — the canonical JSON of a plan-eligible value (§2.11):
+ * recursively key-sorted, no insignificant whitespace. Deterministic across
+ * processes (invariant 2). */
+export type CanonicalJson = (value: unknown) => string;
+
+/** `identity.ts` — the plan's content fingerprint (§2.11): canonical JSON
+ * of the closed tuple (policy digest, inputs fingerprint, supersedes, per
+ * line the frozen `PlanLine` fields) → SHA-256 → `plan_sha256:<hex>`.
+ * Version equality implies nothing about plan equality (E-11); identical
+ * inputs imply identical fingerprints (invariant 2). */
+export type PlanFingerprint = (plan: Omit<ReleasePlan, "planId">) => string;
+
+/** `identity.ts` — fingerprints the input world (§2.11, E-04): canonical
+ * JSON of the planning input's semantic fields → SHA-256 →
+ * `inputs_sha256:<hex>`. A stored plan re-judged against a world whose
+ * inputs fingerprint differs is stale (E-04's recognition data). */
+export type InputsFingerprint = (input: PlanningInput) => string;
