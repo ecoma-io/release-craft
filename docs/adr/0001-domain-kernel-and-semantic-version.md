@@ -222,8 +222,12 @@ this ADR and `module-boundaries.config.mjs` must be changed together.
   commit time and in CI — proven by canary (a `node:fs` import inserted into
   `version.ts` produced `bannedExternalImportsViolation`; the tree was
   re-verified clean afterwards).
-- The kernel's contract can only be changed together with its suite: 75
-  tests, coverage thresholds enforced from this first commit.
+- The kernel's contract can only be changed together with its suite: coverage
+  thresholds enforced from this first commit. The test count is stated by the
+  suite, never by prose — this record once carried "75 tests" where the suite
+  runs 74, a drift no gate can see that the Phase 0 audit
+  ([`phase0-repository-audit.md`](../design/phase0-repository-audit.md) §3.7)
+  caught; counts live in the artifact that owns them.
 - Release policy that needs version semantics (lines, channels, transitions)
   consumes `Version` through the package surface and stays outside
   `core/domain/`.
