@@ -83,16 +83,20 @@ surface it watches, none duplicating another's reach. They are not three
 boundary systems, and no fourth checker may be added while one of these three
 can carry the rule.
 
-### 4. Grammar scope — strict SemVer 2.0.0, nothing looser and nothing more
+### 4. Grammar scope — the strict SemVer 2.0.0 shape, made stricter by one bound
 
-`Version.parse` accepts exactly the SemVer 2.0.0 grammar: three dot-separated
-numeric components without leading zeroes, optional `-prerelease` of
-dot-separated alphanumeric-hyphen identifiers, optional `+build` of the same
-shape. Refused by decision, not by omission: `v` prefixes, whitespace, loose
-or coercing modes, partial versions. This is a judgment for a _release_ tool —
-the strings release-craft judges come from git tags and package manifests and
-must already be canonical; coercion is a policy concern and would hide data
-errors this domain should surface.
+`Version.parse` accepts the SemVer 2.0.0 grammar — three dot-separated numeric
+components without leading zeroes, optional `-prerelease` of dot-separated
+alphanumeric-hyphen identifiers, optional `+build` of the same shape —
+intersected with exactly one restriction of release-craft's own, the
+safe-integer bound of decision 5. The accepted language is therefore a strict
+**subset** of SemVer 2.0.0: nothing looser than the grammar, and one bound
+stricter — a grammar-valid string such as `9007199254740992.0.0` is rejected
+here, by design. Also refused by decision, not by omission: `v` prefixes,
+whitespace, loose or coercing modes, partial versions. This is a judgment for
+a _release_ tool — the strings release-craft judges come from git tags and
+package manifests and must already be canonical; coercion is a policy concern
+and would hide data errors this domain should surface.
 
 Build metadata may carry leading zeroes. The spec forbids them only in numeric
 _prerelease_ identifiers; build identifiers are never compared, so the
@@ -185,9 +189,9 @@ this ADR and `module-boundaries.config.mjs` must be changed together.
   cross-project relative import — archkeep refuses it before the constraint
   table is ever read.
 - **Importing a semver library.** Beyond the banned import, no library gives
-  the contract above: strict grammar only, safe-integer bounds, structural
-  equality distinct from precedence, and a frozen immutable value. The
-  contract is ~330 lines and fully owned here.
+  the contract above: strict SemVer grammar bounded per decision 5,
+  structural equality distinct from precedence, and a frozen immutable value.
+  The contract is ~330 lines and fully owned here.
 - **Restating the contract in prose docs.** The contract lives in the kernel's
   header comments (pointing here), the type signatures, and the executable
   suite. This ADR records decisions, not a parallel specification.

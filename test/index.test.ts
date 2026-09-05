@@ -1,29 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { identity, PACKAGE_NAME, Version } from "../src/index.ts";
+import { PACKAGE_NAME, Version } from "../src/index.ts";
 
 // The bootstrap's one suite proves the toolchain path end to end — source,
 // Vitest, pass — on a subject with a real contract, rather than on
 // expect(true).toBe(true). If the pipeline cannot execute this, every gate
 // above it is theatre.
+//
+// The canary asserts only what the package can honestly claim: its own name,
+// and that the domain re-export is live. It used to also export a `stage`
+// literal claiming where the repository stood in its life — a claim in code
+// that no gate reads, which drifted from the documented state within the PR
+// that introduced it (issue #9) and was removed rather than re-tuned: the
+// README's status section is the one place that describes repository state.
 describe("the toolchain canary", () => {
   it("reports the package identity", () => {
-    const identity_ = identity();
-
-    expect(identity_.name).toBe("@ecoma-io/release-craft");
-    expect(identity_.stage).toBe("foundation");
+    expect(PACKAGE_NAME).toBe("@ecoma-io/release-craft");
   });
 
-  it("keeps the identity a compile-time function of PACKAGE_NAME", () => {
-    // The exported constant and the constructed identity must agree — the
-    // interface pins the constant's literal type, so a drift between the two
-    // is a typecheck failure before it is a test failure.
-    const identity_: { name: typeof PACKAGE_NAME; stage: "foundation" } = identity();
+  it("pins the name as a compile-time literal of the package contract", () => {
+    // `as const` makes the export's type the literal itself, so a rename of
+    // the constant's value is a compile-visible change, and the assertion
+    // below is the runtime half of the same pin.
+    const name: typeof PACKAGE_NAME = "@ecoma-io/release-craft";
 
-    expect(identity_.name).toBe(PACKAGE_NAME);
-  });
-
-  it("does not leak state between calls", () => {
-    expect(identity()).toStrictEqual(identity());
+    expect(PACKAGE_NAME).toBe(name);
   });
 });
 
