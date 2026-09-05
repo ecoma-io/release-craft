@@ -114,7 +114,7 @@ above.
 | ----- | ---------------------------------------------------------- | ---------- | ----------- | -------------------------------------------------------- |
 | S-01  | Chore-only runway: the recorded no-op                      | SIMPLE     | A-01        | A decision that produces nothing is still an event (N3)  |
 | S-02  | First release ever: two absent truths                      | SIMPLE     | A-02        | Bootstrap is underdetermined; manifest is not truth (N4) |
-| S-03  | Manifest drift behind maintenance tags                     | SIMPLE     | A-03        | Line tag history outranks the manifest (N1, N4)          |
+| S-03  | Manifest drift: the hotfixes that never came home          | SIMPLE     | A-03        | Line tag history outranks the manifest (N1, N4)          |
 | S-04  | Release-worthy without changelog-worthy                    | SIMPLE     | A-05        | Release-worthy and changelog-worthy are independent (N5) |
 | S-05  | Major cut while the maintenance line lives                 | SIMPLE     | A-06        | Line identity survives the major cut (N1)                |
 | P-01  | Alpha increments: lexicographic order lies                 | PRERELEASE | A-07        | Numeric prerelease comparison (N2)                       |
@@ -2226,6 +2226,9 @@ that pressure exposes. None is silently resolved here.
     next-from-tags computations, not recordings of an advance — the
     kernel seeds at `.0` and a `.1`-first convention, if adopted, is
     planner policy over tags (recorded by decision-log D9).
+    **Resolved 2026-09-06 (ADR-0003 decision 7, decision-log D13):** declared
+    seed policy — `seed: .0` is the kernel default, `.1` by explicit line
+    declaration; this entry's text stands unchanged.
 
 ## Stress analysis
 
