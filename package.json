@@ -53,7 +53,8 @@
     "check:package": "node scripts/check-package-contract.mjs",
     "check:workflows": "node scripts/check-workflow-safety.mjs",
     "check:docs": "node scripts/check-docs-links.mjs",
-    "check:policy": "pnpm run check:files && pnpm run check:package && pnpm run check:workflows && pnpm run check:docs"
+    "check:pr-description": "node scripts/check-pr-description.mjs",
+    "check:policy": "pnpm run check:files && pnpm run check:package && pnpm run check:workflows && pnpm run check:docs && pnpm run check:pr-description"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",

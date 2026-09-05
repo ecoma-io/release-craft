@@ -78,6 +78,10 @@ const REQUIRED_FILES = [
   // The toolchain canary and its suite.
   "src/index.ts",
   "test/index.test.ts",
+
+  // The pull-request-description gate and its suite (#6).
+  "scripts/check-pr-description.mjs",
+  "scripts/check-pr-description.test.mjs",
 ];
 
 /**

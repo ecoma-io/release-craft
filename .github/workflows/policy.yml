@@ -16,12 +16,21 @@ name: Policy
 #                        credentials);
 #   - check:docs       — the documentation resolves: links, anchors, and every
 #                        `pnpm <command>` a page cites exists as a script;
+#   - check:pr-description — the pull request description is finalized (the
+#                        template's placeholders gone, its checklist ticked,
+#                        its load-bearing sections written). #5 merged green
+#                        with "(To be finalized — …)" in the body and every
+#                        checklist box unchecked (#6); this is the executable
+#                        answer. Judged as of the last push — GitHub triggers
+#                        `pull_request` on open and push, never on description
+#                        edits, exactly the semantics the title check below
+#                        already carries.
 #   - PR title         — Conventional Commits, against the same commitlint
 #                        configuration the commit-msg hook runs. The squash
 #                        commit's subject IS the pull request title, so the
 #                        title is the one message the hook never sees.
 #
-# The four file gates are dependency-free Node scripts (see scripts/moon.yml),
+# The five file gates are dependency-free Node scripts (see scripts/moon.yml),
 # so they need nothing but the checkout and a pinned Node. The title check is
 # the one step that wants the toolchain: commitlint comes from the
 # lockfile-pinned install, never a floating `dlx` fetch.
@@ -68,6 +77,17 @@ jobs:
 
       - name: Check documentation integrity
         run: node scripts/check-docs-links.mjs
+
+      # The body travels through env, never ${{ }} interpolation into the
+      # script — a PR body may contain backticks and $(...) and is untrusted
+      # input like a title. On an empty body the env var is set to "" and the
+      # gate refuses it; with no pull-request context (push, dispatch, local)
+      # this step does not run at all.
+      - name: Check the pull request description
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/check-pr-description.mjs
 
       # The title arrives through the environment, never through ${{ }}
       # interpolation into the script: interpolation pastes it into the shell
