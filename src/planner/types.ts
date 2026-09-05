@@ -462,6 +462,22 @@ export type PlanTargets = (
   policy: PolicyInput,
 ) => TargetPlan;
 
+/** `plan.ts` — plans the line's prerelease streams (§2.8) from the
+ * operator's `prerelease` intents: each intent names the identifier; the
+ * sequence continues the rebuilt stream key (`+1`) or starts at the
+ * declared seed (fork 17) for a fresh key — a moved target (P-05) or a new
+ * identifier (P-02) never continues the old sequence. A mint sorting below
+ * the line's released pointer is a caller contract violation (D9: the
+ * planner never invents the ladder override). `planTargets` is the
+ * targets-only view over this (no intents → no streams). */
+export type PlanStreams = (
+  intents: readonly OperatorIntent[],
+  decision: LineDecision,
+  state: LineState,
+  line: LineConfig,
+  policy: PolicyInput,
+) => readonly PlannedStream[];
+
 /** One propagation edge (§2.15): a release in `from` forces a bump in `to`
  * because `to`'s declared range on `from` no longer accepts `from`'s new
  * version. Edges are declared content — derivable, recorded, never

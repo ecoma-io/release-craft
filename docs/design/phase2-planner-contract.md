@@ -134,11 +134,14 @@ are line-policy data; opaque identifiers are allowed by declaration.
 
 **Released-pointer convention:** the pointer is the line's highest published
 version by precedence — the kernel's `released` reading. A prerelease
-publication with higher precedence moves it (M-08); publications the pointer
-already exceeds (P-02/P-07 stream publications) leave it standing, and a
-stream override that publishes below the pointer is legal only as explicit
-declared policy and is recorded in the plan (the D9 ladder-override branch).
-The pointer value a plan computed from is recorded in the plan.
+publication with higher precedence moves it (M-08). The planner's mint check
+is precedence-based: a planned mint that sorts above the pointer moves it,
+and a mint that sorts below is a caller contract violation — the ladder
+override that publishes below the pointer is legal only as explicit declared
+policy (the D9 branch), which Phase 2 declares no knob for; the scenario
+cases where a publication leaves the pointer standing (P-02/P-07) are
+exactly the below-pointer mints Phase 2 refuses to plan. The pointer value a
+plan computed from is recorded in the plan.
 
 **First-mint seed (fork 17 resolved).** The first sequence number of a fresh
 stream key is declared line policy: `seed: .0` — the kernel default, matching
