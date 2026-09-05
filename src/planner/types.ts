@@ -577,3 +577,28 @@ export type PlanFingerprint = (plan: Omit<ReleasePlan, "planId">) => string;
  * `inputs_sha256:<hex>`. A stored plan re-judged against a world whose
  * inputs fingerprint differs is stale (E-04's recognition data). */
 export type InputsFingerprint = (input: PlanningInput) => string;
+
+// ---------------------------------------------------------------------------
+// The planner's single entry (§2.6 + §2.9 + §2.16) — the integration door
+// ---------------------------------------------------------------------------
+
+/** The planner's outcome (§2.9): negative outcomes are records, never
+ * exceptions — an attribution refusal is the outcome; a plan whose lines
+ * all no-op is still a plan (§2.10's no-op successor shape, `lines: []`).
+ * `supersedes` is always `null` from the pure door: the planner has no
+ * memory, and threading the prior plan's id is the persistence layer's
+ * adjacent concern (§6, D14). */
+export type PlanningOutcome =
+  | {
+      readonly kind: "planned";
+      readonly plan: ReleasePlan;
+      readonly decisions: readonly LineDecision[];
+    }
+  | { readonly kind: "refused"; readonly refusal: AttributionRefusal };
+
+/** `assemble.ts` — the planner's single entry (§2.6): normalize → extract →
+ * tag history → ranges → attribute → decide → rebuild state → plan
+ * targets/streams → propagate → assemble and fingerprint the plan. One
+ * pure function of the input boundary (invariant 2, §2.14): identical
+ * inputs produce identical outcomes, double-run equal. */
+export type Plan = (input: PlanningInput) => PlanningOutcome;
