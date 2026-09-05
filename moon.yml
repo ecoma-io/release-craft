@@ -13,10 +13,18 @@ language: typescript
 # affected detection walks exactly these edges. Measured without it, a
 # kernel-only change resolved to ZERO targets for release-craft:test and
 # release-craft:arch in CI — the gates that judge the kernel would silently
-# not run. The declared edge is also the architectural truth: the kernel
-# declares no dependency back.
-deps:
+# not run.
+#
+# gate-scripts is on this list for the Moon graph's bookkeeping, NOT as an
+# import permission: these tasks run workspace-wide (`eslint .`, `prettier
+# --check .`, `archkeep check` from the root), and Moon's v2 `project://`
+# inputs refuse a reference to any project the parent does not depend on.
+# Import permissions are module-boundaries.config.mjs's alone — type-package
+# may never import type-gates there, and that row is what `pnpm arch`
+# enforces. The kernel declares no dependency back.
+dependsOn:
   - core-domain
+  - gate-scripts
 tags:
   # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
   # spelled `type-`. module-boundaries.config.mjs judges this tag.
@@ -37,8 +45,8 @@ tasks:
     command: prettier --check .
     inputs:
       - "**/*"
-      - "~gate-scripts:sources"
-      - "~core-domain:sources"
+      - "project://gate-scripts?group=sources"
+      - "project://core-domain?group=sources"
       - "/package.json"
       - "/pnpm-lock.yaml"
       - "/.prettierrc"
@@ -49,8 +57,8 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
-      - "~gate-scripts:sources"
-      - "~core-domain:sources"
+      - "project://gate-scripts?group=sources"
+      - "project://core-domain?group=sources"
       - "vitest.config.ts"
       - "/eslint.config.mjs"
       - "/tsconfig.json"
@@ -62,7 +70,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
-      - "~core-domain:sources"
+      - "project://core-domain?group=sources"
       - "vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -73,7 +81,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
-      - "~core-domain:sources"
+      - "project://core-domain?group=sources"
       - "/vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -85,7 +93,7 @@ tasks:
     command: tsc -p tsconfig.build.json
     inputs:
       - "src/**/*"
-      - "~core-domain:sources"
+      - "project://core-domain?group=sources"
       - "/tsconfig.build.json"
       - "/tsconfig.json"
       - "/package.json"
@@ -101,17 +109,19 @@ tasks:
     #
     # Its inputs span every project's sources: bare globs are filtered to the
     # owning project, so `scripts/**/*` here reaches nothing (that directory
-    # belongs to gate-scripts). Cross-project files are named with the
-    # `~project:fileGroup` form — measured with a verified `git diff` in the
-    # loop, the plain-glob form `~project/**/*` matched nothing and a change
-    # under scripts/ or core/domain/ left this verdict cached; the group form
-    # is what actually invalidates. A boundary change inside core/domain/ must
-    # re-run this verdict, or the cache would outlive the boundary it judged.
+    # belongs to gate-scripts). Cross-project files are named with the v2
+    # `project://id?group=…` URI — measured with a verified `git diff` in the
+    # loop, the tilde forms (`~project/**/*`, `~project:group`) were hashed as
+    # literal paths that do not exist ("Attempted to hash input … skipping")
+    # and a change under scripts/ or core/domain/ left this verdict cached;
+    # the URI form is what actually invalidates. A boundary change inside
+    # core/domain/ must re-run this verdict, or the cache would outlive the
+    # boundary it judged.
     command: archkeep check
     inputs:
       - "src/**/*"
-      - "~gate-scripts:sources"
-      - "~core-domain:sources"
+      - "project://gate-scripts?group=sources"
+      - "project://core-domain?group=sources"
       - "/module-boundaries.config.mjs"
       - "/.moon/workspace.yml"
       - "/moon.yml"

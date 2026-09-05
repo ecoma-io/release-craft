@@ -21,11 +21,13 @@
 id: core-domain
 language: typescript
 fileGroups:
-  # The named group the consumers' tasks point at (`~core-domain:sources`).
-  # The plain-glob form `~core-domain/**/*` in a consumer's inputs matched
-  # nothing: files changed under core/domain/ left release-craft:test and
-  # release-craft:arch cached (measured with a verified `git diff`), so the
-  # group form is what the invalidation actually runs on.
+  # The named group the consumers' tasks point at
+  # (`project://core-domain?group=sources`). Both tilde forms
+  # (`~core-domain/**/*`, `~core-domain:sources`) were hashed as literal paths
+  # that do not exist — files changed under core/domain/ left
+  # release-craft:test and release-craft:arch cached (measured with a verified
+  # `git diff` and the hasher's own "does not exist, skipping" warning) — so
+  # the URI form is what the invalidation actually runs on.
   sources:
     - "**/*"
 
