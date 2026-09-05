@@ -2,11 +2,19 @@
  * The public surface of @ecoma-io/release-craft.
  *
  * This module is NOT the release engine. It is the package's front door: the
- * toolchain canary from the bootstrap (the typed surface the typecheck
- * compiles, Vitest executes, ESLint judges and the build emits) plus the
- * domain the `core-domain` project actually ships — re-exported, never
- * reimplemented here. Every release-planning, lifecycle, adapter and
- * publishing concern belongs to a future change, never to this file.
+ * toolchain canary (the typed surface the typecheck compiles, Vitest
+ * executes, ESLint judges and the build emits) plus the domain the
+ * `core-domain` project actually ships — re-exported, never reimplemented
+ * here. Every release-planning, lifecycle, adapter and publishing concern
+ * belongs to a future change, never to this file.
+ *
+ * The surface carries no claim about the repository's stage of life. A stage
+ * literal exported from here was a claim in code that no gate could read,
+ * and it drifted from the documented state within the single PR that
+ * introduced it (issue #9): the honest alternatives were a vocabulary
+ * nothing consumes or no vocabulary. What describes the repository's state
+ * lives in README.md and AGENTS.md, under `check:docs`; what it ships lives
+ * below, under the executable gates.
  */
 
 export {
@@ -25,20 +33,3 @@ export {
 
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;
-
-/**
- * Where the repository is in its life: the substrate plus the first domain
- * primitive, with no release process implemented yet.
- */
-export type ProjectStage = "foundation";
-
-/** The identity a consumer (today, only the toolchain itself) can read. */
-export interface ReleaseCraftIdentity {
-  readonly name: typeof PACKAGE_NAME;
-  readonly stage: ProjectStage;
-}
-
-/** Returns the repository's identity — the canary's entire public behaviour. */
-export function identity(): ReleaseCraftIdentity {
-  return { name: PACKAGE_NAME, stage: "foundation" };
-}

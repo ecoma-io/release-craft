@@ -33,7 +33,10 @@
  *     (the three core numbers and numeric prerelease identifiers) must fit a
  *     safe integer (`0…2^53-1`); beyond it the decimal comparison this
  *     grammar promises would silently lie at the `Number` precision edge.
- *     Build identifiers carry no bound — they are never compared.
+ *     This bound makes the accepted language a strict subset of SemVer
+ *     2.0.0: grammar-valid strings beyond it are rejected (ADR-0001,
+ *     decisions 4–5). Build identifiers carry no bound — they are never
+ *     compared.
  *   - **Canonical serialization** — the grammar is strict enough that every
  *     accepted string is its own canonical form: `format(parse(s)) === s`
  *     for all `s`, and nothing non-canonical is accepted to begin with.

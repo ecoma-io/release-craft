@@ -254,13 +254,27 @@ describe("ordering — numeric-semantic precedence, never lexical string order",
     expect(Version.parse("1.0.0-alpha.0.1").compare(Version.parse("1.0.0-alpha.0"))).toBe(1);
   });
 
-  it("is a total order on distinct values: antisymmetric and self-tied", () => {
-    const versions = ["1.0.0", "1.0.0-rc.1", "0.9.9", "2.0.0-1", "2.0.0-x"].map((spec) =>
-      Version.parse(spec),
-    );
+  it("is a total preorder: comparable everywhere, tied where only build differs", () => {
+    // The precise name for what `compare` establishes: total (every pair
+    // comparable) and transitive, but NOT antisymmetric over Versions —
+    // structurally distinct values that differ only in build metadata tie at
+    // 0, because §11 ignores build. Quotienting Versions by that tie yields
+    // the total order; `equals` is strictly finer than the tie (asserted in
+    // "the two relations" above). The list deliberately includes such a tie
+    // pair so the loop exercises it, not just strictly-ordered pairs.
+    const versions = [
+      "1.0.0",
+      "1.0.0+a",
+      "1.0.0+b",
+      "1.0.0-rc.1",
+      "0.9.9",
+      "2.0.0-1",
+      "2.0.0-x",
+    ].map((spec) => Version.parse(spec));
 
     // Direction only: `toBe` distinguishes -0 from +0 (and so does negating
-    // zero), while the antisymmetry this pins is about direction.
+    // zero), while the antisymmetry this pins lives on the quotient — sign
+    // symmetry holds for ties (0 = -0) and opposites alike.
     const sign = (n: number) => (n < 0 ? -1 : n > 0 ? 1 : 0);
 
     for (const a of versions) {
