@@ -86,26 +86,50 @@ describe("analyzePrDescription", () => {
     assert.ok(analyzePrDescription(body).some((v) => v.includes("HTML comment")));
   });
 
-  it("refuses an unclosed comment opener — scaffolding either way", () => {
-    const body = goodBody().replace(
-      "Materializes the first domain primitive, behind executable boundaries.",
-      "<!-- half a template comment, never closed",
-    );
+  it("refuses an unclosed comment opener — scaffolding either way, and its tail is not content", () => {
+    // A renderer hides everything after an unclosed comment, so the opener
+    // is a finding *and* the section it was carried in reads as empty. A
+    // sanitizer that left the opener behind would make that section
+    // non-empty and the second finding would never appear.
+    const body = "## Description\n\n<!-- a template comment never closed\n";
 
-    assert.ok(analyzePrDescription(body).some((v) => v.includes("HTML comment")));
+    const violations = analyzePrDescription(body);
+
+    assert.ok(violations.some((v) => v.includes("HTML comment")));
+    assert.ok(violations.some((v) => v.includes('"## Description" section is missing or empty')));
   });
 
   it("strips every opener, closed or not — no `<!--` survives the sanitizer", () => {
     // The property a complete sanitizer owes its callers: whatever goes in,
     // no comment opener can come out. The first input has a stray opener
     // *after* a closed comment (what paired-comment removal alone leaves
-    // behind); the second nests one inside another.
+    // behind); the second nests one inside another; the third is the splice
+    // case — removing a comment can only ever join text at its seam, and
+    // the fixpoint loop must not stop before the result settles.
     for (const text of [
       "fine <!-- closed --> then a stray <!-- never closed",
       "<!-- outer <!-- inner --> tail",
+      "before <!-- real comment --> after --> yet more <!--",
+      "<!--> Looks like a comment opener, is an empty comment",
     ]) {
       assert.ok(!withoutHtmlComments(text).includes("<!--"), `opener survived: ${text}`);
     }
+  });
+
+  it("refuses a section whose only content is blank lines — whitespace is not prose", () => {
+    // Found by test while sharpening the unclosed-comment semantics: the
+    // emptiness check compared to "" without trimming, so a section padded
+    // with newlines counted as written.
+    const body = goodBody().replace(
+      "Materializes the first domain primitive, behind executable boundaries.",
+      "",
+    );
+
+    assert.ok(
+      analyzePrDescription(body).some((v) =>
+        v.includes('"## Description" section is missing or empty'),
+      ),
+    );
   });
 
   it("refuses a checklist left unchecked — the #5 merge precondition failure", () => {

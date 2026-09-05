@@ -80,17 +80,27 @@ function withoutFencedBlocks(body) {
 }
 
 /**
- * Removes HTML comments (multi-line included) and — so no hazard survives
- * the sanitizer — any unclosed `<!--` opener. The scaffolding rule needs
- * comments detected while they are still there; the content analysis needs
- * a string that contains no opener afterwards, which is what keeps this
- * scanner honest for any future caller that would render its result.
+ * Removes HTML comments (multi-line included) and everything after an
+ * unclosed `<!--` — which is how a renderer reads it: a comment with no
+ * end swallows the rest of the document. Paired-comment removal runs to a
+ * fixpoint because removing one comment can splice new text together, and
+ * truncation guarantees the result contains no opener at all, so no
+ * hazard survives the sanitizer for any future caller that would render
+ * its result. The scaffolding rule needs openers detected while they are
+ * still there; this function is what the content rules run on after.
  *
  * @param {string} text
  * @returns {string}
  */
 export function withoutHtmlComments(text) {
-  return text.replace(/<!--[\s\S]*?-->/g, "").replaceAll("<!--", "");
+  let withoutClosed = text;
+  let previous = null;
+  while (withoutClosed !== previous) {
+    previous = withoutClosed;
+    withoutClosed = withoutClosed.replace(/<!--[\s\S]*?-->/g, "");
+  }
+  const firstOpener = withoutClosed.indexOf("<!--");
+  return firstOpener === -1 ? withoutClosed : withoutClosed.slice(0, firstOpener);
 }
 
 /**
@@ -146,7 +156,7 @@ export function analyzePrDescription(body) {
 
   for (const name of REQUIRED_SECTIONS) {
     const text = sectionText(bare, name);
-    if (text === "") {
+    if (text.trim() === "") {
       violations.push(
         `the "## ${name}" section is missing or empty — it is load-bearing review input (CONTRIBUTING.md)`,
       );
