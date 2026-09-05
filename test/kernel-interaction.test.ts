@@ -67,12 +67,17 @@ describe("the ensemble — one package's release, end to end, in values", () => 
     });
     const set = ChangeSet.of([fix], "patch");
 
-    // The identical frozen value feeds the rc publication and the release:
-    // inherited, never rebuilt, never mutated (P-03).
-    const atRc = set;
-    const atRelease = set;
+    // The frozen group feeds the rc publication and the release: inherited,
+    // never rebuilt, never mutated (P-03). Inheritance is value identity —
+    // an independently constructed group with the same members and bump is
+    // the same group, never the same object.
+    const atRelease = ChangeSet.of(
+      [Change.of("chg:guard-empty-config", { originCommit: "9f2c4a1e", originLine: "lib-a" })],
+      "patch",
+    );
 
-    expect(atRc).toBe(atRelease);
+    expect(atRelease.equals(set)).toBe(true);
+    expect(atRelease).not.toBe(set);
     expect(atRelease.bump).toBe("patch");
     expect(atRelease.includesIdentity("chg:guard-empty-config")).toBe(true);
 
@@ -86,7 +91,9 @@ describe("the ensemble — one package's release, end to end, in values", () => 
   it("re-points the stable channel onto the release — a move is a new value (PR-04)", () => {
     const line = ReleaseLine.create("lib-a").withReleased(v("1.2.0")).withReleased(v("1.2.1"));
 
-    // The channel starts hidden (S-04), then binds to the released pair by
+    // The channel starts hidden — it exists before its first binding (S-02),
+    // the same state a retraction returns it to (PR-05) — then binds to the
+    // released pair by
     // value; the earlier binding — 1.2.0, never pointed at here — is not
     // pointed at now, because the value carries the current binding only.
     const stable = Channel.create("stable")
@@ -132,7 +139,10 @@ describe("the ensemble — one package's release, end to end, in values", () => 
       version: libA.released as Version,
     });
 
-    // App's decision is a recorded empty group (PL-06), not an absence.
+    // App's decision is a recorded empty group (PL-06), not an absence. The
+    // empty group's `"patch"` is the neutral element of Bump.max — the least
+    // level; what an empty result implies is the planner's decision to make,
+    // and no version is ever minted from here (S-01).
     const nothingDue = ChangeSet.empty();
 
     expect(nothingDue.bump).toBe("patch");

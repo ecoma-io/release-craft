@@ -17,12 +17,18 @@
  * `Version` discipline and ADR-0002's vocabulary lock:
  *
  *   - **The released pointer is monotonic per line** — `withReleased` accepts
- *     only a version that advances beyond the current pointer; equal or lower
- *     throws. Equal-version re-release on one line is a conflict the value
- *     refuses to represent (M-11/E-11 are per-line facts). The guard is
- *     monotonicity only: whether the pointer may ever hold a prerelease is
- *     policy the value does not re-check — prerelease deliverability runs
- *     through stream state, not the pointer.
+ *     only a version that advances beyond the current pointer by precedence;
+ *     equal or lower throws. Equal-version re-release on one line is a
+ *     conflict the value refuses to represent (M-11/E-11 are per-line facts;
+ *     M-11's own note — tags are not disambiguated by build metadata — is why
+ *     the guard is `compare`, not `equals`). The pointer may hold a
+ *     prerelease: M-08's expected transitions move main's pointer to
+ *     `2.4.0-rc.1`. Highest-by-precedence is not latest-in-time — an
+ *     overridden ladder regression that publishes below the pointer (P-02)
+ *     leaves the pointer standing — and whether publishing a prerelease
+ *     moves the pointer at all is line policy the value does not decide
+ *     (M-08 moves it; P-02/P-07 never mention it); prerelease
+ *     deliverability runs through stream state either way.
  *   - **Streams are keyed by (target, identifier), carried as state**
  *     ([invariant 8](../../docs/design/release-model.md#architectural-invariants))
  *     — `advanceStream` computes that key's `sequence + 1`, seeded at `0`
@@ -61,7 +67,10 @@ export type LineLifecycle = "active" | "frozen" | "retired";
 /**
  * The recorded head of one prerelease stream: which target it runs toward,
  * under which opaque identifier, at which position of the numeric sequence
- * (`≥ 0`). The triple (line, target, identifier) is the stream's identity
+ * (`≥ 0` — seeded at zero, advanced by one, never set from outside, so
+ * composing it can never leave the safe-integer domain ADR-0001 decision 5
+ * bounds at the parse door). The triple (line, target, identifier) is the
+ * stream's identity
  * ([invariant 8](../../docs/design/release-model.md#architectural-invariants));
  * "prerelease stream" as a planning concept names the planner's view over
  * this state, not a second home.
@@ -198,10 +207,14 @@ export class ReleaseLine {
 
   /**
    * Records a release on the line, as a new value. The version must advance
-   * beyond the current pointer — equal or lower throws
+   * beyond the current pointer by precedence — equal or lower throws
    * {@link InvalidLineTransitionError}: re-releasing one version on one line
    * is a conflict the value refuses to represent (M-11/E-11 are per-line
-   * facts). On a retired line the call throws outright.
+   * facts). The pointer may hold a prerelease (M-08: main's pointer moves to
+   * `2.4.0-rc.1`); it is the line's highest version by precedence, not the
+   * most recent in time — a ladder override that publishes below it (P-02)
+   * leaves the pointer where it stands. On a retired line the call throws
+   * outright.
    */
   public withReleased(version: Version): ReleaseLine {
     this.#requireMutable("recording a release");
@@ -221,14 +234,24 @@ export class ReleaseLine {
    * Advances one prerelease stream by a step, as a new value: the stream keyed
    * by (`target`, `identifier`) moves to `sequence + 1`, or is seeded at `0`
    * when the key is absent — a moved target starts a new key, never a
-   * continuation of the old sequence (P-05). The arithmetic is value
-   * semantics; which stream to advance, and when, is line/channel policy that
-   * lives outside this file. On a retired line the call throws outright.
+   * continuation of the old sequence (P-05). The target must be bare: build
+   * metadata is refused at the door, because a prerelease suffix composed
+   * after the build part is not a prerelease to the SemVer grammar — the
+   * sequence would stop ordering by precedence (invariant 8). The arithmetic
+   * is value semantics; which stream to advance, and when, is line/channel
+   * policy that lives outside this file. On a retired line the call throws
+   * outright.
    */
   public advanceStream(target: Version, identifier: string): ReleaseLine {
     this.#requireMutable("advancing a prerelease stream");
     if (!(target instanceof Version)) {
       throw new InvalidLineTransitionError(target, "a stream target must be a Version value");
+    }
+    if (target.build.length > 0) {
+      throw new InvalidLineTransitionError(
+        target,
+        "a stream target must not carry build metadata — a prerelease suffix would compose after the build part, which the SemVer grammar reads as build identifiers, not a prerelease",
+      );
     }
     const name = streamIdentifier(identifier);
     const streams = [...this.streams];
@@ -246,8 +269,10 @@ export class ReleaseLine {
   /**
    * The stream's current version as a value, or `null` when the
    * (target, identifier) key is not on the line: the recorded state composed
-   * through `Version.parse` as `target` + `-identifier.sequence`. Two streams
-   * under one target are both expressible (P-06); the ladder is
+   * through `Version.parse` as `target` + `-identifier.sequence`. The stream
+   * door refuses build metadata, so the suffix always lands in the
+   * prerelease position — a sequence the grammar orders by precedence. Two
+   * streams under one target are both expressible (P-06); the ladder is
    * per-identifier (P-02).
    */
   public streamVersion(target: Version, identifier: string): Version | null {

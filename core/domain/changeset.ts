@@ -168,7 +168,14 @@ export class ChangeSet {
     return new ChangeSet(changes, level);
   }
 
-  /** The empty group — a result in its own right (PL-06), implying `"patch"`. */
+  /**
+   * The empty group — a result in its own right (PL-06). Its bump is
+   * `"patch"` as the neutral element of `Bump.max`: the least level, raised
+   * by any real member. What an empty group implies — a recorded no-op, a
+   * withheld release (S-01: the latent version is minted nowhere) — is the
+   * planner's decision to make; the value records the neutral level and
+   * nothing more.
+   */
   public static empty(): ChangeSet {
     return ChangeSet.of([], "patch");
   }

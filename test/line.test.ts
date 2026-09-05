@@ -148,13 +148,24 @@ describe("the released pointer — monotonic per line (M-11/E-11 are per-line fa
   });
 
   it("guards monotonicity only — a prerelease that advances is the policy's call, not the value's", () => {
-    // The contract's parenthetical: the pointer holds releases, and the
-    // guard is regression-or-equality, nothing more; whether policy ever
-    // puts a prerelease here does not reach this value.
+    // M-08: the pointer may hold a prerelease — main's moves to 2.4.0-rc.1.
+    // The guard is regression-or-equality by precedence, nothing more;
+    // whether policy ever puts a prerelease here does not reach this value.
     const line = ReleaseLine.create("1.x").withReleased(v("1.9.0"));
 
     expect(line.withReleased(v("2.0.0-rc.1")).released?.toString()).toBe("2.0.0-rc.1");
     expect(() => line.withReleased(v("1.9.0-rc.1"))).toThrow(InvalidLineTransitionError);
+  });
+
+  it("refuses an equal-precedence re-release carrying build metadata (M-11)", () => {
+    // M-11's own note: tags must not be disambiguated by build metadata —
+    // the collision is real. `1.9.0+a` compares equal to `1.9.0`, so the
+    // monotonic guard (compare, never equals) refuses it as a tie, not a
+    // distinct release.
+    const line = ReleaseLine.create("1.x").withReleased(v("1.9.0"));
+
+    expect(() => line.withReleased(v("1.9.0+a"))).toThrow(InvalidLineTransitionError);
+    expect(line.released?.toString()).toBe("1.9.0");
   });
 
   it("refuses a non-Version argument, carrying it verbatim", () => {
@@ -172,7 +183,12 @@ describe("the released pointer — monotonic per line (M-11/E-11 are per-line fa
 });
 
 describe("stream arithmetic — invariant 8: streams are state, keyed and numeric", () => {
-  it("seeds a new (target, identifier) key at sequence 0", () => {
+  it("seeds a new (target, identifier) key at sequence 0 (P-02/P-05/P-07)", () => {
+    // The `.0` seed is the matrix's own convention — P-02 (`1.2.0-beta.0`),
+    // P-05 (`2.0.0-rc.0`), P-07 (`1.2.4-rc.0`) all mint fresh sequences at
+    // zero. Fork 17 records the `.1` bodies (E-08's next-from-empty, P-01's
+    // nine-run history) as planner-side computations over tags, not
+    // recordings of an advance.
     const line = ReleaseLine.create("1.x").advanceStream(v("1.2.0"), "alpha");
 
     expect(line.streams).toHaveLength(1);
@@ -183,7 +199,11 @@ describe("stream arithmetic — invariant 8: streams are state, keyed and numeri
 
   it("P-01: advances alpha.9 to alpha.10 — numeric, where lexicographic order lies", () => {
     let line = ReleaseLine.create("1.x");
-    // Ten advances of the alpha stream toward 1.2.0: head alpha.0 … alpha.9.
+    // Ten advances reach head alpha.9 because the kernel mints `.0` first
+    // (P-02/P-05/P-07's convention). P-01's own body counts nine alpha runs
+    // already published with head `alpha.9` — its history mints `.1` first,
+    // a planner-side computation over tags (fork 17), not a different
+    // arithmetic.
     for (let step = 0; step < 10; step += 1) {
       line = line.advanceStream(v("1.2.0"), "alpha");
     }
@@ -253,13 +273,22 @@ describe("stream arithmetic — invariant 8: streams are state, keyed and numeri
     expect(beta.streamVersion(v("1.2.0"), "beta")?.compare(v("1.2.0-alpha.3"))).toBe(1);
   });
 
-  it("keys streams by Version#equals — build metadata is part of a target's identity", () => {
-    const plain = ReleaseLine.create("1.x").advanceStream(v("1.2.0"), "alpha");
-    const built = plain.advanceStream(v("1.2.0+exp.1"), "alpha");
+  it("refuses a stream target carrying build metadata — the sequence must stay a prerelease", () => {
+    // M-11's note gives the model's word on build metadata: tags are not
+    // disambiguated by it. A build-carrying target would compose as
+    // `1.2.0+exp.1-alpha.0` — the grammar reads the suffix as build
+    // identifiers, not a prerelease, so successive heads would compare 0
+    // against each other and the bare target (invariant 8's ordering would
+    // die in the composition). The door refuses; streams run to bare targets.
+    const line = ReleaseLine.create("1.x");
+    const built = v("1.2.0+exp.1");
 
-    expect(built.streams).toHaveLength(2);
-    expect(built.streamVersion(v("1.2.0"), "alpha")?.toString()).toBe("1.2.0-alpha.0");
-    expect(built.streamVersion(v("1.2.0+exp.1"), "alpha")?.toString()).toBe("1.2.0+exp.1-alpha.0");
+    const error = caught(() => line.advanceStream(built, "alpha")) as InvalidLineTransitionError;
+
+    expect(error).toBeInstanceOf(InvalidLineTransitionError);
+    expect(error.input).toBe(built);
+    // The refusal leaves no state behind.
+    expect(line.streams).toHaveLength(0);
   });
 
   it("answers null for an absent key — a total query, never an error", () => {
@@ -360,7 +389,10 @@ describe("lifecycle — the matrix is total and validated (M-10: retirement is a
     expect(retired.streams).toEqual([]);
   });
 
-  it("lets a frozen line still record releases and advance streams — only retirement is terminal", () => {
+  it("lets a frozen line still record releases and advance streams — only retirement is terminal (PL-07)", () => {
+    // PL-07: freeze/unfreeze is package policy's lever, not the line's — a
+    // frozen line still cuts releases from what it already holds (its own
+    // emergency fixes); only M-10's retirement is terminal.
     const frozen = ReleaseLine.create("1.x").withReleased(v("1.9.0")).freeze();
 
     const stillReleasing = frozen.withReleased(v("1.9.1"));

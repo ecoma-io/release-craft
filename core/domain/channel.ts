@@ -21,7 +21,9 @@
  *     field here that could carry provider state, which is the invariant's
  *     kernel half made structural.
  *   - **A move is a new value** — `repoint` returns a fresh channel; hiding
- *     is `repoint(null)` (S-04/PR-04: rollback hides, never erases, and the
+ *     is `repoint(null)`, the same first-class state a channel starts in
+ *     (S-02: it exists before its first binding) and a retraction returns it
+ *     to (PR-05: future membership removed, history execution-side — the
  *     erasure-or-not question never reaches the value).
  *   - **`pointsAt` is identity by value** — LineId string equality plus
  *     `Version#equals`, the one-point-in-time query PR-05's membership
@@ -164,7 +166,8 @@ export class Channel {
 
   /**
    * A new channel with no binding: `target` is `null` — hidden/empty is a
-   * first-class state (S-04), not an absence of value.
+   * first-class state (S-02: a channel exists before its first binding;
+   * PR-05: a retraction returns it here), not an absence of value.
    */
   public static create(id: string): Channel {
     return new Channel(channelId(id), null);

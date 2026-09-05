@@ -7,10 +7,12 @@ import { Channel, type ChannelTarget, InvalidChannelError, Version } from "../sr
  * package surface (`../src/index.ts`, ADR-0001 decision 9).
  *
  * Scenario anchors, exactly where the contract cites them: PR-04 (a move —
- * rollback included — is a new value; hiding is `repoint(null)`),
- * PR-05 (the one-point-in-time membership query `pointsAt` answers),
- * S-04 (hidden is a first-class state, not an absence), and invariant 15
- * (the target names a line and a version, never a provider object).
+ * rollback included — is a new value), PR-05 (the one-point-in-time
+ * membership query `pointsAt` answers; a retraction removes future
+ * membership and returns the channel to hidden), S-02 (a channel exists
+ * before its first binding — hidden is a first-class state, not an
+ * absence), and invariant 15 (the target names a line and a version, never
+ * a provider object).
  */
 
 /** The version helper — one parse per literal keeps the fixtures honest. */
@@ -56,7 +58,7 @@ describe("construction doors — the id is an opaque string", () => {
     expect(error.message).not.toContain(long);
   });
 
-  it("creates a channel hidden — target null is a first-class state (S-04)", () => {
+  it("creates a channel hidden — target null is a first-class state (S-02)", () => {
     const channel = Channel.create("stable");
 
     expect(channel.id).toBe("stable");
@@ -130,7 +132,7 @@ describe("repoint — a move is a new value; history is not stored here (PR-04)"
     expect(hidden.target).toBeNull();
   });
 
-  it("hides with repoint(null) — S-04/PR-04: rollback hides, never erases", () => {
+  it("hides with repoint(null) — PR-05: a retraction removes future membership, never history", () => {
     const pointed = Channel.of("stable", target("1.x", "1.2.0"));
     const hidden = pointed.repoint(null);
 
