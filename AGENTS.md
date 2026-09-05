@@ -81,8 +81,8 @@ Three workflows, three questions, no god workflow:
 - `analysis.yml` — the repository: CodeQL (javascript-typescript + actions),
   Semgrep (registry packs, report-only), Gitleaks (full history, checksummed
   binary) + `analysis-gate`.
-- `policy.yml` — governance: the four `scripts/check-*.mjs` gates + the PR
-  title.
+- `policy.yml` — governance: the five `scripts/check-*.mjs` gates (required
+  files · package · workflows · docs · PR description) + the PR title.
 
 When you add a job, add it to its gate's `needs:` — the gates tighten only
 through that list, visibly, in review.

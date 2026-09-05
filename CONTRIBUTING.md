@@ -53,16 +53,24 @@ Use the template. Three things it asks for are load-bearing:
   commitlint — the `policy` workflow checks it, and the commit-msg hook never
   sees it.
 
+The description itself is governed, not just requested: the `policy` workflow
+refuses a body that still carries the template's comments or placeholder
+markers, that leaves checklist boxes unticked, or whose load-bearing sections
+were never written (#5 merged exactly that way — see the gate born from it,
+`check:pr-description`). The gate judges the body as of the last push, the
+same way the title check does; editing the description afterwards re-judges
+on the next push.
+
 ## 5. Checks
 
 Three workflows run, each answering one question (see
 [`README.md`](README.md#governance)):
 
-| Workflow | Question                   | Checks                                                                |
-| -------- | -------------------------- | --------------------------------------------------------------------- |
-| CI       | Is this change correct?    | `format`, `lint`, `typecheck`, `test`, `build`, `arch` → `ci-gate`    |
-| Analysis | Is the repository healthy? | CodeQL (TS + workflows), Semgrep, Gitleaks → `analysis-gate`          |
-| Policy   | Does governance hold?      | required files · package contract · workflow safety · docs · PR title |
+| Workflow | Question                   | Checks                                                                                 |
+| -------- | -------------------------- | -------------------------------------------------------------------------------------- |
+| CI       | Is this change correct?    | `format`, `lint`, `typecheck`, `test`, `build`, `arch` → `ci-gate`                     |
+| Analysis | Is the repository healthy? | CodeQL (TS + workflows), Semgrep, Gitleaks → `analysis-gate`                           |
+| Policy   | Does governance hold?      | required files · package contract · workflow safety · docs · PR description · PR title |
 
 On a pull request, the CI gates run through Moon's affected detection: a
 change that cannot have moved a gate leaves it empty by the graph's own

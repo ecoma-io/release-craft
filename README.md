@@ -32,7 +32,7 @@ Corepack, version pinned in [`package.json`](package.json)), git.
 ```sh
 pnpm install --frozen-lockfile
 pnpm check        # format · lint · typecheck · test · build · arch
-pnpm check:policy # required files · package contract · workflow safety · docs
+pnpm check:policy # required files · package contract · workflow safety · docs · PR description
 ```
 
 Every gate also runs on its own: `pnpm format`, `pnpm lint`, `pnpm typecheck`,
@@ -52,7 +52,9 @@ Three workflows, three different questions — none is a god workflow:
   healthy: CodeQL (TypeScript + the workflow files themselves), Semgrep
   (report-only), Gitleaks over full history, aggregated by `analysis-gate`.
 - **Policy** (`.github/workflows/policy.yml`) — does _governance_ hold: the
-  four executable gates plus the PR title against the commitlint rules.
+  five executable gates plus the PR title against the commitlint rules and a
+  finalized PR description — the gate born from #6, which merged with a
+  "(To be finalized)" body and an untouched checklist.
 
 The three layers rest on GitHub rulesets on `main`: pull requests only, the
 required checks above, linear history, up-to-date branches, resolved
