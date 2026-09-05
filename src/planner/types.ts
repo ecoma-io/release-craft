@@ -14,7 +14,7 @@
  * (E-10): attribution and range walks are ancestry-only.
  */
 
-import type { Change } from "@ecoma-io/release-craft/domain";
+import type { Bump, Change, Version } from "@ecoma-io/release-craft/domain";
 
 // ---------------------------------------------------------------------------
 // §2.1 — the planner input boundary (closed, serializable, provider-neutral)
@@ -245,3 +245,129 @@ export type AttributeChanges = (
   input: PlanningInput,
   ranges: readonly LineRange[],
 ) => AttributionOutcome;
+
+// ---------------------------------------------------------------------------
+// §2.13 + §2.5 — tag-history projection and range derivation (PR-3)
+// ---------------------------------------------------------------------------
+
+/** One admissible tag after history projection: the observation plus the
+ * kernel `Version` its name parses to (§2.13). Ordered ascending by version
+ * within a line's history. */
+export interface AdmissibleTag {
+  readonly name: string;
+  readonly commit: string;
+  readonly version: Version;
+}
+
+/** A tag excluded from a line's history — foreign or unattributable (§2.13,
+ * E-06): surfaced in explanation data, never silently dropped. */
+export interface ForeignTag {
+  readonly name: string;
+  readonly commit: string;
+  readonly detail: string;
+}
+
+/** One line's projected release history (§2.13): the admissible tags, in
+ * ascending version order, plus everything the projection kept out. The
+ * history is rebuilt from `TagObservation[]` at plan time — manifest
+ * versions are never consumed as truth (invariant 6, S-03). */
+export interface LineHistory {
+  readonly lineId: string;
+  readonly tags: readonly AdmissibleTag[];
+  readonly foreign: readonly ForeignTag[];
+}
+
+export interface TagHistoryResult {
+  readonly lines: readonly LineHistory[];
+}
+
+/** `history.ts` — projects `TagObservation[]` onto the declared lines
+ * (§2.13): parses names through the kernel's grammar, admits a tag into a
+ * line's history when its version falls in that line's namespace per the
+ * declared configuration, surfaces the rest as foreign. Deterministic. */
+export type LoadTagHistory = (
+  tags: readonly TagObservation[],
+  lines: readonly LineConfig[],
+  policy: PolicyInput,
+) => TagHistoryResult;
+
+/** `history.ts` — derives each line's evaluated range (§2.5) from its
+ * projected history: the latest admissible tag's commit bounds the lower
+ * end (`null` — line birth — when the history is empty); the line's
+ * feed-ref head bounds the upper end. Independent per line (M-07, S-03);
+ * manifest versions never bound a range. */
+export type DeriveRanges = (
+  history: TagHistoryResult,
+  refs: readonly RefObservation[],
+  lines: readonly LineConfig[],
+) => readonly LineRange[];
+
+// ---------------------------------------------------------------------------
+// §2.7 — bump resolution (policy data, never kernel state)
+// ---------------------------------------------------------------------------
+
+/** The commit-type → `Bump` mapping for one `bumpMappingId` (§2.7). The
+ * `default` mapping: `feat` → minor, `fix`/`perf`/`refactor` → patch,
+ * `chore`/`docs`/`ci`/`test` → absent (not release-triggering, S-01, PL-06);
+ * a breaking marker dominates any type. `ChangeSet.of` records the winner. */
+export type BumpMapping = Readonly<Record<string, Bump>>;
+
+/** `decide.ts` — resolves the line's change-set bump (§2.7): `Bump.max`
+ * over the pending release-triggering changes; `undefined` when none qualify
+ * (the no-op record's cause, §2.9). Declared policy mapping only — the
+ * mapping is looked up by `policy.bumpMappingId`. */
+export type ResolveBump = (
+  pending: readonly ParsedCommit[],
+  policy: PolicyInput,
+) => Bump | undefined;
+
+// ---------------------------------------------------------------------------
+// §2.9 — negative outcomes are records, never exceptions
+// ---------------------------------------------------------------------------
+
+/** Every record carries the cause, the evaluated range, and the policy
+ * digest that produced it (invariant 4, amendment A1). */
+interface RecordBase {
+  readonly lineId: string;
+  readonly range: LineRange;
+  readonly policyDigest: string;
+  readonly detail: string;
+}
+
+export type LineDecision =
+  | ({
+      readonly kind: "release";
+      readonly bump: Bump;
+      readonly changes: readonly ParsedCommit[];
+    } & RecordBase)
+  | ({
+      readonly kind: "no-op";
+      readonly cause: "no-release-worthy-changes";
+      readonly ignored: readonly ParsedCommit[];
+    } & RecordBase)
+  | ({
+      readonly kind: "withheld";
+      readonly cause: "policy-filter";
+      readonly withheld: readonly ParsedCommit[];
+    } & RecordBase)
+  | ({
+      readonly kind: "refused";
+      readonly cause: "attribution-ambiguity" | "operator-contradiction" | "kernel-rejection";
+    } & RecordBase)
+  | ({
+      readonly kind: "blocked";
+      readonly cause: "bootstrap-required" | "stale-plan";
+    } & RecordBase);
+
+/** `decide.ts` — turns one line's attribution into its §2.9 decision:
+ * release-worthy pending set → `release` with the resolved bump; empty →
+ * `no-op` enumerating ignored-by-policy commits; policy-filtered deferrals
+ * → `withheld`; attribution ambiguity or operator contradiction → `refused`;
+ * unmet preconditions (bootstrap, staleness) → `blocked`. Kernel
+ * construction rejections surface as the corresponding record — never
+ * re-thrown (§2.9). */
+export type DecideLine = (
+  line: LineAttribution,
+  input: PlanningInput,
+  range: LineRange,
+) => LineDecision;
