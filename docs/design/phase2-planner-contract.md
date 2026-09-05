@@ -310,7 +310,7 @@ The audit's conflict register is resolved in §6.
 
 ---
 
-### Reverse index: contract item → invariants (all 14 items covered)
+### Reverse index: contract item → invariants (items §2.1–§2.14 audited; §2.15–§2.16 added in reconciliation — A1/A2 below)
 
 | Contract item                        | Owned by invariants (evidence)                                                                                                                                                      |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -329,7 +329,7 @@ The audit's conflict register is resolved in §6.
 | tag-history projection               | I6 (primary), I8 (fork 17 next-from-tags), I11 (M-11 target-tag-nonexistence precondition)                                                                                          |
 | plan determinism                     | I2 (primary), I1 (trivial path testable only via determinism, RM §5), I3 (purity corollary)                                                                                         |
 
-**Direction B result: no orphan contract items.** Every one of the 14 items is claimed by at least one invariant. The two weakest-linked items — **self-reference exclusion** (anchored only in I3's stress parenthetical; "no invariant sentence carries it yet", DL D9) and **branch/ref attribution** (I7 plus the M-01 obligation that "no invariant's stress list names", DL D9) — are exactly the two whose invariant anchors need strengthening, not new items.
+**Direction B result: no orphan contract items.** Every one of the 14 items then in the contract (§2.1–§2.14) is claimed by at least one invariant. The two weakest-linked items — **self-reference exclusion** (anchored only in I3's stress parenthetical; "no invariant sentence carries it yet", DL D9) and **branch/ref attribution** (I7 plus the M-01 obligation that "no invariant's stress list names", DL D9) — are exactly the two whose invariant anchors need strengthening, not new items.
 
 ---
 
@@ -338,15 +338,15 @@ The audit's conflict register is resolved in §6.
 **Direction A — invariants without a Phase 2 landing _and_ without an execution deferral:** none strictly; every invariant has a mechanism+items, a Phase 1 landing consumed by Phase 2, or a verbatim "later/execution" deferral (I10–I13, and I1's attempt-and-tag half). Four structural gaps remain inside that clean surface:
 
 - **A1 (primary). Invariant 14 — Phase 2-provable, no contract item.** The fixed list has no propagation item; "the propagation edges and their topological order as declared content" is ownerless. Latent while gated on the package axis ("the matrix stamps the monorepo scenarios hypothetical-future"), but the contract must either add an item or pin the declared-content half to named items before the gate can open.
-- **A2. Invariant 15's output-schema half has no owning item.** The invariant's phase sentence makes "the planner's output schema" the Phase 2 deliverable; the 14 items cover its input side only.
+- **A2. Invariant 15's output-schema half has no owning item.** The invariant's phase sentence makes "the planner's output schema" the Phase 2 deliverable; the 14 items then in the contract cover its input side only.
 - **A3. Invariant 3's purity sentence has no enforcement item.** It distributes over planner input boundary + plan determinism; the only named enforcement is the risk register's "Purity gates + adversarial planner review in Phase 2H" (DL). The contract should name the gate as a deliverable.
 - **A4. Two contract items lack invariant stress coverage** (inverse-direction check): **branch/ref attribution** — M-01 "needs an invariant home … no invariant's stress list names it" (DL D9; fix: add to I4's stress list or extend I6's sentence); **self-reference exclusion** — "no invariant sentence carries it yet" (DL D9). Per ADR2 D3, an item whose invariant anchor is missing cannot be named as making any invariant executable.
 
-**Direction B — contract items no invariant needs:** none (reverse-index table above). All 14 items have owners; A4 records the two whose invariant-side anchoring is thin.
+**Direction B — contract items no invariant needs:** none (reverse-index table above). All 14 items audited (§2.1–§2.14) have owners; §2.15–§2.16, added in reconciliation, map to invariants 14 and 15 (A1/A2). A4 records the two whose invariant-side anchoring is thin.
 
 ---
 
-1. **Fork 16 — where decision records and plans persist** (RM §6 q2: "Resolved by: Phase 2's decision records needing a home — the constraint that it stays outside `core/domain/` (ADR-0001) is already fixed"; ADR2 consequences: "a thin package-layer writer around the planner"). The 14 items cover the planner function, not its persistence seam; the contract must decide whether storage is in scope or explicitly adjacent.
+1. **Fork 16 — where decision records and plans persist** (RM §6 q2: "Resolved by: Phase 2's decision records needing a home — the constraint that it stays outside `core/domain/` (ADR-0001) is already fixed"; ADR2 consequences: "a thin package-layer writer around the planner"). The contract's items cover the planner function, not its persistence seam; the contract must decide whether storage is in scope or explicitly adjacent.
 2. **Fork 8 ownership conflict (minor documentary tension).** RM §6 q4 routes the change-id marker convention to "Phase 1's adapter work"; P1C lists it out of Phase 1's scope ("adapters/Phase 2 decisions respectively"). Phase 1 shipped no adapter, so marker parsing must land with Phase 2 extraction or earlier adapter work — needs explicit routing in the contract.
 3. **Fingerprint input enumeration.** I5's sentence names target version, change sets, base bindings, policy digests; E-04/E-11 stress it. The contract item must pin the exact input tuple, or two implementers can ship different fingerprints for the same plan.
 4. **Prerelease pointer convention** (DL D9): "the planner picks one and records it" — M-08 (pointer moves) vs P-02/P-07 (pointer silent) is a genuine policy fork the contract must close, plus P-02's ladder-override branch that "publishes a version that sorts below the pointer and therefore cannot move it."
@@ -468,7 +468,7 @@ Fork resolver shorthand: **P2** = Phase 2, **P3** = Phase 3, **EXE** = execution
 
 ---
 
-### Table 2 — Open forks (17 in the matrix; §6's "sixteen" is stale) and what Phase 2 owes
+### Table 2 — Open forks (17 in the matrix; release-model.md §6's count corrected by this contract) and what Phase 2 owes
 
 | #   | Subject (one line)                                                                                                                                 | Resolver phase per release-model.md §6 (verbatim basis)                                                                                                                                                                                                                                  | Phase 2 contract: resolve now or carry?                                                                                                                                                                                     |
 | --- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
