@@ -4,33 +4,35 @@ The release engine for the ecoma-io organization: release planning, versioning,
 prerelease lines, lifecycle hooks, artifacts, and publishing — humans, AI agents
 and code all operating the same release machinery.
 
-**Status: foundation, one domain brick, and a decided release model.** The
-engineering substrate ships — toolchain, task graph, architecture governance,
-CI, analysis, executable policy — and the first domain primitive has landed:
-the semantic
-[`Version`](docs/adr/0001-domain-kernel-and-semantic-version.md) value object
-in `core/domain/`, pure, frozen, and archkeep-enforced. Phase 0 has decided
-what a release **is** — the model, vocabulary, invariants, and complexity
-budget in [`release-model.md`](docs/design/release-model.md) and
-[ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md), built on the
+**Status: foundation, the kernel's release values, and a decided release
+model.** The engineering substrate ships — toolchain, task graph,
+architecture governance, CI, analysis, executable policy — and the domain
+kernel now carries its value population: the semantic
+[`Version`](docs/adr/0001-domain-kernel-and-semantic-version.md) plus the five
+release values Phase 0's vocabulary locked — `Change`, `ChangeSet`,
+`ReleaseLine`, `Channel`, `Artifact`
+([ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md)) — pure,
+frozen, and archkeep-enforced behind one barrel entrypoint. The values are
+data, not an engine: no planning, execution, publishing, or provider behavior
+exists yet, and no file in `src/` does release work. Phase 0's model —
+vocabulary, invariants, complexity budget, built on the
 [53-scenario matrix](docs/design/release-scenarios.md) and adversarially
-reviewed — but it is design, not code: no release lines, changesets, hooks,
-artifacts or publishing exist yet, and no file in `src/` does release work.
-Phase 1 (the kernel's remaining value objects) and Phase 2 (the deterministic
-planner) are tracked in [#13](https://github.com/ecoma-io/release-craft/issues/13);
-older work in [#1](https://github.com/ecoma-io/release-craft/issues/1).
+reviewed — is in [`release-model.md`](docs/design/release-model.md); Phase 2
+(the deterministic planner) is tracked in
+[#13](https://github.com/ecoma-io/release-craft/issues/13); older work in
+[#1](https://github.com/ecoma-io/release-craft/issues/1).
 
 ## What is in the tree today
 
-| Layer         | Where                                                                      | What guarantees it                                                                                                                                   |
-| ------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Domain kernel | `core/domain/` — the `Version` value object, nothing else                  | `arch` (zero external imports), domain `typecheck`, `test` via the package surface — [ADR-0001](docs/adr/0001-domain-kernel-and-semantic-version.md) |
-| Release model | `docs/design/` — scenario matrix, model evaluations, synthesis, ADR-0002   | [ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md) — vocabulary and invariants are contract for Phases 1–2                             |
-| Package       | `src/`, `test/` — `@ecoma-io/release-craft`, canary + the kernel re-export | `test`, `build`                                                                                                                                      |
-| Task graph    | `.moon/`, `moon.yml`, `scripts/moon.yml`                                   | every task declares its `inputs`; `pnpm check` composes all gates                                                                                    |
-| Boundary law  | `module-boundaries.config.mjs`                                             | `arch` (archkeep, pinned exact) — gates may never import the package; the kernel may import nothing                                                  |
-| Gate scripts  | `scripts/check-*.mjs` + tests                                              | `policy` workflow, `pnpm check:*`                                                                                                                    |
-| Docs contract | `README`, `CONTRIBUTING`, `AGENTS`, `docs/`                                | `check:docs` — links, anchors and commands resolve                                                                                                   |
+| Layer         | Where                                                                       | What guarantees it                                                                                                                                                                                                     |
+| ------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain kernel | `core/domain/` — `Version` + the five release values, one barrel entrypoint | `arch` (zero external imports), domain `typecheck`, `test` via the package surface — [ADR-0001](docs/adr/0001-domain-kernel-and-semantic-version.md), [ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md) |
+| Release model | `docs/design/` — scenario matrix, model evaluations, synthesis, ADR-0002    | [ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md) — vocabulary and invariants are contract for Phases 1–2                                                                                               |
+| Package       | `src/`, `test/` — `@ecoma-io/release-craft`, canary + the kernel re-export  | `test`, `build`                                                                                                                                                                                                        |
+| Task graph    | `.moon/`, `moon.yml`, `scripts/moon.yml`                                    | every task declares its `inputs`; `pnpm check` composes all gates                                                                                                                                                      |
+| Boundary law  | `module-boundaries.config.mjs`                                              | `arch` (archkeep, pinned exact) — gates may never import the package; the kernel may import nothing                                                                                                                    |
+| Gate scripts  | `scripts/check-*.mjs` + tests                                               | `policy` workflow, `pnpm check:*`                                                                                                                                                                                      |
+| Docs contract | `README`, `CONTRIBUTING`, `AGENTS`, `docs/`                                 | `check:docs` — links, anchors and commands resolve                                                                                                                                                                     |
 
 ## Quickstart
 

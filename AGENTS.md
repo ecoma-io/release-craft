@@ -7,14 +7,18 @@ and are not duplicated here.
 
 ## What this repository is
 
-The release engine of ecoma-io. **It is in foundation phase plus one domain
-brick**: `src/` holds a toolchain canary, and `core/domain/` holds exactly one
-domain primitive — the semantic `Version` value (ADR-0001). Do not implement
-release planning, release lines, changesets, lifecycle hooks, artifacts, GitHub
-Releases, npm publishing, or release-please compatibility in a drive-by change
-— that work lands through its own issue and design, not inside unrelated
-fixes. Do not claim shipped capabilities in docs or code comments; the README's
-status section is the honest one.
+The release engine of ecoma-io. **It is in foundation phase plus the kernel's
+value population**: `src/` holds a toolchain canary, and `core/domain/` holds
+the semantic `Version` value plus the five release values the Phase 0
+vocabulary locked — `Change`, `ChangeSet`, `ReleaseLine`, `Channel`,
+`Artifact` — behind the barrel entrypoint (ADR-0001, ADR-0002). The values are
+data, not an engine: no planning, execution, publishing, or provider behavior
+exists yet. Do not implement release planning, release lines as behavior,
+lifecycle hooks, artifact publishing, GitHub Releases, npm publishing, or
+release-please compatibility in a drive-by change — that work lands through
+its own issue and design, not inside unrelated fixes. Do not claim shipped
+capabilities in docs or code comments; the README's status section is the
+honest one.
 
 ## Commands
 
