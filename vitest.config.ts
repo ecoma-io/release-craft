@@ -23,12 +23,13 @@ export default defineConfig({
   // The package alias is declared once per tool that must resolve it: tsconfig
   // `paths` for tsc and archkeep's resolution, package.json `exports` for the
   // emitted dist, and here for Vitest, which executes the sources and does not
-  // read tsconfig paths. All three name the same kernel file — the contract
-  // itself lives in core/domain/version.ts (ADR-0001).
+  // read tsconfig paths. All three name the same kernel entrypoint — the
+  // barrel core/domain/index.ts (ADR-0001 decision 8, as amended by ADR-0002
+  // decision-log D6); each value's contract lives in its own file behind it.
   resolve: {
     alias: {
       "@ecoma-io/release-craft/domain": fileURLToPath(
-        new URL("./core/domain/version.ts", import.meta.url),
+        new URL("./core/domain/index.ts", import.meta.url),
       ),
     },
   },

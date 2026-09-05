@@ -17,19 +17,19 @@
  * below, under the executable gates.
  */
 
-export {
-  // The domain kernel's public contract. This single re-export is the
-  // `type-package → type-domain` edge archkeep's `type-package` row allows —
-  // the kernel itself imports nothing (see core/domain/version.ts and
-  // module-boundaries.config.mjs). The specifier is the package alias, not a
-  // relative path: archkeep refuses cross-project relative imports before its
-  // constraint table is even read, and this spelling is what makes the edge
-  // visible to that table — resolved from source by tsconfig `paths`, from
-  // dist by the package's own `exports` self-reference, and by Vitest's
-  // `resolve.alias`. ADR-0001 records the seam.
-  InvalidVersionError,
-  Version,
-} from "@ecoma-io/release-craft/domain";
+// The domain kernel's public contract. This single re-export is the
+// `type-package → type-domain` edge archkeep's `type-package` row allows —
+// the kernel itself imports nothing external (see core/domain/ and
+// module-boundaries.config.mjs). The specifier is the package alias, not a
+// relative path: archkeep refuses cross-project relative imports before its
+// constraint table is even read, and this spelling is what makes the edge
+// visible to that table — resolved from source by tsconfig `paths`, from
+// dist by the package's own `exports` self-reference, and by Vitest's
+// `resolve.alias`. The alias names the kernel barrel (core/domain/index.ts —
+// ADR-0001 decision 8 as amended by ADR-0002 decision-log D6), so the public
+// surface here is the barrel's surface, wholesale: one declaration, no drift
+// between what ships and what the contract suite imports.
+export * from "@ecoma-io/release-craft/domain";
 
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;
