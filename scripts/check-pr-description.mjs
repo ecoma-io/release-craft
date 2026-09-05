@@ -19,17 +19,19 @@
 //     "Could this fail silently?", "How was this verified?" — must exist and
 //     carry at least one line of their own (blank lines and HTML comments
 //     are not content);
-//   - no HTML comment may remain outside a fenced code block: the template's
+//   - no HTML comment may remain outside quoted material: the template's
 //     instructions are comments, and a comment left in place marks the
 //     section it sits in as unwritten;
-//   - no placeholder marker ("to be finalized") outside a fenced code block
+//   - no placeholder marker (`to be finalized`) outside quoted material
 //     — the observed #5 signature, kept as data so new observed markers
 //     extend the list instead of forking rules;
-//   - no unchecked task box (`- [ ]`) outside a fenced code block — a merge
+//   - no unchecked task box (`- [ ]`) outside quoted material — a merge
 //     precondition per CONTRIBUTING.md is not left unticked.
 //
-// Fenced code blocks are exempt throughout: quoting the template, or showing
-// a red gate output, is evidence, not scaffolding.
+// Fenced code blocks and inline code spans are exempt throughout: quoting
+// the template, or naming the marker a rule refuses, is evidence, not
+// scaffolding — found live, when this gate's own introduction PR was
+// refused for describing the signature it enforces against.
 //
 // Run context: the policy workflow passes the body through `env:`
 // (`PR_BODY`), never interpolated into the script source. With `PR_BODY`
@@ -90,6 +92,18 @@ function withoutHtmlComments(text) {
 }
 
 /**
+ * Removes inline code spans, replaced by a non-empty stub so a section
+ * whose only content is a quoted string still counts as having content.
+ * Same exemption as fences, at quote size.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function withoutInlineCode(text) {
+  return text.replace(/`[^`\n]*`/g, '""');
+}
+
+/**
  * The section's own text, from its `##` heading to the next heading of any
  * level, or the end of the document.
  *
@@ -125,8 +139,8 @@ export function analyzePrDescription(body) {
     return violations;
   }
 
-  const unfenced = withoutFencedBlocks(body);
-  const bare = withoutHtmlComments(unfenced);
+  const quoted = withoutInlineCode(withoutFencedBlocks(body));
+  const bare = withoutHtmlComments(quoted);
 
   for (const name of REQUIRED_SECTIONS) {
     const text = sectionText(bare, name);
@@ -137,7 +151,7 @@ export function analyzePrDescription(body) {
     }
   }
 
-  if (/<!--[\s\S]*?-->/.test(unfenced)) {
+  if (/<!--[\s\S]*?-->/.test(quoted)) {
     violations.push(
       "an HTML comment remains in the description — template instructions left in place mark their section as unwritten",
     );

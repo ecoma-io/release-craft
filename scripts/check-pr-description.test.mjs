@@ -150,6 +150,26 @@ describe("analyzePrDescription", () => {
     assert.deepEqual(analyzePrDescription(body), []);
   });
 
+  it("exempts the marker named in inline code — quoting a rule is not using it", () => {
+    // Found live: this gate's own introduction PR was refused because its
+    // prose described the `to be finalized` signature it enforces against.
+    const body = goodBody().replace(
+      "Materializes the first domain primitive, behind executable boundaries.",
+      "Guards the failure class whose signature is `to be finalized` in prose.",
+    );
+
+    assert.deepEqual(analyzePrDescription(body), []);
+  });
+
+  it("still refuses the marker when it is raw prose, not quoted", () => {
+    const body = goodBody().replace(
+      "Materializes the first domain primitive, behind executable boundaries.",
+      "The description is to be finalized in a follow-up edit.",
+    );
+
+    assert.ok(analyzePrDescription(body).some((v) => v.includes("to be finalized")));
+  });
+
   it("reports every violation at once, not just the first", () => {
     const violations = analyzePrDescription("To be finalized");
 
