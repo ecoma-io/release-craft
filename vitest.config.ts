@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -16,9 +17,21 @@ import { defineConfig } from "vitest/config";
  * first commit rather than retrofitted — a threshold added later is set to
  * whatever the number already happens to be.
  */
-const SOURCES = ["src/**/*.ts"];
+const SOURCES = ["src/**/*.ts", "core/domain/**/*.ts"];
 
 export default defineConfig({
+  // The package alias is declared once per tool that must resolve it: tsconfig
+  // `paths` for tsc and archkeep's resolution, package.json `exports` for the
+  // emitted dist, and here for Vitest, which executes the sources and does not
+  // read tsconfig paths. All three name the same kernel file — the contract
+  // itself lives in core/domain/version.ts (ADR-0001).
+  resolve: {
+    alias: {
+      "@ecoma-io/release-craft/domain": fileURLToPath(
+        new URL("./core/domain/version.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],

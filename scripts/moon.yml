@@ -8,6 +8,11 @@
 # must not need a bundler to run.
 id: gate-scripts
 language: typescript
+# No fileGroups for cross-project inputs: Moon's `project://` input form
+# requires a dependsOn edge from the consumer, and the boundary law forbids
+# every package ↔ gates edge (archkeep judges declared edges too). The
+# package's workspace-wide tasks therefore cannot name these files as hashed
+# inputs and opt out of caching instead — see moon.yml in the project root.
 tags:
   - type-gates
 

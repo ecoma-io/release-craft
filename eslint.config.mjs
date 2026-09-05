@@ -59,7 +59,7 @@ export default tseslint.config(
   // Shipped module surface: every export crosses a boundary someone will
   // depend on, so its type is written down.
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "core/domain/**/*.ts"],
     rules: {
       "@typescript-eslint/explicit-module-boundary-types": "error",
     },
@@ -108,6 +108,51 @@ export default tseslint.config(
   {
     files: ["src/**/*.ts"],
     rules: { "no-console": "error" },
+  },
+
+  // Domain purity, non-import surface. archkeep owns imports for the kernel
+  // (`bannedExternalImports: ["*"]` on `type-domain` — a Node built-in or npm
+  // package in core/domain/ is an arch verdict), and the project's tsconfig
+  // (`types: []`) removes the Node ambient globals at compile time. What no
+  // import analysis can see is the surface below — `Date`, `process`,
+  // timers, `Math.random` are plain globals, and a `Version` that peeked at
+  // any of them would be non-deterministic with every gate green. This block
+  // is not a second boundary authority; it is the lint gate covering the one
+  // surface archkeep's model is blind to. ADR-0001 records the layering.
+  {
+    files: ["core/domain/**/*.ts"],
+    rules: {
+      "no-console": "error",
+      // The kernel interpolates validated safe integers (`${this.major}`) by
+      // design — the rule's string-only default guards against accidental
+      // object/null interpolation, which cannot happen to a frozen
+      // `readonly number`. Numbers are the kernel's content.
+      "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
+      "no-restricted-globals": [
+        "error",
+        { name: "Date", message: "the domain kernel has no clock — pure values only (ADR-0001)" },
+        { name: "process", message: "the domain kernel has no environment (ADR-0001)" },
+        { name: "Buffer", message: "the domain kernel has no Node globals (ADR-0001)" },
+        { name: "global", message: "the domain kernel has no global state (ADR-0001)" },
+        { name: "globalThis", message: "the domain kernel has no global state (ADR-0001)" },
+        { name: "performance", message: "the domain kernel has no clock (ADR-0001)" },
+        { name: "fetch", message: "the domain kernel has no network (ADR-0001)" },
+        { name: "crypto", message: "the domain kernel has no entropy source (ADR-0001)" },
+        { name: "setTimeout", message: "the domain kernel has no scheduler (ADR-0001)" },
+        { name: "setInterval", message: "the domain kernel has no scheduler (ADR-0001)" },
+        { name: "setImmediate", message: "the domain kernel has no scheduler (ADR-0001)" },
+        { name: "queueMicrotask", message: "the domain kernel has no scheduler (ADR-0001)" },
+        { name: "require", message: "the domain kernel imports nothing dynamically (ADR-0001)" },
+      ],
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "Math",
+          property: "random",
+          message: "the domain kernel has no entropy source — pure values only (ADR-0001)",
+        },
+      ],
+    },
   },
   {
     files: ["scripts/**/*.mjs"],

@@ -4,10 +4,28 @@
 # REPLACES Moon's defaults, so each target names exactly what can move its
 # verdict).
 #
-# Every task is deterministic and cache-safe except `format`, which writes —
-# it alone disables caching, because a cached side effect is a lie.
+# Every task is deterministic and cache-safe except the workspace-wide ones
+# (`format`, `format-check`, `arch`) and the root `lint` — see each task for
+# why its caching is disabled.
 id: release-craft
 language: typescript
+# The package consumes the kernel (src/index.ts re-exports
+# @ecoma-io/release-craft/domain), so the graph must say so: `moon ci --base`
+# affected detection walks exactly these edges. Measured without it, a
+# kernel-only change resolved to ZERO targets for release-craft:test and
+# release-craft:arch in CI — the gates that judge the kernel would silently
+# not run.
+#
+# Only this edge exists, and it points the architecture's way: the package
+# consumes the kernel, never the reverse, and never the gates. Measured,
+# archkeep judges declared edges too — a bookkeeping dependsOn to gate-scripts
+# failed `pnpm arch` outright ("a dependsOn edge crosses a boundary
+# depConstraints forbids"), which is the law working as designed, and Moon
+# refuses `project://gate-scripts` inputs without that edge. So the
+# workspace-wide tasks cannot name the gate scripts as hashed inputs at all;
+# they opt out of caching instead of lying about what they read.
+dependsOn:
+  - core-domain
 tags:
   # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
   # spelled `type-`. module-boundaries.config.mjs judges this tag.
@@ -22,35 +40,36 @@ tasks:
       cache: false
 
   format-check:
-    # The command checks the whole working tree, so the inputs must span every
-    # project — bare globs are filtered to the owning project, and `scripts/`
-    # belongs to gate-scripts (see the arch task below for how that was found).
+    # Checks the whole working tree. The honest inputs for "everything" would
+    # span every project, and Moon cannot express that here: the
+    # `project://project?group=` input form requires a dependsOn edge (which
+    # the boundary law forbids between package and gates), and every glob
+    # pointing into scripts/ — bare, workspace-root `/scripts/**/*`, or the
+    # legacy tilde forms — was measured to hash as nothing. An incomplete
+    # input list under a cache is a stale verdict waiting to happen, so this
+    # task never caches; it is a ~1s check and it runs every time it is asked.
     command: prettier --check .
-    inputs:
-      - "**/*"
-      - "~gate-scripts/**/*"
-      - "/package.json"
-      - "/pnpm-lock.yaml"
-      - "/.prettierrc"
-      - "/.prettierignore"
+    options:
+      cache: false
 
   lint:
+    # `eslint .` runs from the workspace root, so it lints scripts/ and
+    # core/domain/ too — files that cannot be listed as hashed inputs (same
+    # constraint as format-check above). In CI the affected set covers each
+    # project through its own lint task (`...:lint` resolves gate-scripts:lint
+    # and core-domain:lint), so the coverage survives; here the task simply
+    # never serves a verdict from a cache that could not see all of its
+    # subject.
     command: eslint . --max-warnings 0
-    inputs:
-      - "src/**/*"
-      - "test/**/*"
-      - "~gate-scripts/**/*"
-      - "vitest.config.ts"
-      - "/eslint.config.mjs"
-      - "/tsconfig.json"
-      - "/package.json"
-      - "/pnpm-lock.yaml"
+    options:
+      cache: false
 
   typecheck:
     command: tsc --noEmit
     inputs:
       - "src/**/*"
       - "test/**/*"
+      - "project://core-domain?group=sources"
       - "vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -61,6 +80,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
+      - "project://core-domain?group=sources"
       - "/vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -72,6 +92,7 @@ tasks:
     command: tsc -p tsconfig.build.json
     inputs:
       - "src/**/*"
+      - "project://core-domain?group=sources"
       - "/tsconfig.build.json"
       - "/tsconfig.json"
       - "/package.json"
@@ -85,18 +106,23 @@ tasks:
     # must NOT exist — archkeep refuses a root holding both `.moon/` and
     # `archkeep.json` (see docs/bootstrap/ecosystem-analysis.md).
     #
-    # Its inputs span every project's sources: bare globs are filtered to the
-    # owning project, so `scripts/**/*` here reaches nothing (that directory
-    # belongs to gate-scripts) — the `~project` form is how a task names
-    # another project's files. The canary proved the gap: a violating import
-    # under scripts/ left the cached verdict green until this was fixed.
+    # The verdict's subject is the whole tree, and the same constraint as
+    # format-check applies: the gate scripts' files cannot be named as hashed
+    # inputs without the forbidden edge. Caching is off, so the verdict is
+    # recomputed every run — a boundary change anywhere re-judges, and the
+    # cache can never outlive the boundary it judged. Cross-project files the
+    # task genuinely reads are still declared where Moon can hash them: the
+    # kernel through its URI, the config files at the workspace root.
     command: archkeep check
+    options:
+      cache: false
     inputs:
-      - "src/**/*"
-      - "~gate-scripts/**/*"
+      - "project://core-domain?group=sources"
       - "/module-boundaries.config.mjs"
       - "/.moon/workspace.yml"
       - "/moon.yml"
       - "/scripts/moon.yml"
+      - "/core/domain/moon.yml"
+      - "/tsconfig.json"
       - "/package.json"
       - "/pnpm-lock.yaml"

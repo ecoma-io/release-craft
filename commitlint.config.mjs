@@ -12,7 +12,7 @@ export default {
       2,
       "always",
       [
-        "core", // src/ — the future release engine's home; a canary today
+        "core", // the domain layer: src/ (canary) and core/domain/ (the kernel)
         "scripts", // the repository gates under scripts/
         "workspace", // root tooling, package metadata, Moon graph, hooks
         "docs", // documentation, including docs/bootstrap/

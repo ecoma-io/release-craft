@@ -23,6 +23,16 @@
     "email": "john.itvn@gmail.com"
   },
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./domain": {
+      "types": "./dist/core/domain/version.d.ts",
+      "default": "./dist/core/domain/version.js"
+    }
+  },
   "packageManager": "pnpm@11.25.0",
   "engines": {
     "node": ">=24",

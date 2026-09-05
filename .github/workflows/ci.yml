@@ -53,20 +53,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # On pull requests, Moon selects exactly the targets the change can have
-      # moved (through each task's declared inputs); a documentation-only pull
-      # request exits 0 with "No tasks affected" printed — the empty result is
-      # the graph's claim, not an absence of checking. On the branch that
-      # ships, everything runs.
-      - name: Run the gate the change can have moved
-        env:
-          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
-        run: |
-          if [ -n "$MOON_BASE" ]; then
-            pnpm exec moon ci --base="$MOON_BASE" release-craft:format-check
-          else
-            pnpm exec moon run release-craft:format-check
-          fi
+      # Unconditional, deliberately NOT `moon ci --base`: the format check's
+      # subject is the whole tree, and `moon ci` selects targets per affected
+      # project — a change confined to gate-scripts/ would resolve to zero
+      # targets here (the boundary law rightly forbids the package → gates
+      # edge that affected-detection would need), and a badly formatted gate
+      # script would sail through. A whole-tree check runs on every change;
+      # at ~1s it costs nothing.
+      - name: Check the formatting of the whole tree
+        run: pnpm exec moon run release-craft:format-check
 
   lint:
     name: lint
@@ -205,18 +200,16 @@ jobs:
 
       # The boundary law (module-boundaries.config.mjs, over the Moon project
       # graph), judged mechanically rather than remembered during review.
+      # Unconditional, deliberately NOT `moon ci --base`: the verdict's subject
+      # is the whole tree — a change confined to gate-scripts/ would resolve to
+      # zero targets under affected selection (the law forbids the edge that
+      # propagation would need), and a boundary violation is exactly the kind
+      # of finding that must never depend on which project the diff touched.
       # archkeep exit codes: 0 clean · 1 findings · 2 usage · 3 no-verdict —
       # anything but 0 fails this check, because a verdict that could not be
       # reached is never a clean tree.
-      - name: Run the gate the change can have moved
-        env:
-          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
-        run: |
-          if [ -n "$MOON_BASE" ]; then
-            pnpm exec moon ci --base="$MOON_BASE" release-craft:arch
-          else
-            pnpm exec moon run release-craft:arch
-          fi
+      - name: Judge the boundary law over the whole tree
+        run: pnpm exec moon run release-craft:arch
 
   ci-gate:
     name: ci-gate
