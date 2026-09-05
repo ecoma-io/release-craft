@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/ecoma-io/release-craft/security/advisories/new
+    about: >-
+      Report vulnerabilities privately through a GitHub security advisory —
+      never in a public issue. See SECURITY.md for scope and process.

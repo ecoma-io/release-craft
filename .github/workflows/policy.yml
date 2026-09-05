@@ -1,0 +1,80 @@
+name: Policy
+
+# Governance invariants, made executable: the repository does not merely have
+# a policy, it runs one. Where CI (ci.yml) judges the code and Analysis
+# (analysis.yml) judges the repository's security surface, this workflow
+# judges the repository's own contract:
+#
+#   - check:files      — the files governance depends on exist; the files it
+#                        forbids (a root archkeep.json beside `.moon/`) do not;
+#   - check:package    — package.json keeps the bootstrap contract (exact pnpm
+#                        pin, ESM, canonical commands, no runtime dependencies,
+#                        the architecture governor pinned exactly);
+#   - check:workflows  — the security posture CI and Analysis promise is the
+#                        one their YAML actually carries (SHA pins, declared
+#                        permissions, no pull_request_target, no leaked
+#                        credentials);
+#   - check:docs       — the documentation resolves: links, anchors, and every
+#                        `pnpm <command>` a page cites exists as a script;
+#   - PR title         — Conventional Commits, against the same commitlint
+#                        configuration the commit-msg hook runs. The squash
+#                        commit's subject IS the pull request title, so the
+#                        title is the one message the hook never sees.
+#
+# The four file gates are dependency-free Node scripts (see scripts/moon.yml),
+# so they need nothing but the checkout and a pinned Node. The title check is
+# the one step that wants the toolchain: commitlint comes from the
+# lockfile-pinned install, never a floating `dlx` fetch.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check the required and forbidden files
+        run: node scripts/check-required-files.mjs
+
+      - name: Check the package contract
+        run: node scripts/check-package-contract.mjs
+
+      - name: Check workflow safety
+        run: node scripts/check-workflow-safety.mjs
+
+      - name: Check documentation integrity
+        run: node scripts/check-docs-links.mjs
+
+      # The title arrives through the environment, never through ${{ }}
+      # interpolation into the script: interpolation pastes it into the shell
+      # source, where a title containing `$(...)` or a backtick would run.
+      - name: Check the pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '%s\n' "$PR_TITLE" | pnpm exec commitlint

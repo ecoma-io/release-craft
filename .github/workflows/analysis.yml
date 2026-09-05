@@ -1,0 +1,220 @@
+name: Analysis
+
+# Correctness of the repository/system, not of a single change: what the code
+# does (CodeQL), what it does that secrets leaked into the tree (Gitleaks),
+# and what well-known bad patterns exist in it (Semgrep's registry rulesets).
+#
+# Nothing is declared above the jobs except read permissions, and each job's
+# extra write stays at its own job level — a job-level `permissions` block
+# REPLACES the workflow-level one rather than merging with it, so read access
+# has to be restated there.
+#
+# Deliberately absent at bootstrap: the org's own blocking Semgrep rule set
+# (with its fixture-tested rules directory). Registry packs alone are
+# report-only by nature — a pack can gain a rule overnight, so nothing here
+# fails on a registry verdict; the blocking teeth are CodeQL (both legs) and
+# Gitleaks, and the workflow-safety invariants are enforced by the policy
+# workflow's own gate. The rules directory lands in a reviewed PR once this
+# repository has its own rules worth testing.
+on:
+  push:
+    branches: [main]
+  # Unfiltered, like ci.yml: a `branches: [main]` filter would skip this
+  # workflow on a stacked pull request, leaving the required analysis-gate
+  # pending forever rather than failing — a block with nothing to fix.
+  pull_request:
+  # One weekly cron covers every job in this workflow — a workflow's schedule
+  # triggers each job in it, so two crons would mean each analysis running
+  # twice a week under the other's name.
+  schedule:
+    - cron: "13 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: read-all
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            build-mode: none
+          # The `actions` leg reads the workflow files as data and reports the
+          # classes this repository's own consumers will copy from them:
+          # expression injection of `github.event.*` into a run: block, an
+          # untrusted checkout, a job with no permissions.
+          - language: actions
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    # Written as `tag@digest` so the version stays readable while the digest is
+    # what actually resolves — the analyser cannot change under a rerun, and
+    # Renovate bumps both halves together.
+    container:
+      image: semgrep/semgrep:1.176.0@sha256:12672acdb0949e19f9f6a4c2b288edd0b404f268f0ca7738a2c06f372f50362e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Report-only at bootstrap (see the workflow header): registry packs go
+      # to the Security tab via SARIF, where a human triages them; nothing in
+      # this job can turn red on an overnight registry change.
+      - name: Scan
+        run: >-
+          semgrep scan --config p/javascript --config p/github-actions
+          --sarif --output semgrep.sarif
+
+      - name: Upload to code-scanning
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The OSS binary is driven directly rather than through
+      # gitleaks/gitleaks-action: the wrapper demands a license key for any
+      # repository owned by an organization, and secrets other than
+      # GITHUB_TOKEN are not injected on `pull_request` events raised from
+      # forks — so an external contribution would die at the wrapper's
+      # validation, red, before a single commit was scanned. The engine behind
+      # the wrapper is this same binary and needs no secret at all. The
+      # version is pinned and verified against the checksum the release
+      # publishes. Scans the whole history on every trigger, because a secret
+      # removed in a later commit is still a leak while it sits in the tree.
+      #
+      # Exit contract, matching the binary's own: 0 clean · 2 leaks · anything
+      # else a scan that did not complete, which fails loudly — never dressed
+      # up as green.
+      - name: Install gitleaks 8.30.1
+        run: |
+          curl --fail --silent --show-error --location \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz" \
+            --output "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" \
+            | sha256sum --check --strict -
+          tar --extract --gzip --file "$RUNNER_TEMP/gitleaks.tar.gz" --directory "$RUNNER_TEMP" gitleaks
+
+      - name: Scan for secrets
+        env:
+          GITLEAKS_BIN: ${{ runner.temp }}/gitleaks
+          REPORT_PATH: ${{ runner.temp }}/results.sarif
+        run: |
+          rc=0
+          "$GITLEAKS_BIN" detect \
+            --source="$GITHUB_WORKSPACE" \
+            --redact --verbose \
+            --exit-code=2 \
+            --report-format=sarif \
+            --report-path="$REPORT_PATH" || rc=$?
+          case "$rc" in
+            0)
+              echo "No leaks detected"
+              ;;
+            2)
+              {
+                echo "## Gitleaks detected secrets"
+                echo ""
+                echo "| Rule | File | Line | Commit |"
+                echo "| ---- | ---- | ---- | ------ |"
+              } >> "$GITHUB_STEP_SUMMARY"
+              jq -r '
+                .runs[0].results[]
+                | [
+                    .ruleId,
+                    .locations[0].physicalLocation.artifactLocation.uri,
+                    (.locations[0].physicalLocation.region.startLine | tostring),
+                    .partialFingerprints.commitSha
+                  ]
+                | @tsv' "$REPORT_PATH" \
+                | awk -F "\t" \
+                  '{ printf "| `%s` | `%s` | %s | %s |\n", $1, $2, $3, substr($4, 1, 12) }' \
+                >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Leaks detected — every finding is printed above and in the job summary."
+              exit 2
+              ;;
+            *)
+              echo "::error::gitleaks exited with code $rc — the scan did not complete, and an incomplete scan is not a clean pass."
+              exit "$rc"
+              ;;
+          esac
+
+      # Uploaded unconditionally: a finding's machine-readable report is
+      # useful long after its log lines and job-summary table scroll away.
+      - name: Upload the findings report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitleaks-results.sarif
+          path: ${{ runner.temp }}/results.sarif
+          if-no-files-found: ignore
+
+  analysis-gate:
+    name: analysis-gate
+    needs: [codeql, semgrep, gitleaks]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Allowlist guard, not deny-list: see ci-gate in ci.yml for the measured
+      # reason. Empty `needs` results fail; anything that is not `success`
+      # fails; the step runs unconditionally.
+      - name: Fail unless every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs results: ${RESULTS:-<empty>}"
+          if [ -z "$RESULTS" ]; then
+            echo "::error::analysis-gate got no result from its dependencies. Refusing to pass."
+            exit 1
+          fi
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a required job reported '$result' rather than success."
+              exit 1
+            fi
+          done
+          echo "Every required job succeeded."

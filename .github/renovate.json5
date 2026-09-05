@@ -1,0 +1,48 @@
+// Dependency updates arrive through Renovate, never by hand — the flow is
+// documented in CONTRIBUTING.md. Two org-wide floors hold here:
+//   - a release must have existed for 3 days before it enters this tree
+//     (digest-pinned actions and the minimum age together keep supply-chain
+//     surprises out), except where a rule says otherwise;
+//   - every GitHub Action stays digest-pinned; Renovate moves the SHA and the
+//     `# vX.Y.Z` comment as one commit, which is what keeps the comment true.
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended", "helpers:pinGitHubActionDigests"],
+  dependencyDashboard: true,
+  timezone: "Asia/Ho_Chi_Minh",
+  schedule: ["before 6am on monday"],
+  minimumReleaseAge: "3 days",
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 6am on monday"],
+    // Lockfile maintenance rewrites pnpm-lock.yaml without version changes;
+    // a chore it is, in this repo's own commitlint vocabulary.
+    semanticCommitType: "chore",
+    semanticCommitScope: "deps",
+  },
+  semanticCommits: "enabled",
+  packageRules: [
+    {
+      description: "Actions and workflows are repository plumbing, not product: chore(ci).",
+      matchManagers: ["github-actions"],
+      semanticCommitType: "chore",
+      semanticCommitScope: "ci",
+    },
+    {
+      description: "Everything from the npm registry is toolchain: chore(deps).",
+      matchManagers: ["npm"],
+      semanticCommitType: "chore",
+      semanticCommitScope: "deps",
+    },
+    {
+      description: "The architecture governor is pinned exact and ships fast — its releases are the one thing this repo must not wait three days for. Renovate moves the pin; a human reviews the verdict diff in the PR.",
+      matchPackageNames: ["@ecoma-io/archkeep"],
+      minimumReleaseAge: 0,
+    },
+    {
+      description: "TypeScript 6+ is a toolchain-wide migration, not an automated bump; hold until a reviewed change declares otherwise.",
+      matchPackageNames: ["typescript"],
+      allowedVersions: "<7",
+    },
+  ],
+}

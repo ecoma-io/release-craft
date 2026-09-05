@@ -1,0 +1,102 @@
+# The release-craft project — the workspace root. Tasks are declared here
+# explicitly rather than inherited: with one package there is no inheritance to
+# amortise, and explicit tasks keep the inputs honest (declaring `inputs:`
+# REPLACES Moon's defaults, so each target names exactly what can move its
+# verdict).
+#
+# Every task is deterministic and cache-safe except `format`, which writes —
+# it alone disables caching, because a cached side effect is a lie.
+id: release-craft
+language: typescript
+tags:
+  # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
+  # spelled `type-`. module-boundaries.config.mjs judges this tag.
+  - type-package
+
+tasks:
+  format:
+    command: prettier --write .
+    options:
+      # Writes to the working tree — a side effect. Moon must re-run it every
+      # time; caching a formatter is how a stale tree gets called formatted.
+      cache: false
+
+  format-check:
+    # The command checks the whole working tree, so the inputs must span every
+    # project — bare globs are filtered to the owning project, and `scripts/`
+    # belongs to gate-scripts (see the arch task below for how that was found).
+    command: prettier --check .
+    inputs:
+      - "**/*"
+      - "~gate-scripts/**/*"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+      - "/.prettierrc"
+      - "/.prettierignore"
+
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "src/**/*"
+      - "test/**/*"
+      - "~gate-scripts/**/*"
+      - "vitest.config.ts"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+
+  typecheck:
+    command: tsc --noEmit
+    inputs:
+      - "src/**/*"
+      - "test/**/*"
+      - "vitest.config.ts"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+
+  test:
+    command: vitest run --coverage
+    inputs:
+      - "src/**/*"
+      - "test/**/*"
+      - "/vitest.config.ts"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+    outputs:
+      - "coverage/**"
+
+  build:
+    command: tsc -p tsconfig.build.json
+    inputs:
+      - "src/**/*"
+      - "/tsconfig.build.json"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+    outputs:
+      - "dist/**"
+
+  arch:
+    # archkeep reads this workspace's project graph through its Moon provider
+    # and judges it against module-boundaries.config.mjs. A root archkeep.json
+    # must NOT exist — archkeep refuses a root holding both `.moon/` and
+    # `archkeep.json` (see docs/bootstrap/ecosystem-analysis.md).
+    #
+    # Its inputs span every project's sources: bare globs are filtered to the
+    # owning project, so `scripts/**/*` here reaches nothing (that directory
+    # belongs to gate-scripts) — the `~project` form is how a task names
+    # another project's files. The canary proved the gap: a violating import
+    # under scripts/ left the cached verdict green until this was fixed.
+    command: archkeep check
+    inputs:
+      - "src/**/*"
+      - "~gate-scripts/**/*"
+      - "/module-boundaries.config.mjs"
+      - "/.moon/workspace.yml"
+      - "/moon.yml"
+      - "/scripts/moon.yml"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

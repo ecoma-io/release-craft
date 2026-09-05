@@ -1,0 +1,56 @@
+# The gate-scripts project — the repository's own enforcement code, declared
+# as a project (not left as a verification-free zone beside the graph) so its
+# targets run under the same affected selection as everything else, and so the
+# type-gates boundary in module-boundaries.config.mjs applies to it.
+#
+# Its tests run under `node --test` rather than Vitest on purpose: the gates
+# are plain .mjs with zero dependencies, and the suite that proves them honest
+# must not need a bundler to run.
+id: gate-scripts
+language: typescript
+tags:
+  - type-gates
+
+tasks:
+  lint:
+    # The root config files are linted here because no project owns them — the
+    # same convention the org's Moon repos use for their gate-scripts project.
+    command: eslint . ../eslint.config.mjs ../commitlint.config.mjs ../module-boundaries.config.mjs --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/commitlint.config.mjs"
+      - "/module-boundaries.config.mjs"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "/tsconfig.json"
+      - "/eslint.config.mjs"
+      - "/commitlint.config.mjs"
+      - "/module-boundaries.config.mjs"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+
+  test:
+    # A glob that matches nothing is a suite nobody ran — the zero-match is
+    # refused loudly instead of passing silently, the same discipline the
+    # vitest config's passWithNoTests: false applies to the main suite.
+    # `script:` (not `command:`) because Moon only parses single commands; raw
+    # shell belongs here.
+    script: |
+      set -eu
+      cd "$projectRoot"
+      tests="$(find . -name '*.test.mjs' -not -path './node_modules/*')"
+      if [ -z "$tests" ]; then
+        echo "no gate tests matched — refusing to pass an empty suite" >&2
+        exit 1
+      fi
+      echo "$tests" | xargs node --test
+    inputs:
+      - "**/*"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

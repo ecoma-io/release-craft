@@ -1,0 +1,5 @@
+# Normalise line endings in the repository; check out LF everywhere.
+* text=auto eol=lf
+
+# The lockfile is generated — collapse it in diffs and reviews.
+pnpm-lock.yaml linguist-generated=true -diff

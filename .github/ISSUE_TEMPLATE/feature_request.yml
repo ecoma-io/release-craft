@@ -1,0 +1,53 @@
+name: Feature request
+description: Propose a capability for the release engine or its foundation.
+title: "feat: "
+labels: ["enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The release engine (planning, versioning, prerelease lines, hooks,
+        artifacts, publishing) is this repository's purpose but is not
+        implemented yet — proposals for it are welcome and belong here. The
+        README's status section states what exists today; anything else is a
+        request, not a bug.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues for a duplicate
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can't you do, or what does the current behaviour cost you? Describe the problem first — not the design you have in mind for it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What would success look like, observable from the outside?
+    validations:
+      required: true
+  - type: textarea
+    id: silent-failure
+    attributes:
+      label: How could this fail silently?
+      description: The org's standing question. A release tool that lies quietly is worse than one that fails loudly — where in your proposal could that happen, and what would catch it?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to contribute this behind a reviewed pull request

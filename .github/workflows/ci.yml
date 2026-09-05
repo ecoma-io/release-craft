@@ -1,0 +1,255 @@
+name: CI
+
+# Correctness of the code. Analysis (.github/workflows/analysis.yml) owns
+# "correctness of the repository"; policy (.github/workflows/policy.yml) owns
+# "correctness of the governance".
+#
+# The six canonical gates run as six jobs so the required status checks carry
+# exactly the names a ruleset should require: format, lint, typecheck, test,
+# build, arch — one question per check, answerable at a glance. `ci-gate` sits
+# above them as the single stable aggregate a future ruleset edit can lean on
+# without re-listing job names.
+on:
+  # Deliberately NOT filtered to `branches: [main]`. A filter there skips CI
+  # entirely on a stacked pull request — one targeting another feature branch
+  # — so the branch would merge having never been checked, and every required
+  # check would sit pending forever on it.
+  pull_request:
+  # `main` is the one development line; its pushes run the full suite so a red
+  # push names its own commit.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: format
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Moon's affected detection (`moon ci --base`) needs the base commit
+          # to exist; a shallow clone lacks it and fails the whole target. Full
+          # history is Moon's own recommended CI setup.
+          fetch-depth: 0
+
+      # Reads the pnpm version from `packageManager` in package.json, so the
+      # runner uses the same pnpm a contributor's Corepack fetches.
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # On pull requests, Moon selects exactly the targets the change can have
+      # moved (through each task's declared inputs); a documentation-only pull
+      # request exits 0 with "No tasks affected" printed — the empty result is
+      # the graph's claim, not an absence of checking. On the branch that
+      # ships, everything runs.
+      - name: Run the gate the change can have moved
+        env:
+          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "$MOON_BASE" ]; then
+            pnpm exec moon ci --base="$MOON_BASE" release-craft:format-check
+          else
+            pnpm exec moon run release-craft:format-check
+          fi
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run the gate the change can have moved
+        env:
+          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "$MOON_BASE" ]; then
+            pnpm exec moon ci --base="$MOON_BASE" ...:lint
+          else
+            pnpm exec moon run ...:lint
+          fi
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run the gate the change can have moved
+        env:
+          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "$MOON_BASE" ]; then
+            pnpm exec moon ci --base="$MOON_BASE" ...:typecheck
+          else
+            pnpm exec moon run ...:typecheck
+          fi
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run the gate the change can have moved
+        env:
+          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "$MOON_BASE" ]; then
+            pnpm exec moon ci --base="$MOON_BASE" ...:test
+          else
+            pnpm exec moon run ...:test
+          fi
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run the gate the change can have moved
+        env:
+          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "$MOON_BASE" ]; then
+            pnpm exec moon ci --base="$MOON_BASE" release-craft:build
+          else
+            pnpm exec moon run release-craft:build
+          fi
+
+  arch:
+    name: arch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The boundary law (module-boundaries.config.mjs, over the Moon project
+      # graph), judged mechanically rather than remembered during review.
+      # archkeep exit codes: 0 clean · 1 findings · 2 usage · 3 no-verdict —
+      # anything but 0 fails this check, because a verdict that could not be
+      # reached is never a clean tree.
+      - name: Run the gate the change can have moved
+        env:
+          MOON_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          if [ -n "$MOON_BASE" ]; then
+            pnpm exec moon ci --base="$MOON_BASE" release-craft:arch
+          else
+            pnpm exec moon run release-craft:arch
+          fi
+
+  ci-gate:
+    name: ci-gate
+    # The stable aggregate: add a job to `needs` and the gate tightens without
+    # anyone editing repository settings — and forgetting to add it is the
+    # only way to widen what green means, which is visible in this file.
+    needs: [format, lint, typecheck, test, build, arch]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The gate asserts every dependency reached `success`, rather than
+      # enumerating the ways one can fail — they are not the same claim, and
+      # the difference was measured in the org: a deny-list of known-bad
+      # states fails OPEN on any state it does not know (an infrastructure
+      # outage once made `needs` arrive carrying no result at all, and a
+      # contains(...)-style guard reported green over a red pipeline). Name
+      # the one state that means "safe", let everything else fail, and run
+      # the step unconditionally — a step that decides whether to run is a
+      # step that can decline to.
+      - name: Fail unless every job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs results: ${RESULTS:-<empty>}"
+          if [ -z "$RESULTS" ]; then
+            echo "::error::ci-gate got no result from its dependencies. Refusing to pass."
+            exit 1
+          fi
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a required job reported '$result' rather than success."
+              exit 1
+            fi
+          done
+          echo "Every required job succeeded."

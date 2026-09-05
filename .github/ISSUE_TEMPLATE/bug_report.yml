@@ -1,0 +1,75 @@
+name: Bug report
+description: Something behaves differently from its documented contract.
+title: "bug: "
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing:
+
+        - **Security vulnerabilities never go here.** Report them through a
+          [private security advisory](https://github.com/ecoma-io/release-craft/security/advisories/new).
+        - Search existing issues first — this form exists to keep duplicates out.
+        - Write answers in whatever language you think in; the title and labels
+          are data the maintainer sorts on and stay English.
+        - Report behaviour, not interpretation: what you did, what happened, and
+          what you expected — keep observed and inferred apart, and never
+          fabricate a reproduction step you did not run.
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues for a duplicate
+          required: true
+        - label: This is not a security vulnerability
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which layer of the repository owns this?
+      options:
+        - Toolchain (build · test · lint · format · typecheck)
+        - CI workflows
+        - Policy gates (scripts/check-*.mjs)
+        - Moon task graph
+        - Architecture boundary (archkeep)
+        - Documentation
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: The behaviour you observed, without interpretation.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: The documented contract this contradicts — link the doc or gate that states it.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Exactly what you ran. If it cannot be reproduced, say so plainly rather than guessing.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of the commands below, plus OS.
+      render: text
+      value: |
+        node --version
+        pnpm --version
+        pnpm exec moon --version
+    validations:
+      required: true

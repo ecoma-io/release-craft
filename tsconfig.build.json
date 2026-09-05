@@ -1,0 +1,13 @@
+{
+  "$comment": "The emit half of the typecheck-only root config: the same strict baseline, emitting ESM plus declarations to dist/ so CI proves the TypeScript pipeline produces loadable output — not a bundler, not a build system, just the compiler and what it must do for a library package. Tests are not shipped. `allowImportingTsExtensions` is a noEmit-only flag and is turned off here explicitly; src/ has no relative imports to break anyway while the tree is a canary.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "noEmit": false,
+    "outDir": "dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"]
+}

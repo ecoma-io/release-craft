@@ -1,0 +1,25 @@
+# Moonrepo workspace configuration for the release-craft repository.
+#
+# An explicit map rather than a glob, mirroring the org-wide Moon convention:
+# a `moon.yml` under a directory that is not listed here is invisible to
+# `moon projects` — a project that silently drops out of the graph is invisible
+# to every other gate too. The pre-push hook's `moon projects` step and the
+# `check:files` gate both pin this file as the authoritative project map.
+#
+# Two projects only, because the tree has exactly two populations of code:
+#
+#   - release-craft (the workspace root) — the package itself: sources, tests,
+#     and the toolchain targets that judge them. `src/` is a canary today; the
+#     release engine will grow here.
+#   - gate-scripts (scripts/) — the repository's own gates. They are a project
+#     of their own so the boundary between "code that ships" and "code that
+#     judges" is enforceable (module-boundaries.config.mjs) rather than
+#     remembered.
+projects:
+  release-craft: "."
+  gate-scripts: "scripts"
+vcs:
+  provider: other
+  # The repository uses `main`. Without this Moon defaults to `master` and
+  # fails on push events to `main` with "fatal: ambiguous argument 'master'".
+  defaultBranch: main

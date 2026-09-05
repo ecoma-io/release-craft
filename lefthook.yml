@@ -1,0 +1,47 @@
+# Local gates, version-controlled rather than left to whatever hooks a
+# contributor's own git config happens to have. `pnpm install` runs `prepare`
+# (`lefthook install`), which wires the jobs below into `.git/hooks` for
+# everyone who clones the repository — a hook that only exists on one machine
+# catches nothing on anyone else's.
+#
+# These hooks exist to catch the mistakes that have nothing to do with what a
+# commit changes: a message conventional-commits can't parse, a staged file
+# that isn't formatted or doesn't lint, and the repository-level policy
+# violations that are tree facts rather than staged-path facts. Everything that
+# depends on *what* changed — typecheck, the test suite, the build, the
+# architecture boundary — stays in CI (.github/workflows/ci.yml), never here.
+# A hook slow enough to notice is a hook contributors learn to skip with
+# --no-verify, which defeats it more thoroughly than not having it at all.
+
+pre-commit:
+  parallel: false
+  commands:
+    format:
+      glob: "*.{ts,mts,cts,js,mjs,cjs,json,jsonc,json5,md,yml,yaml}"
+      run: pnpm exec prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+    lint:
+      glob: "*.{ts,mts,cts,js,mjs,cjs}"
+      run: pnpm exec eslint --no-warn-ignored --max-warnings 0 {staged_files}
+    policy:
+      # Tree-level, not staged-path-level: a missing required file, a package
+      # metadata drift or an unsafe workflow is a failure of the tree, not of
+      # one staged path — a glob would let exactly the commit that only touches
+      # package.json through. The four gates together read a few small files
+      # and finish in well under a second.
+      run: pnpm check:policy
+
+pre-push:
+  parallel: false
+  commands:
+    test:
+      run: pnpm test
+    graph:
+      # Cheap proof the Moon workspace still resolves: a project that has
+      # dropped out of the graph is invisible to every other gate.
+      run: pnpm exec moon projects
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm exec commitlint --edit {1}

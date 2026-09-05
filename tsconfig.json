@@ -1,0 +1,24 @@
+{
+  "$comment": "The typechecking baseline for the TypeScript sources — it never emits (`pnpm typecheck` is `tsc --noEmit`); the emit half lives in tsconfig.build.json. Every exactness flag that has bitten a TypeScript codebase is on from the first commit, because a strictness flag added later is set to whatever the code already happens to be. The gate scripts under scripts/ are plain .mjs checked through their own config (scripts/tsconfig.json).",
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

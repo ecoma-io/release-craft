@@ -1,0 +1,14 @@
+{
+  "$comment": "The repository gates under scripts/ are plain Node .mjs — typed by JSDoc and checked with allowJs/checkJs, the org-wide pattern for gates that must run with zero dependencies. They are a separate Moon project (gate-scripts, see scripts/moon.yml) and must never import src/; module-boundaries.config.mjs is the law that says so.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": [
+    "**/*.mjs",
+    "../eslint.config.mjs",
+    "../commitlint.config.mjs",
+    "../module-boundaries.config.mjs"
+  ]
+}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.moon/cache/
+pnpm-lock.yaml
+
+# Verbatim third-party legal text — reflowing it would alter a document that is
+# only valid unmodified.
+LICENSE

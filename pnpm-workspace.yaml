@@ -1,0 +1,21 @@
+# Single-package workspace: the root package is the only package. This file
+# exists for the pnpm-side policy pnpm 11 reads from here, not for a `packages/`
+# layout — decomposition waits for domain justification (see
+# docs/bootstrap/ecosystem-analysis.md).
+
+allowBuilds:
+  # lefthook's postinstall only wires git hooks — the `prepare` script in
+  # package.json already does that for every real install, and CI (which never
+  # commits) installs with `--frozen-lockfile` and no hooks to wire. A recorded
+  # "no" keeps pnpm 11's build-script gate an explicit decision instead of an
+  # install failure on an unlisted script.
+  lefthook: false
+
+minimumReleaseAgeExclude:
+  # The architecture governor itself. Renovate waives its 3-day release-age
+  # floor for @ecoma-io/archkeep (see .github/renovate.json5) because boundary
+  # enforcement should not wait days behind a tool that gates it — pnpm's own
+  # release-age floor must waive the same versions or the waived bump cannot
+  # install. The list is version-specific on purpose: a new pin edits this line
+  # in the same commit.
+  - "@ecoma-io/archkeep@0.24.1"
