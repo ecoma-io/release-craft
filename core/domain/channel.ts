@@ -109,7 +109,20 @@ function targetFrom(input: unknown): ChannelTarget | null {
   if (!(version instanceof Version)) {
     throw new InvalidChannelError(input, "a channel target's version must be a Version value");
   }
-  return Object.freeze({ line: targetLine(source.line), version });
+  try {
+    return Object.freeze({ line: targetLine(source.line), version });
+  } catch (error) {
+    // A field-level rejection carries the fragment it named; the error
+    // contract is the FULL input on every error (phase1-contracts design
+    // rule 5), so re-wrap with the same reason under the target argument
+    // handed to the door — exactly as Version.parse re-wraps component
+    // rejections. Only targetLine can throw here, and it always carries
+    // the field fragment.
+    if (error instanceof InvalidChannelError) {
+      throw new InvalidChannelError(input, error.reason);
+    }
+    throw error;
+  }
 }
 
 /** Validates the target's line by the same opaque-string rule as the channel id. */

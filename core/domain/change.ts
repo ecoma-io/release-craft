@@ -130,7 +130,21 @@ export class Change {
    * {@link InvalidChangeError} carrying the offending input.
    */
   public static of(id: string, lineage?: ChangeLineage): Change {
-    return new Change(opaque(id, "id"), lineageFrom(lineage));
+    const validId = opaque(id, "id");
+    try {
+      return new Change(validId, lineageFrom(lineage));
+    } catch (error) {
+      // A field-level rejection carries the fragment it named; the error
+      // contract is the FULL input on every error (phase1-contracts design
+      // rule 5), so re-wrap with the same reason under the lineage argument
+      // handed to this door — exactly as Version.parse re-wraps component
+      // rejections. The id rejection above is already full-input and
+      // propagates untouched.
+      if (error instanceof InvalidChangeError && error.input !== lineage) {
+        throw new InvalidChangeError(lineage, error.reason);
+      }
+      throw error;
+    }
   }
 
   /**
