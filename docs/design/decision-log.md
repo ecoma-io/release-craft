@@ -33,21 +33,24 @@ against lands in `release-model.md` once the scenario matrix exists.
 
 ## Decisions accepted
 
-| #   | Decision                                                                         | Evidence             | Consequence                                            |
-| --- | -------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------ |
-| D0  | Phase 0 ships research/design documents only; no production release-engine code. | Issue #13 scope.     | The kernel's population stays `Version` until Phase 1. |
-| D1  | Work proceeds through PRs per phase (Phase 0 = PR-A), main stays protected.      | Repository rulesets. | Serial phase gates; no direct pushes.                  |
+| #   | Decision                                                                         | Evidence                                                                                   | Consequence                                                                                              |
+| --- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| D0  | Phase 0 ships research/design documents only; no production release-engine code. | Issue #13 scope.                                                                           | The kernel's population stays `Version` until Phase 1.                                                   |
+| D1  | Work proceeds through PRs per phase (Phase 0 = PR-A), main stays protected.      | Repository rulesets.                                                                       | Serial phase gates; no direct pushes.                                                                    |
+| D2  | Prose carries no numeric inventory claims it cannot keep.                        | Audit §3.7 — the stale-count class; ADR-0001's "75 tests" was verified false (vitest: 74). | Counts live in the owning artifact; every PR that changes a counted thing sweeps the audit's §3.7 table. |
+| D3  | Any new source root changes `SOURCES` in the same PR.                            | Audit §3.5 — a root outside the two globs escapes every coverage threshold silently.       | Recorded as a Phase 1/2 checklist item; candidate hardening deferred with evidence.                      |
 
 ## Decisions unresolved
 
-| #   | Question                                                                                                     | Blocked on                       |
-| --- | ------------------------------------------------------------------------------------------------------------ | -------------------------------- |
-| U1  | Which mental model survives the scenario matrix (A / B / C / other)?                                         | Scenario matrix (Phase 0D).      |
-| U2  | Is `Branch ≠ ReleaseLine ≠ Channel` the right split?                                                         | Taxonomy (0C) + scenarios.       |
-| U3  | Is prerelease a version flag, a channel-stream position, or both?                                            | Taxonomy + prerelease scenarios. |
-| U4  | Which primitives enter Phase 1 (Change, ChangeSet, ReleaseLine, ReleasePlan, Release, Artifact, Transition)? | Model comparison (0E).           |
-| U5  | Does the planning engine live in the dependency-pure zone (`core/`) or the package layer (`src/`)?           | Phase 0 audit + model.           |
-| U6  | What is the compatibility boundary with release-please?                                                      | Behavioral audit (0B).           |
+| #   | Question                                                                                                     | Blocked on                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| U1  | Which mental model survives the scenario matrix (A / B / C / other)?                                         | Scenario matrix (Phase 0D).                                                                                         |
+| U2  | Is `Branch ≠ ReleaseLine ≠ Channel` the right split?                                                         | Taxonomy R1 says three concepts; scenarios confirm or break it.                                                     |
+| U3  | Is prerelease a version flag, a channel-stream position, or both?                                            | Taxonomy R3 says "both, split by layer"; prerelease scenarios decide.                                               |
+| U4  | Which primitives enter Phase 1 (Change, ChangeSet, ReleaseLine, ReleasePlan, Release, Artifact, Transition)? | Model comparison (0E); taxonomy §4 proposes six core concepts.                                                      |
+| U5  | Does the planning engine live in the dependency-pure zone (`core/`) or the package layer (`src/`)?           | Audit §3.4 leans route 1 (in-package, `type-package` row already allows it, zero structural cost); final after 0E.  |
+| U6  | What is the compatibility boundary with release-please?                                                      | Behavioral audit (0B) — delivered, awaiting synthesis into `release-model.md`.                                      |
+| U7  | Barrel (`core/domain/index.ts`) or per-primitive subpaths for the kernel entrypoint?                         | Audit §3.1 — decided in the first PR adding a second primitive; barrel amends ADR-0001 decision 8, subpaths do not. |
 
 ## Rejected alternatives
 
