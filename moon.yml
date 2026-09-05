@@ -8,6 +8,15 @@
 # it alone disables caching, because a cached side effect is a lie.
 id: release-craft
 language: typescript
+# The package consumes the kernel (src/index.ts re-exports
+# @ecoma-io/release-craft/domain), so the graph must say so: `moon ci --base`
+# affected detection walks exactly these edges. Measured without it, a
+# kernel-only change resolved to ZERO targets for release-craft:test and
+# release-craft:arch in CI — the gates that judge the kernel would silently
+# not run. The declared edge is also the architectural truth: the kernel
+# declares no dependency back.
+deps:
+  - core-domain
 tags:
   # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
   # spelled `type-`. module-boundaries.config.mjs judges this tag.
@@ -28,8 +37,8 @@ tasks:
     command: prettier --check .
     inputs:
       - "**/*"
-      - "~gate-scripts/**/*"
-      - "~core-domain/**/*"
+      - "~gate-scripts:sources"
+      - "~core-domain:sources"
       - "/package.json"
       - "/pnpm-lock.yaml"
       - "/.prettierrc"
@@ -40,8 +49,8 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
-      - "~gate-scripts/**/*"
-      - "~core-domain/**/*"
+      - "~gate-scripts:sources"
+      - "~core-domain:sources"
       - "vitest.config.ts"
       - "/eslint.config.mjs"
       - "/tsconfig.json"
@@ -53,7 +62,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
-      - "~core-domain/**/*"
+      - "~core-domain:sources"
       - "vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -64,7 +73,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
-      - "~core-domain/**/*"
+      - "~core-domain:sources"
       - "/vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -76,7 +85,7 @@ tasks:
     command: tsc -p tsconfig.build.json
     inputs:
       - "src/**/*"
-      - "~core-domain/**/*"
+      - "~core-domain:sources"
       - "/tsconfig.build.json"
       - "/tsconfig.json"
       - "/package.json"
@@ -92,16 +101,17 @@ tasks:
     #
     # Its inputs span every project's sources: bare globs are filtered to the
     # owning project, so `scripts/**/*` here reaches nothing (that directory
-    # belongs to gate-scripts) — the `~project` form is how a task names
-    # another project's files. The canary proved the gap: a violating import
-    # under scripts/ left the cached verdict green until this was fixed.
-    # `~core-domain/**/*` is the same lesson applied to the kernel: a boundary
-    # change inside core/domain/ must re-run this verdict.
+    # belongs to gate-scripts). Cross-project files are named with the
+    # `~project:fileGroup` form — measured with a verified `git diff` in the
+    # loop, the plain-glob form `~project/**/*` matched nothing and a change
+    # under scripts/ or core/domain/ left this verdict cached; the group form
+    # is what actually invalidates. A boundary change inside core/domain/ must
+    # re-run this verdict, or the cache would outlive the boundary it judged.
     command: archkeep check
     inputs:
       - "src/**/*"
-      - "~gate-scripts/**/*"
-      - "~core-domain/**/*"
+      - "~gate-scripts:sources"
+      - "~core-domain:sources"
       - "/module-boundaries.config.mjs"
       - "/.moon/workspace.yml"
       - "/moon.yml"

@@ -8,6 +8,13 @@
 # must not need a bundler to run.
 id: gate-scripts
 language: typescript
+fileGroups:
+  # The named group the package's tasks point at (`~gate-scripts:sources`).
+  # The plain-glob form `~gate-scripts/**/*` matched nothing: a verified edit
+  # under scripts/ left release-craft:lint cached (measured with a `git diff`
+  # in the loop), so the group form is what the invalidation actually runs on.
+  sources:
+    - "**/*"
 tags:
   - type-gates
 

@@ -20,6 +20,15 @@
 # read live at the workspace root, hence the `/`-prefixed inputs.
 id: core-domain
 language: typescript
+fileGroups:
+  # The named group the consumers' tasks point at (`~core-domain:sources`).
+  # The plain-glob form `~core-domain/**/*` in a consumer's inputs matched
+  # nothing: files changed under core/domain/ left release-craft:test and
+  # release-craft:arch cached (measured with a verified `git diff`), so the
+  # group form is what the invalidation actually runs on.
+  sources:
+    - "**/*"
+
 tags:
   # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
   # spelled `type-`. module-boundaries.config.mjs judges this tag.
