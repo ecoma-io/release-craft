@@ -29,6 +29,7 @@ tasks:
     inputs:
       - "**/*"
       - "~gate-scripts/**/*"
+      - "~core-domain/**/*"
       - "/package.json"
       - "/pnpm-lock.yaml"
       - "/.prettierrc"
@@ -40,6 +41,7 @@ tasks:
       - "src/**/*"
       - "test/**/*"
       - "~gate-scripts/**/*"
+      - "~core-domain/**/*"
       - "vitest.config.ts"
       - "/eslint.config.mjs"
       - "/tsconfig.json"
@@ -51,6 +53,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
+      - "~core-domain/**/*"
       - "vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -61,6 +64,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
+      - "~core-domain/**/*"
       - "/vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -72,6 +76,7 @@ tasks:
     command: tsc -p tsconfig.build.json
     inputs:
       - "src/**/*"
+      - "~core-domain/**/*"
       - "/tsconfig.build.json"
       - "/tsconfig.json"
       - "/package.json"
@@ -90,13 +95,18 @@ tasks:
     # belongs to gate-scripts) — the `~project` form is how a task names
     # another project's files. The canary proved the gap: a violating import
     # under scripts/ left the cached verdict green until this was fixed.
+    # `~core-domain/**/*` is the same lesson applied to the kernel: a boundary
+    # change inside core/domain/ must re-run this verdict.
     command: archkeep check
     inputs:
       - "src/**/*"
       - "~gate-scripts/**/*"
+      - "~core-domain/**/*"
       - "/module-boundaries.config.mjs"
       - "/.moon/workspace.yml"
       - "/moon.yml"
       - "/scripts/moon.yml"
+      - "/core/domain/moon.yml"
+      - "/tsconfig.json"
       - "/package.json"
       - "/pnpm-lock.yaml"

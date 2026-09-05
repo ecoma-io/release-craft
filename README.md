@@ -4,22 +4,25 @@ The release engine for the ecoma-io organization: release planning, versioning,
 prerelease lines, lifecycle hooks, artifacts, and publishing — humans, AI agents
 and code all operating the same release machinery.
 
-**Status: foundation.** This repository currently ships its engineering
-substrate only — toolchain, task graph, architecture governance, CI, analysis,
-and executable policy. The release engine itself is not implemented yet; no
-file in `src/` does release work, and none claims to. Domain work starts after
-this foundation, tracked in
+**Status: foundation plus one domain brick.** The engineering substrate ships
+— toolchain, task graph, architecture governance, CI, analysis, executable
+policy — and the first domain primitive has landed: the semantic
+[`Version`](docs/adr/0001-domain-kernel-and-semantic-version.md) value object
+in `core/domain/`, pure, frozen, and archkeep-enforced. Nothing else of the
+release engine exists yet — no release lines, changesets, hooks, artifacts or
+publishing; no file in `src/` does release work. What lands next is tracked in
 [#1](https://github.com/ecoma-io/release-craft/issues/1).
 
 ## What is in the tree today
 
-| Layer         | Where                                                                | What guarantees it                                                   |
-| ------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Package       | `src/`, `test/` — `@ecoma-io/release-craft`, a toolchain canary only | `test`, `build`                                                      |
-| Task graph    | `.moon/`, `moon.yml`, `scripts/moon.yml`                             | every task declares its `inputs`; `pnpm check` composes all gates    |
-| Boundary law  | `module-boundaries.config.mjs`                                       | `arch` (archkeep, pinned exact) — gates may never import the package |
-| Gate scripts  | `scripts/check-*.mjs` + tests                                        | `policy` workflow, `pnpm check:*`                                    |
-| Docs contract | `README`, `CONTRIBUTING`, `AGENTS`, `docs/`                          | `check:docs` — links, anchors and commands resolve                   |
+| Layer         | Where                                                                      | What guarantees it                                                                                                                                   |
+| ------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain kernel | `core/domain/` — the `Version` value object, nothing else                  | `arch` (zero external imports), domain `typecheck`, `test` via the package surface — [ADR-0001](docs/adr/0001-domain-kernel-and-semantic-version.md) |
+| Package       | `src/`, `test/` — `@ecoma-io/release-craft`, canary + the kernel re-export | `test`, `build`                                                                                                                                      |
+| Task graph    | `.moon/`, `moon.yml`, `scripts/moon.yml`                                   | every task declares its `inputs`; `pnpm check` composes all gates                                                                                    |
+| Boundary law  | `module-boundaries.config.mjs`                                             | `arch` (archkeep, pinned exact) — gates may never import the package; the kernel may import nothing                                                  |
+| Gate scripts  | `scripts/check-*.mjs` + tests                                              | `policy` workflow, `pnpm check:*`                                                                                                                    |
+| Docs contract | `README`, `CONTRIBUTING`, `AGENTS`, `docs/`                                | `check:docs` — links, anchors and commands resolve                                                                                                   |
 
 ## Quickstart
 

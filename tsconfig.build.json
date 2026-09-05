@@ -1,5 +1,5 @@
 {
-  "$comment": "The emit half of the typecheck-only root config: the same strict baseline, emitting ESM plus declarations to dist/ so CI proves the TypeScript pipeline produces loadable output — not a bundler, not a build system, just the compiler and what it must do for a library package. Tests are not shipped. `allowImportingTsExtensions` is a noEmit-only flag and is turned off here explicitly; src/ has no relative imports to break anyway while the tree is a canary.",
+  "$comment": "The emit half of the typecheck-only root config: the same strict baseline, emitting ESM plus declarations to dist/ so CI proves the TypeScript pipeline produces loadable output — not a bundler, not a build system, just the compiler and what it must do for a library package. Tests are not shipped. `allowImportingTsExtensions` is a noEmit-only flag and is turned off here explicitly. Cross-project imports travel under the package alias (tsconfig `paths`); TypeScript never rewrites an alias in its output, so dist carries `@ecoma-io/release-craft/domain` verbatim and the package's own `exports` self-reference is what makes it resolve at runtime — the one place the emitted tree stays honest without a specifier-rewriting build step.",
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "allowImportingTsExtensions": false,
@@ -9,5 +9,5 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "core/domain/**/*.ts"]
 }

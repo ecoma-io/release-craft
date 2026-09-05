@@ -1,0 +1,44 @@
+# The core-domain project — release-craft's domain kernel, declared as its own
+# Moon project so the boundary between the kernel and everything that consumes
+# it is executable (module-boundaries.config.mjs judges the `type-domain` tag)
+# rather than a directory convention nobody runs.
+#
+# Task roster is deliberate:
+#   - no `test` task: the kernel's suite is an external consumer (test/version
+#     .test.ts in the release-craft project) that imports only the package
+#     surface — a test inside this project would have to import `vitest`,
+#     which the kernel's own import ban refuses. ADR-0001 carries the
+#     reasoning.
+#   - no `build` task: the kernel is emitted as part of the package's `build`
+#     (tsconfig.build.json compiles core/domain into dist/), because the
+#     shipped package is one artifact, not one per project.
+#   - `arch` runs once per workspace (release-craft:arch): archkeep reads the
+#     whole Moon project graph, so a per-project task would re-judge the same
+#     tree.
+#
+# Bare globs are filtered to the owning project; the root configs these tasks
+# read live at the workspace root, hence the `/`-prefixed inputs.
+id: core-domain
+language: typescript
+tags:
+  # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
+  # spelled `type-`. module-boundaries.config.mjs judges this tag.
+  - type-domain
+
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

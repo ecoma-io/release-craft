@@ -1,0 +1,8 @@
+{
+  "$comment": "The domain kernel's own typecheck baseline — the repository's strict flags plus one deliberate tightening: `types: []` means no ambient Node globals exist here, so `process`, `Buffer`, `__dirname` and friends are compile errors inside the kernel, not style violations. Purity layering is recorded in docs/adr/0001-domain-kernel-and-semantic-version.md: this layer catches the globals archkeep's import analysis cannot see, while archkeep (`bannedExternalImports`) owns the imports themselves.",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "include": ["**/*.ts"]
+}

@@ -7,13 +7,14 @@ and are not duplicated here.
 
 ## What this repository is
 
-The release engine of ecoma-io. **It is in foundation phase**: `src/` holds a
-toolchain canary, nothing more. Do not implement release planning, versioning,
-prerelease lines, lifecycle hooks, artifacts, GitHub Releases, npm publishing,
-or release-please compatibility in a drive-by change — that work lands through
-its own issue and design, not inside unrelated fixes. Do not claim shipped
-capabilities in docs or code comments; the README's status section is the
-honest one.
+The release engine of ecoma-io. **It is in foundation phase plus one domain
+brick**: `src/` holds a toolchain canary, and `core/domain/` holds exactly one
+domain primitive — the semantic `Version` value (ADR-0001). Do not implement
+release planning, release lines, changesets, lifecycle hooks, artifacts, GitHub
+Releases, npm publishing, or release-please compatibility in a drive-by change
+— that work lands through its own issue and design, not inside unrelated
+fixes. Do not claim shipped capabilities in docs or code comments; the README's
+status section is the honest one.
 
 ## Commands
 
@@ -43,12 +44,19 @@ that task's inputs or affected-detection will lie.
    every workflow declares least-privilege `permissions`, no
    `pull_request_target`, no `${{ secrets.* }}` inside `run:`, concurrency
    declared. `check:workflows` scans all of it on every change.
-4. **Gate scripts never import the package.** `module-boundaries.config.mjs`
-   makes `type-gates` → `type-package` a violation; `arch` (archkeep, exact
-   pin) enforces it in CI. Suppressions need a written reason; the current
+4. **The boundary law has three rows and the kernel imports nothing.**
+   `module-boundaries.config.mjs` makes `type-gates` → `type-package` a
+   violation, `type-domain` self-sufficient (`onlyDependOnLibsWithTags:
+["type-domain"]`), and — the purity row — every external import from
+   `core/domain/**` banned (`bannedExternalImports: ["*"]`: no Node built-in,
+   no npm package, no cross-project module). `arch` (archkeep, exact pin)
+   enforces all three in CI. Suppressions need a written reason; the current
    count is zero. Do not create `archkeep.json` at the workspace root — beside
    `.moon/` it is a hard error for the archkeep Moon provider, and
-   `check:files` refuses it.
+   `check:files` refuses it. The domain purity layering (archkeep for imports,
+   `types: []` for ambient globals, lint for the non-import surface) is
+   specified in [ADR-0001](docs/adr/0001-domain-kernel-and-semantic-version.md)
+   — do not add a second boundary authority.
 5. **Docs resolve.** Any relative link, anchor, or `pnpm <command>` cited in a
    markdown file must exist — `check:docs` walks all of it.
 6. **Commits are Conventional** with scope ∈ {core, scripts, workspace, docs,
@@ -89,4 +97,13 @@ markdown sections. Security issues never go through issues: follow
 - Comments explain why, and a comment that states a rule the gates enforce
   says which gate.
 - Tests live beside what they test (`test/*.test.ts`, `scripts/*.test.mjs`)
-  and prove each gate fires on the drift it exists to catch.
+  and prove each gate fires on the drift it exists to catch. The one
+  deliberate exception: the domain kernel's contract suite
+  (`test/version.test.ts`) lives in the root package and consumes
+  `core/domain` only through the public package surface (`../src/index.ts`) —
+  the kernel project itself carries no test files and imports nothing, which
+  is what keeps a test dependency out of the kernel (ADR-0001).
+- Architecture decisions are recorded under `docs/adr/` in the registry
+  dialect; the kernel's contract decisions live in
+  [ADR-0001](docs/adr/0001-domain-kernel-and-semantic-version.md) and changes
+  to any of them update the ADR in the same PR.

@@ -27,6 +27,15 @@ const REQUIRED_FILES = [
   "LICENSE",
   "docs/bootstrap/ecosystem-analysis.md",
 
+  // Architecture decisions — one file per accepted ADR.
+  "docs/adr/0001-domain-kernel-and-semantic-version.md",
+
+  // The domain kernel — its own Moon project, its own typecheck baseline.
+  "core/domain/version.ts",
+  "core/domain/tsconfig.json",
+  "core/domain/moon.yml",
+  "test/version.test.ts",
+
   // Package and toolchain contract.
   "package.json",
   "pnpm-lock.yaml",

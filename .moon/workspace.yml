@@ -6,17 +6,22 @@
 # to every other gate too. The pre-push hook's `moon projects` step and the
 # `check:files` gate both pin this file as the authoritative project map.
 #
-# Two projects only, because the tree has exactly two populations of code:
+# Three projects, because the tree has exactly three populations of code:
 #
-#   - release-craft (the workspace root) — the package itself: sources, tests,
-#     and the toolchain targets that judge them. `src/` is a canary today; the
+#   - release-craft (the workspace root) — the package itself: sources, tests
+#     (including the domain kernel's external-consumer suite), and the
+#     toolchain targets that judge them. `src/` re-exports the domain; the
 #     release engine will grow here.
+#   - core-domain (core/domain/) — the kernel: pure domain values with no
+#     external imports at all, enforced by module-boundaries.config.mjs.
+#     Recorded in docs/adr/0001-domain-kernel-and-semantic-version.md.
 #   - gate-scripts (scripts/) — the repository's own gates. They are a project
 #     of their own so the boundary between "code that ships" and "code that
 #     judges" is enforceable (module-boundaries.config.mjs) rather than
 #     remembered.
 projects:
   release-craft: "."
+  core-domain: "core/domain"
   gate-scripts: "scripts"
 vcs:
   provider: other
