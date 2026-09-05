@@ -15,16 +15,14 @@ language: typescript
 # release-craft:arch in CI — the gates that judge the kernel would silently
 # not run.
 #
-# gate-scripts is on this list for the Moon graph's bookkeeping, NOT as an
-# import permission: these tasks run workspace-wide (`eslint .`, `prettier
-# --check .`, `archkeep check` from the root), and Moon's v2 `project://`
-# inputs refuse a reference to any project the parent does not depend on.
-# Import permissions are module-boundaries.config.mjs's alone — type-package
-# may never import type-gates there, and that row is what `pnpm arch`
-# enforces. The kernel declares no dependency back.
+# Only the kernel edge exists, and it points the architecture's way: the
+# package consumes the kernel, never the reverse, and never the gates —
+# measured, archkeep judges declared edges too ("a dependsOn edge crosses a
+# boundary depConstraints forbids"), so declaring gate-scripts here as
+# bookkeeping failed `pnpm arch` outright. The workspace-wide tasks reach the
+# gate scripts' files through workspace-root globs instead (see `arch`).
 dependsOn:
   - core-domain
-  - gate-scripts
 tags:
   # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
   # spelled `type-`. module-boundaries.config.mjs judges this tag.
@@ -45,7 +43,7 @@ tasks:
     command: prettier --check .
     inputs:
       - "**/*"
-      - "project://gate-scripts?group=sources"
+      - "/scripts/**/*"
       - "project://core-domain?group=sources"
       - "/package.json"
       - "/pnpm-lock.yaml"
@@ -57,7 +55,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
-      - "project://gate-scripts?group=sources"
+      - "/scripts/**/*"
       - "project://core-domain?group=sources"
       - "vitest.config.ts"
       - "/eslint.config.mjs"
@@ -120,7 +118,7 @@ tasks:
     command: archkeep check
     inputs:
       - "src/**/*"
-      - "project://gate-scripts?group=sources"
+      - "/scripts/**/*"
       - "project://core-domain?group=sources"
       - "/module-boundaries.config.mjs"
       - "/.moon/workspace.yml"
