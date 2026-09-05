@@ -19,7 +19,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "paths": {
-      "@ecoma-io/release-craft/domain": ["./core/domain/version.ts"]
+      "@ecoma-io/release-craft/domain": ["./core/domain/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"],

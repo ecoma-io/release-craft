@@ -2,7 +2,7 @@
 id: 0001-domain-kernel-and-semantic-version
 status: accepted
 created: 2026-09-05
-updated: 2026-09-05
+updated: 2026-09-06
 ---
 
 # The domain kernel starts as a boundary and one value: the semantic Version
@@ -33,7 +33,10 @@ tree to run.
 
 What exists today is deliberately small: **the kernel's boundary is
 established and enforced; its population is exactly one value.** Nothing in
-this ADR claims more than that.
+this ADR claims more than that. (Amended 2026-09-06, decision-log D9: with
+Phase 1 landed, the population is the six locked values beside `Bump` — the
+boundary law, the layered purity, and the alias seam below all describe it
+unchanged.)
 
 ## Decision
 
@@ -131,8 +134,14 @@ build stripped — following the npm-semver convention: on a prerelease,
 `bumpMajor`/`bumpMinor` increment from the core. Producing the _next
 prerelease_ (`1.2.4-rc.1`, incrementing a channel) is release-line policy, not
 value semantics — it needs to know which channel it is on, and the kernel does
-not know channels exist. That operation lands with the release-line work that
-needs it, not here.
+not know channels exist (amended 2026-09-06, ADR-0002 decision-log D6: the
+clause is narrowed to _progression policy_ — the kernel now carries the
+`Channel` pointer value and prerelease stream _state_ as pure values, so the
+population knows the shapes; which stream advances, and when, remains
+line/channel policy outside `core/domain/` code paths, and the computations
+over already-recorded stream state — `advanceStream`, `streamVersion` — are
+value semantics, not policy). That operation — the choosing — lands with the
+release-line work that needs it, not here.
 
 ### 8. The alias seam — one specifier, three declarations
 
@@ -150,16 +159,24 @@ per tool that resolves it, all naming the same file:
 | Node (the emitted dist)         | `exports` in [`package.json`](../../package.json)               |
 | Vitest (executes sources)       | `resolve.alias` in [`vitest.config.ts`](../../vitest.config.ts) |
 
-The contract itself lives once, in
-[`core/domain/version.ts`](../../core/domain/version.ts). Adding a second
-kernel entrypoint means extending all three declarations — that friction is
-the point.
+The contract surface lives once, in the barrel
+[`core/domain/index.ts`](../../core/domain/index.ts), which the three
+declarations above all name (amended 2026-09-06, ADR-0002 decision-log D6: the
+seam originally named
+[`core/domain/version.ts`](../../core/domain/version.ts) directly, so adding a
+primitive meant extending all three declarations — that friction was the point
+while the kernel's population was one file; since the barrel, adding a
+primitive extends the barrel and no longer touches the declarations).
 
 ### 9. Tests are external consumers; the kernel project has no test files
 
 The kernel's contract suite is [`test/version.test.ts`](../../test/version.test.ts)
 — inside the root package, importing the kernel only through the public
-surface (`../src/index.ts`). Two reasons, one consequence:
+surface (`../src/index.ts`). (Amended 2026-09-06, decision-log D9: with
+Phase 1 the suite is one contract file per value plus the provider-isolation
+and ensemble suites under `test/`, all importing through that same surface —
+the external-consumer rule, not the single file, is the decision.) Two
+reasons, one consequence:
 
 - A vitest import _inside_ `core/domain/` would itself be a banned external
   import — the purity row and a colocated suite are mutually exclusive.
@@ -207,11 +224,19 @@ this ADR and `module-boundaries.config.mjs` must be changed together.
 - **The lint layer covers the non-import surface only for `core/domain/**`.**
   Package and gate code keep their existing (weaker) rules; widening is a
   separate decision.
-- **The purity of `core/domain` is a property of its current single file's
+- **The purity of `core/domain` is a property of its current files'
   discipline plus the gates.** A file added under `core/domain/` inherits all
   three layers automatically (glob-scoped), but nothing stops _unrelated_
   content from being placed there — the boundary governs imports, not topic.
-  Review owns topic.
+  Review owns topic. (Amended 2026-09-06, decision-log D9: "single file"
+  described the tree at writing; every layer below is glob-scoped, so the
+  amendment changes one word, not the law.)
+- **The runtime export walk sees value exports only.** The
+  provider-isolation suite asserts the shipped surface through
+  `Object.keys(surface)`, which lists value classes and functions but is
+  blind to type-only exports (`Bump`, the record interfaces). Those are held
+  by the per-value exact-key suites and review, not by a gate
+  (decision-log D9).
 
 ## Consequences
 
@@ -230,4 +255,8 @@ this ADR and `module-boundaries.config.mjs` must be changed together.
   caught; counts live in the artifact that owns them.
 - Release policy that needs version semantics (lines, channels, transitions)
   consumes `Version` through the package surface and stays outside
-  `core/domain/`.
+  `core/domain/` (amended 2026-09-06, ADR-0002 decision-log D6: the
+  parenthetical governs policy _resolution_ — ladders, stream-advancement
+  rules, bump mapping — not the value shapes; the `ReleaseLine`, `Channel` and
+  companion shapes are locked by ADR-0002's vocabulary and land in
+  `core/domain/` as pure values).

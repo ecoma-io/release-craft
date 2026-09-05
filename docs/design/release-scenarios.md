@@ -2218,6 +2218,14 @@ that pressure exposes. None is silently resolved here.
     decision records live (repo files, notes refs, external store) —
     outside `core/domain/` in any case, per ADR-0001's purity boundary
     (E-01, E-02, S-01).
+17. **First mint of a fresh sequence** → `.0` (P-02/P-05/P-07 all mint
+    `beta.0`/`rc.0`/`rc.0` — this matrix's default, and what Phase 1's
+    kernel records) vs `.1` (E-08's "next rc = `1.6.0-rc.1`" from an
+    empty tag set; P-01's nine alpha runs leaving head `alpha.9`; M-08's
+    first-ever `2.4.0-rc.1`). The `.1` bodies read as planner-side
+    next-from-tags computations, not recordings of an advance — the
+    kernel seeds at `.0` and a `.1`-first convention, if adopted, is
+    planner policy over tags (recorded by decision-log D9).
 
 ## Stress analysis
 

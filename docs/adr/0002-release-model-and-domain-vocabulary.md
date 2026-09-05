@@ -95,19 +95,20 @@ is scheduled.
 
 ### 4. The vocabulary
 
-| Term        | Kind              | Disposition                                                                                                                               |
-| ----------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Version     | kernel value      | LOCK — exists today (ADR-0001)                                                                                                            |
-| Change      | kernel value      | LOCK                                                                                                                                      |
-| ChangeSet   | kernel value      | LOCK                                                                                                                                      |
-| ReleaseLine | kernel value      | LOCK                                                                                                                                      |
-| Channel     | kernel value      | LOCK                                                                                                                                      |
-| Artifact    | kernel value      | LOCK                                                                                                                                      |
-| ReleasePlan | planning concept  | LOCK                                                                                                                                      |
-| Release     | execution concept | LOCK                                                                                                                                      |
-| Promotion   | execution concept | LOCK                                                                                                                                      |
-| Transition  | execution concept | LOCK                                                                                                                                      |
-| Hook        | adapter           | DEFER — direction locked (execution-side step, never a planning participant); seam shape waits for the execution phase's step-list design |
+| Term        | Kind              | Disposition                                                                                                                                         |
+| ----------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Version     | kernel value      | LOCK — exists today (ADR-0001)                                                                                                                      |
+| Change      | kernel value      | LOCK                                                                                                                                                |
+| ChangeSet   | kernel value      | LOCK                                                                                                                                                |
+| Bump        | kernel value      | LOCK — Phase 1 (decision-log D9): the enum ChangeSet's locked "the bump it implies" is expressed over; named here so it enters loudly, not silently |
+| ReleaseLine | kernel value      | LOCK                                                                                                                                                |
+| Channel     | kernel value      | LOCK                                                                                                                                                |
+| Artifact    | kernel value      | LOCK                                                                                                                                                |
+| ReleasePlan | planning concept  | LOCK                                                                                                                                                |
+| Release     | execution concept | LOCK                                                                                                                                                |
+| Promotion   | execution concept | LOCK                                                                                                                                                |
+| Transition  | execution concept | LOCK                                                                                                                                                |
+| Hook        | adapter           | DEFER — direction locked (execution-side step, never a planning participant); seam shape waits for the execution phase's step-list design           |
 
 Definitions, relationships, per-term justifications, and the matrix's companion
 terms (range, prerelease stream, decision record, release attempt, execution

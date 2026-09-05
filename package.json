@@ -29,8 +29,8 @@
       "default": "./dist/src/index.js"
     },
     "./domain": {
-      "types": "./dist/core/domain/version.d.ts",
-      "default": "./dist/core/domain/version.js"
+      "types": "./dist/core/domain/index.d.ts",
+      "default": "./dist/core/domain/index.js"
     }
   },
   "packageManager": "pnpm@11.25.0",
