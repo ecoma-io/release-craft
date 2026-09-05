@@ -8,15 +8,11 @@
 # must not need a bundler to run.
 id: gate-scripts
 language: typescript
-fileGroups:
-  # The named group the package's tasks point at
-  # (`project://gate-scripts?group=sources`). The tilde forms
-  # (`~gate-scripts/**/*`, `~gate-scripts:sources`) were hashed as literal
-  # paths that do not exist — a verified edit under scripts/ left
-  # release-craft:lint cached — so the URI form is what the invalidation
-  # actually runs on.
-  sources:
-    - "**/*"
+# No fileGroups for cross-project inputs: Moon's `project://` input form
+# requires a dependsOn edge from the consumer, and the boundary law forbids
+# every package ↔ gates edge (archkeep judges declared edges too). The
+# package's workspace-wide tasks therefore cannot name these files as hashed
+# inputs and opt out of caching instead — see moon.yml in the project root.
 tags:
   - type-gates
 

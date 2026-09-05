@@ -29,7 +29,12 @@ pnpm test:coverage              # tests with the 80% thresholds enforced
 Run `pnpm check` and `pnpm check:policy` before you claim done. The Moon graph
 (`.moon/workspace.yml`, `moon.yml`, `scripts/moon.yml`) defines every task;
 each task declares its `inputs` — if you add a file a task consumes, add it to
-that task's inputs or affected-detection will lie.
+that task's inputs or affected-detection will lie. Cross-project files are
+declared as `project://id?group=` URIs (the tilde forms hash as nothing —
+measured); files Moon cannot name without a forbidden `dependsOn` edge — the
+gate scripts, for every package-side task — are covered by `cache: false` and
+unconditional CI jobs instead (see `moon.yml` and the `format`/`arch` jobs in
+`ci.yml`).
 
 ## Invariants (each enforced by a gate, not by hope)
 
