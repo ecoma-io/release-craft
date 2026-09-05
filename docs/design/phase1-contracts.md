@@ -93,7 +93,7 @@ Serves R4 (granularity lock), scenarios PL-06 (empty is a result), P-03
 ```ts
 export class ChangeSet {
   public readonly changes: readonly Change[];
-  public readonly bump: Bump; // "patch" when empty
+  public readonly bump: Bump; // "patch" when empty — Bump.max's neutral element
   public static of(changes: readonly Change[], bump: Bump): ChangeSet;
   public static empty(): ChangeSet;
   public includesIdentity(id: string): boolean;
@@ -107,7 +107,11 @@ export class ChangeSet {
   planner computes the level from its own policy; the value carries it,
   frozen ([ADR-0002](../adr/0002-release-model-and-domain-vocabulary.md):
   ChangeSet "with the bump it implies" — the implication is decided
-  upstream, recorded here).
+  upstream, recorded here). The empty group's `"patch"` is the neutral
+  element of `Bump.max` — the least level — not an implication that a patch
+  release exists: what an empty result means (a recorded no-op, PL-06; a
+  withheld release whose latent version is minted nowhere, S-01) is the
+  planner's decision, and no version is ever derived from the empty group.
 - **Identity-uniqueness enforced:** two members with the same
   `sameIdentity` throw `InvalidChangeSetError` at construction — the
   triple-count failure (M-03) is made unrepresentable at the value level.
@@ -149,24 +153,43 @@ export class ReleaseLine {
   planning-side data (A5). Invariant 7's test constructs a line, "renames the
   feed branch" (a no-op on the value), and asserts identity survives — the
   test proves the absence of the field.
-- **The released pointer is monotonic per line.** `withReleased` requires
-  `version.compare(this.released) > 0` (and a non-prerelease? no — a line may
-  publish a prerelease pointer only through streams; the pointer holds
-  releases; guard: throws `InvalidLineTransitionError` on regression or
-  equality). Equal-version re-release on one line is a conflict the value
-  refuses to represent (M-11/E-11 are per-line facts).
+- **The released pointer is the line's highest version by precedence.**
+  `withReleased` requires `version.compare(this.released) > 0` and throws
+  `InvalidLineTransitionError` on regression or equality — equal-version
+  re-release on one line is a conflict the value refuses to represent
+  (M-11/E-11 are per-line facts; M-11's own note — tags are not
+  disambiguated by build metadata — is why the guard is `compare`, never
+  `equals`). The pointer may hold a prerelease: M-08's expected transitions
+  move main's pointer to `2.4.0-rc.1`. Highest-by-precedence is not
+  latest-in-time — an overridden ladder regression that publishes below the
+  pointer (P-02) leaves the pointer standing, and whether publishing a
+  prerelease moves the pointer at all is line policy the value does not
+  decide (M-08 moves it; P-02/P-07 never mention it — decision-log D9
+  carries the choice as a Phase 2 obligation).
 - **Streams are keyed by (target, identifier), carried as state.**
   `advanceStream` returns a new value with that key's `sequence + 1`, seeded
   at 0 when absent — the arithmetic of sequence advancement is value
   semantics (P-01: `alpha.9` → `alpha.10`, never lexicographic; P-04: a
-  mid-RC `feat` bumps the sequence). Advancing a _different_ target under
+  mid-RC `feat` bumps the sequence). The `.0` seed is the matrix's own
+  convention (P-02/P-05/P-07 all mint fresh sequences at `.0`; fork 17
+  records the `.1` bodies — E-08, P-01 — as planner-side next-from-tags
+  computations, not recordings). Advancing a _different_ target under
   the same identifier is a new key — no cross-target continuation (P-05:
-  the target moved under you). Choosing _which_ stream, or a ladder
+  the target moved under you). A stream target must be a bare version:
+  build metadata is refused at the door, because a prerelease suffix
+  composed after the build part is not a prerelease to the SemVer grammar —
+  the sequence would stop ordering by precedence, invariant 8's Phase 1
+  claim. Sequences are bounded by construction — seeded at 0, advanced by
+  one, never set from outside — so composition can never leave the
+  safe-integer domain ADR-0001 decision 5 bounds at the parse door.
+  Choosing _which_ stream, or a ladder
   (alpha→beta), is policy; the value computes none of it.
 - **`streamVersion` composes** `target` + `-identifier.sequence` through
   `Version.parse` and orders by `Version#compare` — the stream's current
   version as a value (P-06: two streams, one target, both expressible; P-02:
-  the ladder is per-identifier).
+  the ladder is per-identifier). The bare-target door above is what keeps
+  the suffix in the prerelease position, so every composed head orders by
+  precedence.
 - **Lifecycle transitions are total and validated:**
   `active → frozen | retired`, `frozen → retired`, `retired` is terminal;
   anything else throws `InvalidLineTransitionError` (M-10: retirement is a
@@ -198,8 +221,10 @@ export class Channel {
 - **A move is a new value; history is not stored here.** The event log of
   moves is execution-side (PR-04's audited events, PR-05's timeline); the
   kernel value is the current binding only — `repoint` back to a prior
-  target (rollback) is the same value-level operation as any move
-  (S-04/PR-04: hiding is `repoint(null)`).
+  target (rollback) is the same value-level operation as any move, and
+  hiding is `repoint(null)`, the state a channel exists in before its
+  first binding (S-02) and a retraction returns it to (PR-05: future
+  membership removed, history execution-side).
 - **The target names a line and a version, never a branch, ref, PR, or
   registry object** (invariant 15). Whether the binding also names an
   artifact is execution-side (registry channels are adapters).
@@ -275,9 +300,12 @@ suite must prove at least:
   order-insensitive equality; bump recorded verbatim.
 - **`ReleaseLine`** — invariant 7: no branch field exists (assert the
   value's own enumerable keys against the contract's field list); monotonic
-  released pointer (equal and lower throw); P-01 sequence arithmetic
+  released pointer (equal and lower throw, equal-precedence build metadata
+  included — M-11); P-01 sequence arithmetic
   (`alpha.9` → `alpha.10`, and ordering by `compare` — never string sort);
-  P-05 target move starts a new key at 0; lifecycle transition matrix
+  P-05 target move starts a new key at 0; a build-carrying stream target is
+  refused at the door (the suffix would compose as build metadata, not a
+  prerelease); lifecycle transition matrix
   including retired-terminal; stream composition round-trips through
   `Version.parse`.
 - **`Channel`** — repoint/hide as new values; `pointsAt` by value; the

@@ -239,7 +239,7 @@ Phase 1 takes exactly the kernel-value kinds.
 | Version     | A strict SemVer 2.0.0 value as parsed by the kernel: bare, bounded to safe integers, with structural equality distinct from precedence (ADR-0001).                                                                                                                                                            | kernel value      | The ordering and identity primitive every other term judges; exists today.                                     | **LOCK**    |
 | Change      | The atomic unit of work, carrying an identity stable across lines and cherry-picks plus its lineage and provenance (A2).                                                                                                                                                                                      | kernel value      | Member of change sets; releasedness is per (line, change).                                                     | **LOCK**    |
 | ChangeSet   | The enumerated group of changes a release instantiates, with the bump it implies (R4).                                                                                                                                                                                                                        | kernel value      | Carried by a plan; instantiated by a release; may be empty and inherited (PL-06, P-03).                        | **LOCK**    |
-| ReleaseLine | A durable, ordered stream of versions with a stable id, a head derived from its own tags, a lifecycle, and a policy (A5).                                                                                                                                                                                     | kernel value      | Orders versions; holds channel pointers; fed by branches through recorded feed mappings; carries stream state. | **LOCK**    |
+| ReleaseLine | A durable, ordered stream of versions with a stable id, a head derived from its own tags, and a lifecycle — the policy that governs what it releases is planning-side data, not a field of the value (A5).                                                                                                    | kernel value      | Orders versions; holds channel pointers; fed by branches through recorded feed mappings; carries stream state. | **LOCK**    |
 | Channel     | A named, mutable deliverability pointer a consumer reads; its moves are recorded events (R1).                                                                                                                                                                                                                 | kernel value      | Points at a release or artifact on a line; backend bindings (npm dist-tag, container tag) are adapters.        | **LOCK**    |
 | ReleasePlan | A persisted, inspectable, content-fingerprinted projection of what should release — target versions, change set, base bindings, preconditions, policy digest (A6).                                                                                                                                            | planning concept  | Produced by the planner; consumed by attempts; superseded by later plans, never edited (PL-08).                | **LOCK**    |
 | Release     | The entity minted when a plan's target is attempted on a line — publication is a lifecycle state, not its birth: identity distinct from its version, carrying change set, lineage, artifacts, lifecycle, channel memberships (R2, E-01).                                                                      | execution concept | Has one version and one change set per generation; joins channels; is targeted by plans.                       | **LOCK**    |
@@ -339,7 +339,10 @@ execution is scheduled.
 4. **Negative decisions are records.** Every no-op, refusal, block, and
    withholding is returned as a decision record carrying its cause, evaluated
    range, and the policy version that produced it — never silence, an
-   exception, or a silently dropped change. _Stress: S-01, S-02, M-08, PL-01,
+   exception, or a silently dropped change; a refusal crosses the planning
+   boundary as the record's own `blocked`/`refused` outcome (PL-05a), and
+   PL-01's "unmapped commits are an error" names that record, not a thrown
+   exception. _Stress: S-01, S-02, M-08, PL-01,
    PL-06, PL-07. First provable: Phase 2._
 5. **Plan identity is its fingerprint.** Two plans with the same target version
    but different change sets, base bindings, or policy digests are distinct
@@ -349,9 +352,12 @@ execution is scheduled.
    invariant 13's half)._
 6. **Line-scoped version truth.** The next version on a line is derived from
    that line's own tag history — the manifest is a projection a plan may
-   repair, never a source of truth — and no global version pointer participates
-   in any computation. _Stress: S-03, S-05, M-02, M-07, M-09. First provable:
-   Phase 2._
+   repair, never a source of truth — and no global _latest-version_ pointer
+   participates in any computation. The global _tag namespace_ is a different
+   structure and does participate: a plan verifies its target tag exists
+   nowhere before execution (M-11), and regeneration detects the published
+   version to re-target (PL-08). _Stress: S-03, S-05, M-02, M-07, M-09.
+   First provable: Phase 2._
 7. **Line and channel identity is not a ref name.** A release line and a
    channel are identified by stable ids, so renaming a feed branch or
    re-pointing a channel changes feed and binding data while every recorded

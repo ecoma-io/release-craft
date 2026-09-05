@@ -33,7 +33,10 @@ tree to run.
 
 What exists today is deliberately small: **the kernel's boundary is
 established and enforced; its population is exactly one value.** Nothing in
-this ADR claims more than that.
+this ADR claims more than that. (Amended 2026-09-06, decision-log D9: with
+Phase 1 landed, the population is the six locked values beside `Bump` — the
+boundary law, the layered purity, and the alias seam below all describe it
+unchanged.)
 
 ## Decision
 
@@ -169,7 +172,11 @@ primitive extends the barrel and no longer touches the declarations).
 
 The kernel's contract suite is [`test/version.test.ts`](../../test/version.test.ts)
 — inside the root package, importing the kernel only through the public
-surface (`../src/index.ts`). Two reasons, one consequence:
+surface (`../src/index.ts`). (Amended 2026-09-06, decision-log D9: with
+Phase 1 the suite is one contract file per value plus the provider-isolation
+and ensemble suites under `test/`, all importing through that same surface —
+the external-consumer rule, not the single file, is the decision.) Two
+reasons, one consequence:
 
 - A vitest import _inside_ `core/domain/` would itself be a banned external
   import — the purity row and a colocated suite are mutually exclusive.
@@ -217,11 +224,19 @@ this ADR and `module-boundaries.config.mjs` must be changed together.
 - **The lint layer covers the non-import surface only for `core/domain/**`.**
   Package and gate code keep their existing (weaker) rules; widening is a
   separate decision.
-- **The purity of `core/domain` is a property of its current single file's
+- **The purity of `core/domain` is a property of its current files'
   discipline plus the gates.** A file added under `core/domain/` inherits all
   three layers automatically (glob-scoped), but nothing stops _unrelated_
   content from being placed there — the boundary governs imports, not topic.
-  Review owns topic.
+  Review owns topic. (Amended 2026-09-06, decision-log D9: "single file"
+  described the tree at writing; every layer below is glob-scoped, so the
+  amendment changes one word, not the law.)
+- **The runtime export walk sees value exports only.** The
+  provider-isolation suite asserts the shipped surface through
+  `Object.keys(surface)`, which lists value classes and functions but is
+  blind to type-only exports (`Bump`, the record interfaces). Those are held
+  by the per-value exact-key suites and review, not by a gate
+  (decision-log D9).
 
 ## Consequences
 
