@@ -19,9 +19,9 @@
 //     "Could this fail silently?", "How was this verified?" — must exist and
 //     carry at least one line of their own (blank lines and HTML comments
 //     are not content);
-//   - no HTML comment may remain outside quoted material: the template's
-//     instructions are comments, and a comment left in place marks the
-//     section it sits in as unwritten;
+//   - no HTML comment may remain outside quoted material, closed or not —
+//     the template's instructions are comments, and a comment left in
+//     place marks the section it sits in as unwritten;
 //   - no placeholder marker (`to be finalized`) outside quoted material
 //     — the observed #5 signature, kept as data so new observed markers
 //     extend the list instead of forking rules;
@@ -80,15 +80,17 @@ function withoutFencedBlocks(body) {
 }
 
 /**
- * Removes HTML comments (multi-line included) — the scaffolding test needs
- * them gone before "does this section say anything" is asked, while the
- * scaffolding rule itself needs them while they are still there.
+ * Removes HTML comments (multi-line included) and — so no hazard survives
+ * the sanitizer — any unclosed `<!--` opener. The scaffolding rule needs
+ * comments detected while they are still there; the content analysis needs
+ * a string that contains no opener afterwards, which is what keeps this
+ * scanner honest for any future caller that would render its result.
  *
  * @param {string} text
  * @returns {string}
  */
-function withoutHtmlComments(text) {
-  return text.replace(/<!--[\s\S]*?-->/g, "");
+export function withoutHtmlComments(text) {
+  return text.replace(/<!--[\s\S]*?-->/g, "").replaceAll("<!--", "");
 }
 
 /**
@@ -151,9 +153,9 @@ export function analyzePrDescription(body) {
     }
   }
 
-  if (/<!--[\s\S]*?-->/.test(quoted)) {
+  if (/<!--/.test(quoted)) {
     violations.push(
-      "an HTML comment remains in the description — template instructions left in place mark their section as unwritten",
+      "an HTML comment (or unclosed comment opener) remains in the description — template instructions left in place mark their section as unwritten",
     );
   }
 

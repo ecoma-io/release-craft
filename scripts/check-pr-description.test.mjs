@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { analyzePrDescription } from "./check-pr-description.mjs";
+import { analyzePrDescription, withoutHtmlComments } from "./check-pr-description.mjs";
 
 /**
  * A finalized body: every section written, no scaffolding, checklist ticked.
@@ -83,7 +83,29 @@ describe("analyzePrDescription", () => {
       '<!-- What changes, and why. Link the issue: "Closes #N". -->',
     );
 
-    assert.ok(analyzePrDescription(body).some((v) => v.includes("HTML comment remains")));
+    assert.ok(analyzePrDescription(body).some((v) => v.includes("HTML comment")));
+  });
+
+  it("refuses an unclosed comment opener — scaffolding either way", () => {
+    const body = goodBody().replace(
+      "Materializes the first domain primitive, behind executable boundaries.",
+      "<!-- half a template comment, never closed",
+    );
+
+    assert.ok(analyzePrDescription(body).some((v) => v.includes("HTML comment")));
+  });
+
+  it("strips every opener, closed or not — no `<!--` survives the sanitizer", () => {
+    // The property a complete sanitizer owes its callers: whatever goes in,
+    // no comment opener can come out. The first input has a stray opener
+    // *after* a closed comment (what paired-comment removal alone leaves
+    // behind); the second nests one inside another.
+    for (const text of [
+      "fine <!-- closed --> then a stray <!-- never closed",
+      "<!-- outer <!-- inner --> tail",
+    ]) {
+      assert.ok(!withoutHtmlComments(text).includes("<!--"), `opener survived: ${text}`);
+    }
   });
 
   it("refuses a checklist left unchecked — the #5 merge precondition failure", () => {
@@ -117,7 +139,7 @@ describe("analyzePrDescription", () => {
     ].join("\n");
     const violations = analyzePrDescription(body);
 
-    assert.ok(violations.some((v) => v.includes("HTML comment remains")));
+    assert.ok(violations.some((v) => v.includes("HTML comment")));
     assert.ok(violations.some((v) => v.includes("unchecked task box")));
   });
 
