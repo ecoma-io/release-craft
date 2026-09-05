@@ -37,7 +37,10 @@
     {
       description: "The architecture governor is pinned exact and ships fast — its releases are the one thing this repo must not wait three days for. Renovate moves the pin; a human reviews the verdict diff in the PR.",
       matchPackageNames: ["@ecoma-io/archkeep"],
-      minimumReleaseAge: 0,
+      // A duration string, not a number: Renovate rejects numeric
+      // minimumReleaseAge values ("should be a string") and stops processing
+      // the whole configuration until it is fixed.
+      minimumReleaseAge: "0 days",
     },
     {
       description: "TypeScript 6+ is a toolchain-wide migration, not an automated bump; hold until a reviewed change declares otherwise.",
