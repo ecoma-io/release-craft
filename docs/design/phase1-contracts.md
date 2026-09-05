@@ -94,7 +94,7 @@ Serves R4 (granularity lock), scenarios PL-06 (empty is a result), P-03
 export class ChangeSet {
   public readonly changes: readonly Change[];
   public readonly bump: Bump; // "patch" when empty
-  public static of(changes: readonly Change[]): ChangeSet;
+  public static of(changes: readonly Change[], bump: Bump): ChangeSet;
   public static empty(): ChangeSet;
   public includesIdentity(id: string): boolean;
   public equals(that: ChangeSet): boolean;
