@@ -121,7 +121,7 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
           if (!resolved) {
             return {
               kind: "escalate",
-              detail: `hook ${step.stepKey} recorded failed without a blocked attempt or a closing resolution — the §2.5 escalation lives in the attempt's state, and this tail contradicts it (§2.3)`,
+              detail: `extension step ${step.stepKey} recorded failed without a blocked attempt or a closing resolution — the §2.5 escalation lives in the attempt's state, and this tail contradicts it (§2.3)`,
             };
           }
         }

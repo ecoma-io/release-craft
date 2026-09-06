@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   MemoryAttemptRegister,
+  MemoryDispositionStore,
   MemoryLedger,
+  adopt,
+  artifactStepKey,
   classifyResume,
   effectiveSteps,
-  artifactStepKey,
   generationComplete,
   openAttempt,
   recordedArtifact,
@@ -704,5 +706,139 @@ describe("determinism (§4.5): identical inputs, identical outcomes", () => {
     const second = run(new MemoryLedger());
     expect(second.outcomes).toStrictEqual(first.outcomes);
     expect(second.attempt).toStrictEqual(first.attempt);
+  });
+});
+
+describe("integration through the public doors: adoption, the gate's own evidence, failed-record shape", () => {
+  it("refuses to adopt an artifact step — only its producer mints the generation record", () => {
+    const attempt = executing(undefined, [artifactDecl("bundle", "publish", "after")]);
+    const ledger = new MemoryLedger();
+    const dispositions = new MemoryDispositionStore();
+    const outcome = adopt(
+      attempt,
+      "artifact:bundle",
+      "attempt_sha256:source",
+      ledger,
+      {
+        attribution: { attemptId: "attempt_sha256:source", actor: "observer" },
+        evidence: "external-bundle-proof",
+      },
+      dispositions,
+    );
+    expect(outcome.kind).toBe("escalated");
+    if (outcome.kind !== "escalated") throw new Error("expected an escalation");
+    expect(outcome.detail).toContain("only through their own producer");
+    // Nothing landed in the ledger: no completion, no start — the
+    // generation record is the producer's to mint (§2.3).
+    expect(ledger.tail(attempt.attemptId)).toHaveLength(0);
+    expect(dispositions.entries()).toHaveLength(1);
+  });
+
+  it("refuses publish when the recorded completions disagree on a digest — fail-closed", () => {
+    const attempt = executing(undefined, [artifactDecl("bundle", "publish", "after")]);
+    const ledger = new MemoryLedger();
+    // Publish stays uncompleted: the request must hit the generation
+    // gate, not the replay door.
+    for (const stage of ["plan", "claim", "prepare", "validate", "commit", "tag"] as const) {
+      completeStage(ledger, attempt, stage);
+    }
+    recordArtifact(ledger, attempt, "bundle", "digest_sha256:first");
+    ledger.append({
+      kind: "step",
+      record: {
+        attemptId: attempt.attemptId,
+        stepKey: "artifact:bundle",
+        from: "started",
+        to: "completed",
+        guards: [{ guard: "release-line", passed: true }],
+        attribution: actor(attempt),
+        artifact: {
+          kind: "npm-tarball",
+          coordinates: "registry.example/acme/bundle",
+          digest: "digest_sha256:second",
+        },
+        contentFingerprint: "digest_sha256:second",
+      },
+    });
+    const outcome = requestStep(
+      attempt,
+      { stepKey: "publish", attribution: actor(attempt) },
+      heldClaim(attempt),
+      ledger.stepView(),
+    );
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") throw new Error("expected a refusal");
+    expect(outcome.detail).toContain("publish-gate-incomplete-generation");
+  });
+
+  it("refuses publish over a completion that carries no generation triple", () => {
+    const attempt = executing(undefined, [artifactDecl("bundle", "publish", "after")]);
+    const ledger = new MemoryLedger();
+    // Publish stays uncompleted: the request must hit the generation
+    // gate, not the replay door.
+    for (const stage of ["plan", "claim", "prepare", "validate", "commit", "tag"] as const) {
+      completeStage(ledger, attempt, stage);
+    }
+    ledger.appendStart(attempt, "artifact:bundle", actor(attempt));
+    ledger.append({
+      kind: "step",
+      record: {
+        attemptId: attempt.attemptId,
+        stepKey: "artifact:bundle",
+        from: "started",
+        to: "completed",
+        guards: [],
+        attribution: actor(attempt),
+        contentFingerprint: "digest_sha256:somewhere",
+      },
+    });
+    const outcome = requestStep(
+      attempt,
+      { stepKey: "publish", attribution: actor(attempt) },
+      heldClaim(attempt),
+      ledger.stepView(),
+    );
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") throw new Error("expected a refusal");
+    expect(outcome.detail).toContain("publish-gate-incomplete-generation");
+  });
+
+  it("keeps the generation triple off the failed record, the escalation named for its key space", () => {
+    const attempt = executing(undefined, [
+      artifactDecl("bundle", "publish", "after", { postconditions: ["evidence-present"] }),
+    ]);
+    const ledger = new MemoryLedger();
+    for (const stage of [
+      "plan",
+      "claim",
+      "prepare",
+      "validate",
+      "commit",
+      "tag",
+      "publish",
+    ] as const) {
+      completeStage(ledger, attempt, stage);
+    }
+    const run = scheduleArtifacts(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["bundle", recordingProducer()]]),
+    );
+    const failed = failedOutcome(run.outcomes);
+    expect(failed.record.to).toBe("failed");
+    expect(failed.record.artifact).toBeUndefined();
+    expect(failed.record.dependsOn).toBeUndefined();
+    expect(failed.record.contentFingerprint).toBeUndefined();
+    // Unresolved, the tail classifies as the recorded escalation — named
+    // for the extension step, not "hook". The attempt itself never
+    // moved: the scheduler's block() returns a successor, so the
+    // executing attempt plus the failed record is the contradictory tail.
+    const unarmed = classifyResume(attempt, ledger);
+    expect(unarmed.kind).toBe("escalate");
+    if (unarmed.kind !== "escalate") throw new Error("expected an escalation");
+    expect(unarmed.detail).toContain("extension step artifact:bundle");
+    expect(unarmed.detail).not.toContain("hook artifact:");
   });
 });

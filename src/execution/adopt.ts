@@ -13,6 +13,7 @@
  * law).
  */
 import { InvalidExecutionTransitionError } from "./attempt.js";
+import { isArtifactStepKey } from "./step-keys.js";
 import type {
   AdoptionOutcome,
   DispositionEntry,
@@ -110,7 +111,24 @@ export const adopt = (
       "adoption observation carries an empty actor — attribution is §2.6's non-empty identity",
     );
   }
-  // E-06/AR-05: the source attempt must have completed the step — a bare
+  // ADR-0008 decision 2 (phase 7): only an artifact step's own producer
+  // mints a generation record — adoption would append a completion
+  // without the recorded triple (§2.3), a content identity nobody
+  // recorded. The observation surfaces verbatim in the dispositions
+  // instead (E-09); the escalated detail names the rule.
+  if (isArtifactStepKey(stepKey)) {
+    dispositions.record({
+      kind: "orphan-state",
+      where: `attempt:${adoptedFrom}/step:${stepKey}`,
+      evidence: observation.evidence,
+      attribution: observation.attribution,
+      ...(recordedAt === undefined ? {} : { recordedAt }),
+    });
+    return {
+      kind: "escalated",
+      detail: `artifact steps mint generation records only through their own producer (ADR-0008 decision 2) — adoption cannot complete ${stepKey}`,
+    };
+  }
   // start record (or no record at all) leaves the state orphaned.
   const source = ledger.stepView().completed(adoptedFrom, stepKey);
   if (source === null) {

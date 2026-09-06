@@ -83,14 +83,33 @@ const tagBoundaryStands = (attemptId: string, steps: StepRecordsView): boolean =
   steps.completed(attemptId, "tag") !== null || steps.completed(attemptId, "publish") !== null;
 
 /** The publish gate's evidence (phase 7 contract §2.5; ADR-0008 decision
- * 9): every declared artifact step of the attempt has a recorded
- * completion in the projection. Read from the attempt value and the step
- * records — never asserted by a caller. An attempt declaring no artifact
- * steps is vacuously complete. */
+ * 9): every declared artifact step's recorded completions stand as one
+ * generation — each completion carries the triple matching its
+ * declaration (kind, coordinates), and all of them agree on one digest
+ * (§2.3: a differing digest is a conflict, never a silent pass; a
+ * triple-less completion is no generation record at all). Read from the
+ * attempt value and the step records — never asserted by a caller. An
+ * attempt declaring no artifact steps is vacuously complete. Fail-closed:
+ * the gate demands positive agreement, never the absence of a finding. */
 const generationStands = (attempt: ReleaseAttempt, steps: StepRecordsView): boolean =>
-  (attempt.artifacts ?? []).every(
-    (declared) => steps.completed(attempt.attemptId, `artifact:${declared.id}`) !== null,
-  );
+  (attempt.artifacts ?? []).every((declared) => {
+    const completions = steps
+      .records(attempt.attemptId)
+      .filter(
+        (record) => record.stepKey === `artifact:${declared.id}` && record.to === "completed",
+      );
+    const triples = completions.flatMap((record) =>
+      record.artifact === undefined ? [] : [record.artifact],
+    );
+    return (
+      completions.length > 0 &&
+      triples.length === completions.length &&
+      triples.every(
+        (triple) => triple.kind === declared.kind && triple.coordinates === declared.coordinates,
+      ) &&
+      new Set(triples.map((triple) => triple.digest)).size === 1
+    );
+  });
 
 /** The first declared artifact still missing its completion proof — the
  * refusal detail names it, recorded state a human can act on. */

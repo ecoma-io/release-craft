@@ -255,12 +255,17 @@ export const scheduleArtifacts = (
       return { attempt: blocked, outcomes };
     }
     const guards = [{ guard: declared.guard, passed: true }];
-    const completionRecord: Omit<TransitionRecord, "to"> = {
+    const baseRecord = {
       attemptId: attempt.attemptId,
       stepKey: step,
-      from: "started",
+      from: "started" as const,
       guards,
       attribution: observation.attribution,
+      ...(observation.evidence === undefined ? {} : { evidence: observation.evidence }),
+      ...(observation.recordedAt === undefined ? {} : { recordedAt: observation.recordedAt }),
+    };
+    const completionRecord: Omit<TransitionRecord, "to"> = {
+      ...baseRecord,
       // The generation record's halves (§2.3, §2.4): the domain
       // `Artifact` triple verbatim — the digest is the content identity,
       // so it is the record's fingerprint too — and the dependency
@@ -272,8 +277,6 @@ export const scheduleArtifacts = (
       },
       contentFingerprint: observation.digest,
       ...(dependencyDigests.length === 0 ? {} : { dependsOn: dependencyDigests }),
-      ...(observation.evidence === undefined ? {} : { evidence: observation.evidence }),
-      ...(observation.recordedAt === undefined ? {} : { recordedAt: observation.recordedAt }),
     };
     // Postconditions as recorded proofs, the hook's kinds verbatim
     // (§2.2): the check runs before the completion record exists, and
@@ -286,9 +289,12 @@ export const scheduleArtifacts = (
     );
     const firstUnmet = unmet[0];
     if (firstUnmet !== undefined) {
+      // The failed record is a failure, not a generation record (§2.3):
+      // the completion-only halves — the triple, the dependency digests,
+      // the content fingerprint — never land on it.
       const appended = ledger.append({
         kind: "step",
-        record: { ...completionRecord, to: "failed" },
+        record: { ...baseRecord, to: "failed" },
       });
       const blocked = block(attempt, `validation:artifact:${declared.id}:${firstUnmet}`);
       outcomes.push({
