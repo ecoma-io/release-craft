@@ -51,11 +51,12 @@ into the state machine as data, not invented here.
    carries `planFingerprint` and never recomputes the plan (invariant 3's
    execution mirror).
 3. **The attempt state machine is exactly:**
-   `planned → executing → { published | satisfied | failed | superseded |
-abandoned }`, with `executing ⇄ blocked(cause)` suspension. Terminal is
-   terminal: `resume`/`requestStep` on a terminal attempt is a thrown
-   contract violation, never a revival. `failed(unknown)` exists as the
-   unclassified-crash state (E-01); classification into recovery paths is
+   `planned → executing → { published | satisfied-externally | failed |
+superseded | abandoned }`, with `executing ⇄ blocked(cause)` suspension.
+   Terminal is terminal: `resume`/`requestStep` on a terminal attempt is
+   a thrown contract violation, never a revival.
+   `failed(unknown)` exists as the unclassified-crash state (E-01);
+   classification into recovery paths is
    Phase 5's. The loser of a claim race records
    `abandoned(follower-of:<winnerAttemptId>)` (E-07 verbatim). No edge out of
    `abandoned` or `superseded` exists — human aborts never auto-recover
@@ -148,6 +149,11 @@ sequence }` (E-08's "(line, target, stream)"), and `release-line
 - release-model.md §6 q1 (fork 13): annotated **resolved at the domain level
   by this ADR (decision 4)**; the physical primitive remains open for the
   Phase 8 adapter ADR.
+- release-model.md §4 invariant 10's final clause is tightened — "never
+  publishes _unrecorded_ new bytes under an existing version identity" —
+  discharging D9's carried obligation (decision 8's record discipline makes
+  the clause contract from Phase 4 on; the promotion machinery that proves it
+  is Phase 7).
 - [matrix-coverage.md](../design/matrix-coverage.md): the execution rows gain
   their Phase 4 owners (E-03 classification, E-05 attempt half, E-07, E-08,
   E-09 full; E-01/E-04/E-06/E-10 state shapes) alongside the Phase 5 owners

@@ -7,13 +7,18 @@ and are not duplicated here.
 
 ## What this repository is
 
-The release engine of ecoma-io. **It is in foundation phase plus the kernel's
-value population**: `src/` holds a toolchain canary, and `core/domain/` holds
+The release engine of ecoma-io. **It is in foundation phase, the kernel's
+value population, and the deterministic planner; execution is contract
+only**: `src/` holds a toolchain canary and the planner (`src/planner/`, the
+deterministic planning door — ADR-0003, ADR-0004), and `core/domain/` holds
 the semantic `Version` value plus the five release values the Phase 0
 vocabulary locked — `Change`, `ChangeSet`, `ReleaseLine`, `Channel`,
-`Artifact` — behind the barrel entrypoint (ADR-0001, ADR-0002). The values are
-data, not an engine: no planning, execution, publishing, or provider behavior
-exists yet. Do not implement release planning, release lines as behavior,
+`Artifact` — behind the barrel entrypoint (ADR-0001, ADR-0002). Execution,
+publishing, and provider behavior do not exist yet: Phase 4's
+execution-kernel contract is locked (issue #27, ADR-0005,
+`docs/design/phase4-execution-contract.md`) but no attempt, claim, ledger,
+hook, artifact, Git, or provider code may appear outside its own phase. Do
+not implement release planning twice, release lines as behavior,
 lifecycle hooks, artifact publishing, GitHub Releases, npm publishing, or
 release-please compatibility in a drive-by change — that work lands through
 its own issue and design, not inside unrelated fixes. Do not claim shipped

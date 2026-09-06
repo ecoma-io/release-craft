@@ -59,19 +59,19 @@ blockedCause?, terminalReason? }` and moves only through:
 
 ```text
 planned ──► executing ──► published
-                │    └──► satisfied        (satisfied-externally, E-03)
+                │    └──► satisfied-externally   (E-03)
                 ├──► failed                (failed, with cause)
                 ├──► superseded            (the plan lost to a successor)
                 └──► abandoned             (abandoned-by-human, E-09)
 executing ──► blocked(cause) ──► executing   (resumed by a recorded resolution)
 ```
 
-- **Terminal states are exactly** `published`, `satisfied`, `failed`,
-  `superseded`, `abandoned` — ADR-0002 decision 1's list ("published, failed,
-  superseded, and abandoned-by-human") plus the matrix's own
-  `satisfied-externally` completion (E-03: "P: planned →
-  completed(external, evidence)"; `satisfied` is that completion as an
-  attempt state, carrying its external provenance). Terminal is terminal: no
+- **Terminal states are exactly** `published`, `satisfied-externally`,
+  `failed`, `superseded`, `abandoned` — ADR-0002 decision 1's list
+  ("published, failed, superseded, and abandoned-by-human") plus the
+  matrix's own `satisfied-externally` completion (E-03: "P: planned →
+  completed(external, evidence)"), taken verbatim as the state name —
+  no abbreviated `satisfied` is invented. Terminal is terminal: no
   transition out exists, and `resume` on a terminal attempt is a contract
   violation (thrown), never a silent revival.
 - **`blocked` is suspended, not failed** (E-04's
@@ -310,6 +310,14 @@ assertions on records and states, not on internal wiring.
 
 Invariants 10 and 13 become _fully_ executable in Phases 7 and 5
 respectively; Phase 4 makes their identity/attribution skeletons executable.
+
+This table also discharges the carried obligation D9 recorded ("invariant
+10's final clause tightens at the execution contract"): from Phase 4 on, the
+clause reads **"never publishes _unrecorded_ new bytes under an existing
+version identity"** — PR-02's deliberate rebuild, recorded as a new
+generation, is the sanctioned escape the generation clause already implies.
+The tightening binds Phases 5–9; release-model.md §4's wording is amended in
+the same PR.
 
 ## 4. Scenario ownership (Phase 4's slice of the matrix)
 
