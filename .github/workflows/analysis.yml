@@ -23,6 +23,9 @@ on:
   # workflow on a stacked pull request, leaving the required analysis-gate
   # pending forever rather than failing — a block with nothing to fix.
   pull_request:
+  # The merge queue's group branches need the required checks; without this
+  # trigger a group waits for checks nothing can supply (issue #45).
+  merge_group:
   # One weekly cron covers every job in this workflow — a workflow's schedule
   # triggers each job in it, so two crons would mean each analysis running
   # twice a week under the other's name.

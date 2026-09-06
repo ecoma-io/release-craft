@@ -36,6 +36,9 @@ name: Policy
 # lockfile-pinned install, never a floating `dlx` fetch.
 on:
   pull_request:
+  # The merge queue's group branches need the required checks; without this
+  # trigger a group waits for checks nothing can supply (issue #45).
+  merge_group:
   push:
     branches: [main]
   workflow_dispatch:
