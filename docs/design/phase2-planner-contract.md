@@ -566,6 +566,24 @@ trail; ADR-0003 the decisions):
     Phase 2 unconditionally; the propagation policy lands with the active
     package axis (PL-01..PL-03 are Phase 2 mandates); per-package tag naming
     is declared configuration.
+14. **The PR-5 adversarial-review wave (C10).** Two fresh independent
+    reviews of the assembled planner produced the resolution set recorded
+    as decision-log **D17** and ADR-0003 decision 18: bootstrap-authoritative
+    birth targets (S-02), the in-flight-target rule over a prerelease-held
+    pointer (P-04 equal-precedence keeps the target and its sequence; P-05
+    moves and resets), stable co-mint suppression under a prerelease intent
+    (P-07/M-08 publish stream-only), the P-03 promotion vocabulary
+    (`release` with `bump: null` and an inherited empty change set; pending
+    → operator-contradiction refusal), the S-01 forced record (no mint),
+    plan-level explanation data (§2.11/§2.12/§2.13 — excluded is not
+    invisible), the inputsFingerprint policy-relevant projection (PL-08:
+    policy-ignored commits never invalidate a stored plan), and the door's
+    release-mapping posture: the declared component graph stays the active
+    §2.15 input (D16 stands — multi-component worlds are not refused); what
+    the door refuses is fabricating the line↔component release mapping
+    (PL-01's declared-future seam), and M-08's rejection half plus its
+    two-release single pass ride PR-6/PR-7 with the line-policy knobs and
+    the binding (ruling 2's phase placement, applied).
 
 ## 7. Handoff to execution — recorded, not owned
 

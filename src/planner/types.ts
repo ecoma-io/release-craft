@@ -116,12 +116,16 @@ export interface BootstrapDecision {
 
 /** Operator intents that must be recorded when exercised (§2.1): an
  * "release anyway" is an operator-forced record, never a routine release
- * (S-01); `Release-As` semantics per the compatibility boundary row 2. */
+ * (S-01); `Release-As` semantics per the compatibility boundary row 2; a
+ * `promote` publishes the in-flight prerelease's target as stable (P-03:
+ * explicitly not a no-op despite the empty diff — the change set is
+ * inherited from the stream). */
 export type OperatorIntent =
   | { readonly kind: "release" }
   | { readonly kind: "release-anyway" }
   | { readonly kind: "prerelease"; readonly stream: string; readonly lineId: string }
-  | { readonly kind: "release-as"; readonly version: string };
+  | { readonly kind: "release-as"; readonly version: string }
+  | { readonly kind: "promote"; readonly lineId: string };
 
 /** The planner's single argument (§2.1). Everything the planner decides, it
  * decides from this value — never from environment, clock, filesystem, or
@@ -357,7 +361,10 @@ interface RecordBase {
 export type LineDecision =
   | ({
       readonly kind: "release";
-      readonly bump: Bump;
+      /** The resolved change-set bump — `null` for a promotion (P-03): the
+       * target is the in-flight prerelease's pointed-at release and the
+       * change set is inherited, so nothing was resolved from pending. */
+      readonly bump: Bump | null;
       readonly changes: readonly ParsedCommit[];
     } & RecordBase)
   | ({
@@ -371,6 +378,10 @@ export type LineDecision =
       readonly withheld: readonly ParsedCommit[];
     } & RecordBase)
   | ({
+      readonly kind: "forced";
+      readonly cause: "release-anyway";
+    } & RecordBase)
+  | ({
       readonly kind: "refused";
       readonly cause: "attribution-ambiguity" | "operator-contradiction" | "kernel-rejection";
     } & RecordBase)
@@ -380,9 +391,13 @@ export type LineDecision =
     } & RecordBase);
 
 /** `decide.ts` — turns one line's attribution into its §2.9 decision:
- * release-worthy pending set → `release` with the resolved bump; empty →
- * `no-op` enumerating ignored-by-policy commits; policy-filtered deferrals
- * → `withheld`; attribution ambiguity or operator contradiction → `refused`;
+ * release-worthy pending set → `release` with the resolved bump; a
+ * `promote` intent over an in-flight prerelease → `release` with an
+ * inherited (empty) change set and `bump: null` (P-03); empty → `no-op`
+ * enumerating ignored-by-policy commits; a `release-anyway` intent over a
+ * quiet line → `forced` (S-01: recorded, never a routine release — the
+ * forced mint is declared-policy territory); policy-filtered deferrals →
+ * `withheld`; attribution ambiguity or operator contradiction → `refused`;
  * unmet preconditions (bootstrap, staleness) → `blocked`. Kernel
  * construction rejections surface as the corresponding record — never
  * re-thrown (§2.9). */
@@ -399,12 +414,15 @@ export type DecideLine = (
 
 /** One line's release state rebuilt from its projected history (§2.13): the
  * released pointer is the highest admissible version by precedence (the
- * kernel's own monotonic reading), and every prerelease tag contributes its
- * stream key — target, identifier, sequence — the highest sequence per key
- * winning. Stream state is rebuilt from tags at plan time, never carried
- * across runs (invariant 6). */
+ * kernel's own monotonic reading; a prerelease may hold it, M-08);
+ * `stableBase` is the highest released version with no prerelease suffix —
+ * the base the P-04/P-05 in-flight-target rule recomputes against; and
+ * every prerelease tag contributes its stream key — target, identifier,
+ * sequence — the highest sequence per key winning. Stream state is rebuilt
+ * from tags at plan time, never carried across runs (invariant 6). */
 export interface LineState {
   readonly pointer: Version | null;
+  readonly stableBase: Version | null;
   readonly streams: readonly StreamKeyState[];
 }
 
@@ -436,9 +454,11 @@ export interface PlannedStream {
 }
 
 /** One line's planned targets (§2.6 + §2.8): the stable target when the
- * line's decision releases, and every prerelease stream the operator's
- * intents demand. `stable` is `null` for a line whose plan mints only
- * prereleases. Tags follow the declared tag format (`policy.tagFormats`,
+ * line's decision releases AND no `prerelease` intent demands this line's
+ * publication (P-04/P-05/P-07/M-08: the run publishes the stream only —
+ * the would-be stable is the streams' target, never a co-mint), and every
+ * prerelease stream the operator's intents demand. `stable` is `null`
+ * otherwise. Tags follow the declared tag format (`policy.tagFormats`,
  * fork 11) or the bare default. */
 export interface TargetPlan {
   readonly stable: { readonly version: Version; readonly tag: string } | null;
@@ -448,14 +468,18 @@ export interface TargetPlan {
 /** `plan.ts` — computes one line's targets (§2.6, §2.7, §2.8): the stable
  * version from the decision's bump applied to the rebuilt pointer through
  * the kernel's bump doors, with §2.7's pre-1.0 dampening (breaking → minor
- * below `1.0.0`); prerelease streams from the line's `prerelease` intents
- * through the kernel's stream doors (`advanceStream`/`streamVersion`), the
- * target moving per §2.8 (P-05), the ladder per declared policy, the seed
- * per `policy.prereleaseSeed` (fork 17), the pointer standing unless the
- * mint exceeds it by precedence (D9). Kernel rejections surface as the
- * caller contract errors they are — target computation never invents
- * fallbacks. */
+ * below `1.0.0`); a `release-as` intent's exact version overrides the
+ * computed target (compatibility boundary row 2). While a prerelease
+ * holds the pointer, the in-flight-target rule governs (P-04 vs P-05): the
+ * candidate recomputed from `stableBase` and the in-flight target
+ * (`bumpPatch` of the pointer) — the higher by precedence wins, so a
+ * joining change at or under the in-flight class keeps the target and its
+ * sequence, a heavier one moves it and resets. `null` stable when a
+ * `prerelease` intent demands this line (the streams carry the target).
+ * Kernel rejections surface as the caller contract errors they are —
+ * target computation never invents fallbacks. */
 export type PlanTargets = (
+  intents: readonly OperatorIntent[],
   decision: LineDecision,
   state: LineState,
   line: LineConfig,
@@ -467,7 +491,7 @@ export type PlanTargets = (
  * sequence continues the rebuilt stream key (`+1`) or starts at the
  * declared seed (fork 17) for a fresh key — a moved target (P-05) or a new
  * identifier (P-02) never continues the old sequence. A mint sorting below
- * the line's released pointer is a caller contract violation (D9: the
+ * the line's released pointer is a caller contract violation (D10: the
  * planner never invents the ladder override). `planTargets` is the
  * targets-only view over this (no intents → no streams). */
 export type PlanStreams = (
@@ -549,15 +573,24 @@ export interface PlanLine {
  * provider-neutral (§2.16). `supersedes` is a recorded relation, never an
  * edit (invariant 5); a regeneration landing on emptiness yields a plan
  * with no lines that still carries `supersedes` (§2.10's no-op successor).
- * `inputsFingerprint` fingerprints the input world (canonical JSON of the
- * policy digest, the observed commits/refs/tags, the lines and components)
- * so a stored plan can be re-judged against a changed world (E-04). */
+ * `inputsFingerprint` fingerprints the input world (D17: the policy
+ * digest, the observed refs/tags, the lines and components, bootstrap,
+ * intents, and the policy-relevant extracted change set — policy-ignored
+ * commits never invalidate a stored plan, PL-08) so a stored plan can be
+ * re-judged against a changed world (E-04). `explanation` is the plan's
+ * mandated explanation data (§2.11/§2.12/§2.13, E-06): everything the
+ * pipeline kept out of the plan, surfaced — excluded is not invisible. */
 export interface ReleasePlan {
   readonly planId: string;
   readonly supersedes: string | null;
   readonly policyDigest: string;
   readonly inputsFingerprint: string;
   readonly lines: readonly PlanLine[];
+  readonly explanation: {
+    readonly foreignTags: readonly ForeignTag[];
+    readonly conflicts: readonly IdentityConflict[];
+    readonly excluded: readonly ExcludedCommit[];
+  };
 }
 
 /** `identity.ts` — the canonical JSON of a plan-eligible value (§2.11):

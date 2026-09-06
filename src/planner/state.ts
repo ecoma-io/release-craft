@@ -2,8 +2,10 @@
  * `state.ts` — rebuilds one line's release state from its projected history
  * (§2.13 of docs/design/phase2-planner-contract.md): the released pointer is
  * the line's highest admissible version by kernel precedence — a prerelease
- * may hold it (M-08: main's pointer moves to `2.4.0-rc.1`) — and every
- * stream-composing tag contributes its stream key. The only shape that
+ * may hold it (M-08: main's pointer moves to `2.4.0-rc.1`) — `stableBase` is
+ * the highest released version with no prerelease suffix (D17(2)'s P-04/P-05
+ * in-flight-target rule recomputes the stable candidate against it), and
+ * every stream-composing tag contributes its stream key. The only shape that
  * rebuilds a key is the kernel's own minting shape (`ReleaseLine#streamVersion`
  * composes `${target.toString()}-${identifier}.${sequence}`): a tag
  * `1.2.0-rc.3` is key `(1.2.0, rc)` at sequence 3, the highest sequence per
@@ -29,8 +31,8 @@ interface StreamKeyAccumulator {
 
 export const rebuildLineState: RebuildLineState = (history) => {
   let pointer: Version | null = null;
+  let stableBase: Version | null = null;
   const keys: StreamKeyAccumulator[] = [];
-
   for (const tag of history.tags) {
     const version = tag.version;
     // The pointer is monotonic by precedence: strictly-greater replaces, so
@@ -38,6 +40,16 @@ export const rebuildLineState: RebuildLineState = (history) => {
     // first in the history's ascending order wins — pinned for determinism.
     if (pointer === null || version.compare(pointer) > 0) {
       pointer = version;
+    }
+    // stableBase follows the same monotonic rule over the stable namespace
+    // only: a version with no prerelease suffix replaces it when strictly
+    // greater by precedence, the first among precedence-equal builds winning
+    // — the identical determinism pin as the pointer's.
+    if (
+      version.prerelease.length === 0 &&
+      (stableBase === null || version.compare(stableBase) > 0)
+    ) {
+      stableBase = version;
     }
     // A stream key rebuilds only from the kernel's minting shape: the
     // prerelease is exactly [identifier, numeric sequence] (the suffix of
@@ -92,5 +104,5 @@ export const rebuildLineState: RebuildLineState = (history) => {
     }
     return a.identifier < b.identifier ? -1 : a.identifier > b.identifier ? 1 : 0;
   });
-  return { pointer, streams };
+  return { pointer, stableBase, streams };
 };

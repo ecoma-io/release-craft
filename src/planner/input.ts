@@ -1,30 +1,37 @@
 /**
  * The planner's input-boundary door (§2.1) — `normalize` deep-validates a
- * `PlanningInput` and returns the same value unchanged.
+ * `PlanningInput` and returns it with one normalization: exact-duplicate
+ * operator intents collapse to their first occurrence (m-6b — an operator
+ * stating one intent twice has stated it once; intents differing in any
+ * field stay, since contradictions like promote-over-pending are
+ * decide-layer concerns, never input-layer ones).
  *
  * Posture: a malformed `PlanningInput` is a caller contract violation, not
  * a planning outcome — this throws {@link InvalidPlanningInputError} naming
  * every violation (field path + problem), never just the first, so a caller
- * fixes its fixture in one pass. Validation-only normalization: the closed
- * input is returned as-is — no default-filling (the planner invents
- * nothing), no copying, no freezing (caller-owned data stays caller-owned;
- * the planner mutates nothing, PL-08).
+ * fixes its fixture in one pass. Otherwise validation-only: the closed
+ * input is returned as-is (the same reference when no intent duplicated) —
+ * no default-filling (the planner invents nothing), no deep copying, no
+ * freezing (caller-owned data stays caller-owned; the planner mutates
+ * nothing, PL-08).
  *
  * Determinism: violations are collected in a fixed traversal order — policy
- * fields in declaration order, then commits, refs, tags, lines, intents,
- * input order within each — so identical inputs yield identical violation
- * lists and messages (ADR-0003's deterministic planner starts at its
- * boundary). Object key order for `tagFormats` is the input's own
- * insertion order, stable for identical input.
+ * fields in declaration order, then commits, refs, tags, lines, components,
+ * bootstrap, intents, input order within each — so identical inputs yield
+ * identical violation lists and messages (ADR-0003's deterministic planner
+ * starts at its boundary). Object key order for `tagFormats` is the input's
+ * own insertion order, stable for identical input.
  *
  * Purity: no environment, clock, filesystem, or network (invariant 2). The
- * module is a pure predicate over its argument.
+ * module is a pure function over its argument.
  *
  * Contract: docs/design/phase2-planner-contract.md §2.1 (the closed input
  * boundary); ADR docs/adr/0003-deterministic-release-planner.md.
  */
 
-import type { NormalizeInput, PlanningInput } from "./types.js";
+import { InvalidVersionError, Version } from "@ecoma-io/release-craft/domain";
+
+import type { NormalizeInput, OperatorIntent, PlanningInput } from "./types.js";
 
 /**
  * One reported violation: `field` is a path into the planning input (e.g.
@@ -64,13 +71,16 @@ function summarize(violations: readonly InputViolation[]): string {
 
 /**
  * The locked `NormalizeInput` implementation: validate deeply, throw on any
- * violation (all of them), else return the same closed value.
+ * violation (all of them), else return the closed value with exact-duplicate
+ * intents collapsed (m-6b) — the same reference when nothing was dropped.
  */
 export const normalize: NormalizeInput = (raw) => {
   const violations: InputViolation[] = [];
   validate(raw, violations);
   if (violations.length > 0) throw new InvalidPlanningInputError(violations);
-  return raw;
+  if (raw.intents === undefined) return raw;
+  const intents = dedupeIntents(raw.intents);
+  return intents.length === raw.intents.length ? raw : { ...raw, intents };
 };
 
 /**
@@ -121,13 +131,47 @@ function validate(raw: PlanningInput, out: InputViolation[]): void {
     else out.push({ field: "history.tags", problem: "must be an array of tag observations" });
   }
 
+  // The declared line-id universe is closed: a lineId payload on an intent
+  // may only name a line declared here (mirrors the sha universe — built
+  // from every well-formed id wherever the lines sit in the array, empty
+  // when the array itself is malformed; that defect is reported on its own
+  // field, and every lineId pointing into the empty universe is rejected).
+  let declaredLines: ReadonlySet<string> = new Set<string>();
+
   const lines: unknown = raw.lines;
-  if (isArray(lines)) checkLines(lines, out);
-  else out.push({ field: "lines", problem: "must be an array of line configurations" });
+  if (isArray(lines)) {
+    declaredLines = declaredLineIds(lines);
+    checkLines(lines, out);
+  } else {
+    out.push({ field: "lines", problem: "must be an array of line configurations" });
+  }
+
+  const components: unknown = raw.components;
+  if (components !== undefined) {
+    if (isArray(components)) checkComponents(components, out);
+    else out.push({ field: "components", problem: "must be an array of component metadata" });
+  }
+
+  const bootstrap: unknown = raw.bootstrap;
+  if (bootstrap === undefined) {
+    // S-02: absence is legal at this boundary — demanding the recorded
+    // decision is a `blocked` record at the planning boundary, not a
+    // violation here.
+  } else if (!isObject(bootstrap)) {
+    out.push({ field: "bootstrap", problem: "must be a bootstrap decision object" });
+  } else if (!parsesAsVersion(bootstrap.version)) {
+    // S-02: the recorded bootstrap is authoritative — D17 consumes it
+    // verbatim as a line's first release target, so an unparseable version
+    // can never be repaired downstream.
+    out.push({
+      field: "bootstrap.version",
+      problem: `must parse as a kernel Version — ${JSON.stringify(bootstrap.version)} does not (strict SemVer 2.0.0)`,
+    });
+  }
 
   const intents: unknown = raw.intents;
   if (intents === undefined) return;
-  if (isArray(intents)) checkIntents(intents, out);
+  if (isArray(intents)) checkIntents(intents, declaredLines, out);
   else out.push({ field: "intents", problem: "must be an array of operator intents" });
 }
 
@@ -148,6 +192,15 @@ function checkPolicy(policy: Record<string, unknown>, out: InputViolation[]): vo
     out.push({
       field: "policy.bumpMappingId",
       problem: "must be a non-empty bump mapping identifier (§2.7)",
+    });
+  } else if (policy.bumpMappingId !== "default") {
+    // m-1/m-2 (D17): Phase 2 declares exactly one mapping, keyed "default"
+    // (§2.7). A policy may carry the id, but any other value has no mapping
+    // behind it — refuse rather than resolve silently; the mapping itself
+    // stays the default.
+    out.push({
+      field: "policy.bumpMappingId",
+      problem: `must be exactly "default" — the only declared bump mapping in this phase, not ${JSON.stringify(policy.bumpMappingId)}`,
     });
   }
 
@@ -208,10 +261,21 @@ function checkPolicy(policy: Record<string, unknown>, out: InputViolation[]): vo
           problem: "tag-format key must be a non-empty line id",
         });
       }
-      if (!nonEmpty(tagFormats[lineId])) {
+      const format: unknown = tagFormats[lineId];
+      if (!nonEmpty(format)) {
         out.push({
           field: `policy.tagFormats[${JSON.stringify(lineId)}]`,
           problem: "must be a non-empty tag format",
+        });
+      } else if (!format.includes("{prerelease}")) {
+        // D15/fork 11: a line publishes stable and prerelease versions under
+        // one declared format — without the {prerelease} token the format
+        // cannot name a prerelease mint, so it can never render the line's
+        // full namespace.
+        out.push({
+          field: `policy.tagFormats[${JSON.stringify(lineId)}]`,
+          problem:
+            "must contain the {prerelease} token — a format without it cannot render prereleases (fork 11)",
         });
       }
     }
@@ -395,8 +459,39 @@ function checkLines(lines: readonly unknown[], out: InputViolation[]): void {
   }
 }
 
-/** Intent validation (§2.1): the declared kinds, with their payloads. */
-function checkIntents(intents: readonly unknown[], out: InputViolation[]): void {
+/** Component validation (§2.15, D16): declared names are the graph's
+ * identity universe — every name non-empty. A dependency edge naming an
+ * undeclared component is D16's caller contract violation, surfaced by the
+ * propagation planner naming the edge (`planPropagation`), not duplicated
+ * here. */
+function checkComponents(components: readonly unknown[], out: InputViolation[]): void {
+  for (const [i, component] of components.entries()) {
+    if (!isObject(component)) {
+      out.push({
+        field: `components[${String(i)}]`,
+        problem: "must be a component metadata object",
+      });
+      continue;
+    }
+    if (!nonEmpty(component.name)) {
+      out.push({
+        field: `components[${String(i)}].name`,
+        problem: "must be a non-empty component name",
+      });
+    }
+  }
+}
+
+/** Intent validation (§2.1, D17): the declared kinds, their payloads
+ * kernel-typed (a `release-as` version parses as a `Version` through the
+ * kernel's grammar), and every `lineId` naming a declared line — an intent
+ * on an undeclared line is a caller contract violation, since line identity
+ * is invariant 7's closed universe. */
+function checkIntents(
+  intents: readonly unknown[],
+  declaredLines: ReadonlySet<string>,
+  out: InputViolation[],
+): void {
   for (const [i, intent] of intents.entries()) {
     if (!isObject(intent)) {
       out.push({ field: `intents[${String(i)}]`, problem: "must be an operator intent" });
@@ -407,11 +502,12 @@ function checkIntents(intents: readonly unknown[], out: InputViolation[]): void 
       kind !== "release" &&
       kind !== "release-anyway" &&
       kind !== "prerelease" &&
-      kind !== "release-as"
+      kind !== "release-as" &&
+      kind !== "promote"
     ) {
       out.push({
         field: `intents[${String(i)}].kind`,
-        problem: `unknown intent kind ${JSON.stringify(kind)} — the declared kinds are release, release-anyway, prerelease, release-as`,
+        problem: `unknown intent kind ${JSON.stringify(kind)} — the declared kinds are release, release-anyway, prerelease, release-as, promote`,
       });
       continue;
     }
@@ -426,6 +522,7 @@ function checkIntents(intents: readonly unknown[], out: InputViolation[]): void 
             problem: "must be a non-empty prerelease stream",
           });
         }
+        checkIntentLineId(`intents[${String(i)}].lineId`, intent.lineId, declaredLines, out);
         break;
       case "release-as":
         if (!nonEmpty(intent.version)) {
@@ -433,10 +530,89 @@ function checkIntents(intents: readonly unknown[], out: InputViolation[]): void 
             field: `intents[${String(i)}].version`,
             problem: "must be a non-empty release-as version",
           });
+        } else if (!parsesAsVersion(intent.version)) {
+          out.push({
+            field: `intents[${String(i)}].version`,
+            problem: `must parse as a kernel Version — ${JSON.stringify(intent.version)} does not (strict SemVer 2.0.0)`,
+          });
         }
+        break;
+      case "promote":
+        checkIntentLineId(`intents[${String(i)}].lineId`, intent.lineId, declaredLines, out);
         break;
     }
   }
+}
+
+/** A `lineId` payload must name a line declared in the same input. */
+function checkIntentLineId(
+  field: string,
+  lineId: unknown,
+  declaredLines: ReadonlySet<string>,
+  out: InputViolation[],
+): void {
+  if (!nonEmpty(lineId)) {
+    out.push({ field, problem: "must be a non-empty line id" });
+  } else if (!declaredLines.has(lineId)) {
+    out.push({
+      field,
+      problem: `names undeclared line ${JSON.stringify(lineId)} — an intent may only target a declared line`,
+    });
+  }
+}
+
+/** The kernel-grammar door (§2.13's only way into a `Version`): strict
+ * SemVer 2.0.0 parse; false on `InvalidVersionError`, anything else
+ * re-thrown. */
+function parsesAsVersion(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    Version.parse(value);
+    return true;
+  } catch (error) {
+    if (!(error instanceof InvalidVersionError)) throw error;
+    return false;
+  }
+}
+
+/** The declared line-id universe intents may target — from every
+ * well-formed id, wherever the lines sit in the array. */
+function declaredLineIds(lines: readonly unknown[]): Set<string> {
+  const ids = new Set<string>();
+  for (const line of lines) {
+    const id: unknown = isObject(line) ? line.id : undefined;
+    if (nonEmpty(id)) ids.add(id);
+  }
+  return ids;
+}
+
+/** m-6b's exact identity: the kind plus every payload field, so only
+ * intents equal in all fields collapse. */
+function intentIdentity(intent: OperatorIntent): string {
+  switch (intent.kind) {
+    case "prerelease":
+      return JSON.stringify([intent.kind, intent.stream, intent.lineId]);
+    case "release-as":
+      return JSON.stringify([intent.kind, intent.version]);
+    case "promote":
+      return JSON.stringify([intent.kind, intent.lineId]);
+    default:
+      return JSON.stringify([intent.kind]);
+  }
+}
+
+/** m-6b: exact-duplicate intents collapse to their first occurrence, input
+ * order preserved; distinct intents always survive. */
+function dedupeIntents(intents: readonly OperatorIntent[]): readonly OperatorIntent[] {
+  const seen = new Set<string>();
+  const unique: OperatorIntent[] = [];
+  for (const intent of intents) {
+    const identity = intentIdentity(intent);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    unique.push(intent);
+  }
+  return unique;
 }
 
 /** A required non-empty string — the baseline for every named field. */

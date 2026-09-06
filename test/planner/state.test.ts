@@ -1,8 +1,10 @@
 /**
  * §2.13 line-state rebuild (`state.ts`) — black-box tests over the observable
  * `LineState`: the released pointer as the line's highest admissible version
- * by kernel precedence (a prerelease may hold it — M-08's first-ever
- * `2.4.0-rc.1`), and the stream keys reconstructed from the kernel's own
+ * by kernel precedence (a
+ * prerelease may hold it — M-08's first-ever `2.4.0-rc.1`), `stableBase` as
+ * the highest released version with no prerelease suffix (D17(2)'s P-04/P-05
+ * in-flight-target rule recomputes against it), and the stream keys
  * composition shape (`1.2.0-rc.3` → key `(1.2.0, rc)` at sequence 3; two
  * streams under one target — P-06). State is rebuilt from tags per run and
  * never carried (invariant 6); identical histories rebuild identical state
@@ -43,12 +45,15 @@ describe("rebuildLineState — §2.13 pointer and stream keys", () => {
     const state = rebuildLineState(historyOf(["2.3.0", "2.4.0-rc.1"]));
 
     expect(state.pointer?.toString()).toBe("2.4.0-rc.1");
+    // D17(2)'s base: the released stable 2.3.0 survives under the rc pointer.
+    expect(state.stableBase?.toString()).toBe("2.3.0");
   });
 
   it("rebuilds an empty history as a line birth: null pointer, no streams", () => {
     const state = rebuildLineState(historyOf([]));
 
     expect(state.pointer).toBeNull();
+    expect(state.stableBase).toBeNull();
     expect(state.streams).toHaveLength(0);
   });
 
@@ -80,6 +85,9 @@ describe("rebuildLineState — §2.13 pointer and stream keys", () => {
     const state = rebuildLineState(historyOf(["1.1.0", "1.2.0+build.7"]));
 
     expect(state.pointer?.toString()).toBe("1.2.0+build.7");
+    // Build metadata is not a prerelease suffix: the tag counts for the
+    // stable namespace too (D17(2)'s base rule reads the suffix, not build).
+    expect(state.stableBase?.toString()).toBe("1.2.0+build.7");
     expect(state.streams).toHaveLength(0);
   });
 
@@ -125,6 +133,39 @@ describe("rebuildLineState — §2.13 pointer and stream keys", () => {
     const state = rebuildLineState(historyOf(["2.0.0", "2.0.0+build.1"]));
 
     expect(state.pointer?.toString()).toBe("2.0.0");
+    // The identical tie rule governs stableBase: the first of the
+    // precedence-equal stables wins.
+    expect(state.stableBase?.toString()).toBe("2.0.0");
     expect(state.streams).toHaveLength(0);
+  });
+});
+
+describe("rebuildLineState — stableBase, D17(2)'s in-flight-target base", () => {
+  it("keeps the highest released stable under a prerelease pointer (P-04's base)", () => {
+    const state = rebuildLineState(historyOf(["1.0.0", "1.1.0", "1.2.0-rc.1", "1.2.0-rc.2"]));
+
+    expect(state.pointer?.toString()).toBe("1.2.0-rc.2");
+    expect(state.stableBase?.toString()).toBe("1.1.0");
+  });
+
+  it("stays null when the history carries no stable release (P-01's alpha-only line)", () => {
+    const state = rebuildLineState(historyOf(["1.2.0-alpha.9"]));
+
+    expect(state.pointer?.toString()).toBe("1.2.0-alpha.9");
+    expect(state.stableBase).toBeNull();
+  });
+
+  it("follows the stable namespace, not the pointer: a heavier prerelease leaves it put", () => {
+    const state = rebuildLineState(historyOf(["0.3.2", "0.4.0-rc.1"]));
+
+    expect(state.pointer?.toString()).toBe("0.4.0-rc.1");
+    expect(state.stableBase?.toString()).toBe("0.3.2");
+  });
+
+  it("tracks a promotion tag the moment it lands — rc then its pointed-at release", () => {
+    const state = rebuildLineState(historyOf(["1.2.0-rc.2", "1.2.0"]));
+
+    expect(state.pointer?.toString()).toBe("1.2.0");
+    expect(state.stableBase?.toString()).toBe("1.2.0");
   });
 });

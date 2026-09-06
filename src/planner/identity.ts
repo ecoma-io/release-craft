@@ -33,9 +33,13 @@
  *   fields. Version equality implies nothing about plan equality (E-11) —
  *   the same target version over a different change set fingerprints
  *   differently.
- * - `inputsFingerprint` hashes the whole `PlanningInput` — every semantic
- *   field, minus nothing — so a stored plan re-judged against a world whose
- *   inputs fingerprint differs is stale (E-04's recognition data).
+ * - `inputsFingerprint` hashes the input's policy-relevant projection
+ *   (D17(7), PL-08): the policy digest, refs, tags, lines, components,
+ *   bootstrap, intents, and the extracted release-triggering change set.
+ *   Policy-ignored commits are out of the hash — chore/docs-classified
+ *   work, self-references, unparseables never invalidate a stored plan —
+ *   so a stored plan re-judged against a world whose projected fingerprint
+ *   differs is stale (E-04's recognition data).
  *
  * Contract: docs/design/phase2-planner-contract.md §2.10–§2.11, §2.14;
  * docs/adr/0003-deterministic-release-planner.md decisions 9–10; D12.
@@ -43,6 +47,8 @@
 
 import { createHash } from "node:crypto";
 
+import { resolveBump } from "./decide.js";
+import { extract } from "./extract.js";
 import type { CanonicalJson, InputsFingerprint, PlanFingerprint, PlanningInput } from "./types.js";
 
 /**
@@ -133,9 +139,49 @@ export const planFingerprint: PlanFingerprint = (plan) => {
 };
 
 /**
- * The locked `InputsFingerprint` (§2.11, E-04): SHA-256 over the canonical
- * JSON of the whole planning input, minus nothing.
+ * The input's policy-relevant projection (D17(7), PL-08): the extracted
+ * release-triggering change set — change-classified commits whose bump
+ * resolution qualifies under the declared mapping, a breaking marker
+ * dominating any type (PL-05) — projected to plain data, because the kernel
+ * `Change` is a class value with no canonical serialization. Policy-ignored
+ * commits stay out: chore/docs-classified work, self-references, and
+ * unparseables never invalidate a stored plan. The order is the
+ * extraction's input order (E-10: ordering is data).
+ */
+function releaseTriggeringChangesOf(input: PlanningInput): readonly Record<string, unknown>[] {
+  const changes: Record<string, unknown>[] = [];
+  for (const parsed of extract(input.repository.commits, input.policy).commits) {
+    // Classification "change" guarantees the kernel value — extract builds
+    // it or reclassifies the commit "unparseable"; the guard serves the
+    // optional type.
+    if (parsed.classification !== "change" || parsed.change === undefined) continue;
+    if (resolveBump([parsed], input.policy) === undefined) continue;
+    changes.push({
+      id: parsed.change.id,
+      lineage: parsed.change.lineage,
+      type: parsed.type,
+      breaking: parsed.breaking,
+    });
+  }
+  return changes;
+}
+
+/**
+ * The locked `InputsFingerprint` (§2.11, E-04, D17(7)): SHA-256 over the
+ * canonical JSON of the input's policy-relevant projection — the closed
+ * tuple of policy digest, refs, tags, lines, components, bootstrap, intents,
+ * and the extracted release-triggering change set.
  */
 export const inputsFingerprint: InputsFingerprint = (input: PlanningInput): string => {
-  return `inputs_sha256:${createHash("sha256").update(canonicalJson(input)).digest("hex")}`;
+  const world = {
+    policyDigest: input.policy.digest,
+    refs: input.repository.refs,
+    tags: input.history.tags,
+    lines: input.lines,
+    components: input.components,
+    bootstrap: input.bootstrap,
+    intents: input.intents,
+    changes: releaseTriggeringChangesOf(input),
+  };
+  return `inputs_sha256:${createHash("sha256").update(canonicalJson(world)).digest("hex")}`;
 };

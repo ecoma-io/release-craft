@@ -3,10 +3,13 @@
  *
  * This module is NOT the release engine. It is the package's front door: the
  * toolchain canary (the typed surface the typecheck compiles, Vitest
- * executes, ESLint judges and the build emits) plus the domain the
- * `core-domain` project actually ships — re-exported, never reimplemented
- * here. Every release-planning, lifecycle, adapter and publishing concern
- * belongs to a future change, never to this file.
+ * executes, ESLint judges and the build emits) plus the layers that
+ * actually ship — the domain the `core-domain` project exports and the
+ * Phase 2 planner (src/planner/: the planning layer that turns observed
+ * repository history into release decisions, version targets, propagation
+ * plans and content fingerprints) — re-exported, never reimplemented
+ * here. Release execution, lifecycle, adapter and publishing concerns
+ * belong to a future change, never to this file.
  *
  * The surface carries no claim about the repository's stage of life. A stage
  * literal exported from here was a claim in code that no gate could read,
@@ -30,6 +33,15 @@
 // surface here is the barrel's surface, wholesale: one declaration, no drift
 // between what ships and what the contract suite imports.
 export * from "@ecoma-io/release-craft/domain";
+
+// The Phase 2 planner's public contract. This re-export is an ordinary
+// within-project edge — the planner lives in this package's own tree, so
+// the relative specifier is the honest spelling; the package-alias
+// treatment stays reserved for the cross-project `type-package →
+// type-domain` edge commented above. The surface is the planner barrel's,
+// wholesale (one declaration, no drift), and its isolation is enforced by
+// test/planner/isolation.test.ts.
+export * from "./planner/index.js";
 
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;

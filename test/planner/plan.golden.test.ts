@@ -1,7 +1,8 @@
 /**
- * End-to-end golden scenarios for the PR-4 planning layer — P-01, P-02, P-05,
- * P-06, P-07, PL-01, PL-02, PL-03, E-04 and E-11 of
- * docs/design/release-scenarios.md, pinned at the layer this PR owns: line
+ * End-to-end golden scenarios for the PR-4 planning layer — P-01, P-02, P-04,
+ * P-05, P-06, P-07, PL-01, PL-02, PL-03, E-04, E-11 and an M-08-style
+ * main-line case of docs/design/release-scenarios.md, pinned at the layer
+ * this PR owns: line
  * state rebuild (§2.13), targets and streams (§2.6–§2.8), dependency
  * propagation (§2.15) and plan identity (§2.10–§2.11, §2.14; decision-log
  * D9/D10/D12/D13/D16, forks 11 and 17).
@@ -17,8 +18,9 @@
  * Fixture posture mirrors scenario.golden.test.ts and
  * attribute.adversarial.test.ts: opaque per-scenario policy digests, the
  * default bump mapping, the alpha→beta→rc ladder, prereleaseSeed "0" (D13:
- * the P-01/P-02/P-05/P-07 fixtures take the kernel default; only M-08/E-08
- * declare the ".1" policy) and the "Release-Craft:" self-reference namespace.
+ * the P-01/P-02/P-04/P-05/P-06/P-07 fixtures take the kernel default; only
+ * the M-08-style fixture declares the ".1" policy) and the
+ * "Release-Craft:" self-reference namespace.
  */
 import { describe, expect, it } from "vitest";
 
@@ -66,6 +68,8 @@ const DIGEST_P02 = "sha256:" + "f".repeat(64);
 const DIGEST_P05 = "sha256:" + "g".repeat(64);
 const DIGEST_P06 = "sha256:" + "h".repeat(64);
 const DIGEST_P07 = "sha256:" + "i".repeat(64);
+const DIGEST_P04 = "sha256:" + "p".repeat(64);
+const DIGEST_M08 = "sha256:" + "q".repeat(64);
 const DIGEST_PL01 = "sha256:" + "j".repeat(64);
 const DIGEST_PL02 = "sha256:" + "k".repeat(64);
 const DIGEST_PL03 = "sha256:" + "l".repeat(64);
@@ -219,10 +223,29 @@ function stateFor(world: PlannedWorld, lineId: string): LineState {
   return rebuildLineState(historyFor(world, lineId));
 }
 
-/** The line's planned targets from the frozen §2.6/§2.7 door. */
+/** The line's planned targets from the frozen §2.6/§2.7 door, over the
+ * scenario's own intents. */
 function targetsFor(world: PlannedWorld, lineId: string) {
-  const decision = decisionFor(world, lineId);
-  return planTargets(decision, stateFor(world, lineId), lineFor(world, lineId), world.input.policy);
+  return planTargets(
+    world.input.intents ?? [],
+    decisionFor(world, lineId),
+    stateFor(world, lineId),
+    lineFor(world, lineId),
+    world.input.policy,
+  );
+}
+
+/** The line's would-be stable target with the intents stripped — the
+ * D17(3)-unsuppressed view the prerelease streams run toward. */
+function wouldBeStableFor(world: PlannedWorld, lineId: string): string | null {
+  const bare = planTargets(
+    [],
+    decisionFor(world, lineId),
+    stateFor(world, lineId),
+    lineFor(world, lineId),
+    world.input.policy,
+  );
+  return bare.stable?.version.toString() ?? null;
 }
 
 /** §2.8: streams answer the operator's prerelease intents for one line. The
@@ -514,25 +537,31 @@ describe("P-02: same target, three costumes — the ladder walk", () => {
 // ---------------------------------------------------------------------------
 
 describe("P-05: breaking mid-RC — the target moves under you", () => {
-  // Stated initial state: main; 1.2.0-rc.1 published. Inputs: one breaking
-  // merge `feat!: rename the config schema`; intent "continue stabilization".
-  // Single-line repo: the line declares no version band, so it admits every
-  // admissible tag — the minted 2.0.0-rc.0 belongs to this line even though
-  // the target moved out of the 1.x series (P-05's "the target moves under
-  // you"; a declared {major:1} band would surface it as foreign, E-06).
+  // Stated initial state: main; 1.1.0 released, then 1.2.0-rc.1 published
+  // (target 1.2.0 — a line opens an RC from its released base). Inputs: one
+  // breaking merge `feat!: rename the config schema`; intent "continue
+  // stabilization". Single-line repo: the line declares no version band, so
+  // it admits every admissible tag — the minted 2.0.0-rc.0 belongs to this
+  // line even though the target moved out of the 1.x series (P-05's "the
+  // target moves under you"; a declared {major:1} band would surface it as
+  // foreign, E-06).
   function input(extraTags: readonly TagObservation[]): PlanningInput {
     return buildInput({
       digest: DIGEST_P05,
       lines: [line("1.x", "main")],
       commits: [
-        commit("p05-c1", "feat: the 1.2.0 set", { containingRefs: ["main"] }),
+        commit("p05-c0", "feat: the 1.1 series", { containingRefs: ["main"] }),
+        commit("p05-c1", "feat: the 1.2.0 set", {
+          parents: ["p05-c0"],
+          containingRefs: ["main"],
+        }),
         commit("p05-c2", "feat!: rename the config schema", {
           parents: ["p05-c1"],
           containingRefs: ["main"],
         }),
       ],
       refs: [ref("main", "p05-c2")],
-      tags: [tag("1.2.0-rc.1", "p05-c1"), ...extraTags],
+      tags: [tag("1.1.0", "p05-c0"), tag("1.2.0-rc.1", "p05-c1"), ...extraTags],
       components: [component("release-craft", "1.2.0-rc.1")],
       intents: [{ kind: "prerelease", stream: "rc", lineId: "1.x" }],
     });
@@ -553,12 +582,14 @@ describe("P-05: breaking mid-RC — the target moves under you", () => {
       throw new Error("fixture broken: the rc.1 tag must raise a pointer");
     }
     expect(state.pointer.toString()).toBe("1.2.0-rc.1");
-    // §2.7: pre-1.0 dampening does not apply — the pointer is above 1.0.0.
-    const target = targetsFor(world, "1.x");
-    if (target.stable === null) {
-      throw new Error("fixture broken: a release decision must compute a stable target");
-    }
-    expect(target.stable.version.toString()).toBe("2.0.0");
+    // D17(2): the candidate recomputed from the line's stable base 1.1.0 —
+    // applyBump(1.1.0, major) = 2.0.0 — outranks the in-flight target
+    // (bumpPatch of 1.2.0-rc.1 = 1.2.0), so the target moves. D17(3): the
+    // scenario's rc intent suppresses the stable co-mint — the plan's stable
+    // is null and the streams carry the target; the would-be view (intents
+    // stripped) still computes 2.0.0.
+    expect(wouldBeStableFor(world, "1.x")).toBe("2.0.0");
+    expect(targetsFor(world, "1.x").stable).toBeNull();
     const streams = streamsFor(world, "1.x", [{ kind: "prerelease", stream: "rc", lineId: "1.x" }]);
     expect(streams).toHaveLength(1);
     const mint = streams.find((candidate) => candidate.identifier === "rc");
@@ -596,6 +627,124 @@ describe("P-05: breaking mid-RC — the target moves under you", () => {
       { target: "1.2.0", identifier: "rc", sequence: 1 },
       { target: "2.0.0", identifier: "rc", sequence: 0 },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P-04 — feat mid-RC: the boolean breaks (1.2.0-rc.3, the in-flight target
+// 1.2.0 stands — a sequence bump, not a state flip)
+// ---------------------------------------------------------------------------
+
+describe("P-04: feat mid-RC — the boolean breaks", () => {
+  // Stated initial state: main; 1.0.0 and 1.1.0 released; the 1.2.0 runway
+  // opened as an rc (1.2.0-rc.1 and rc.2 published); one feat lands mid-RC.
+  // Intent: "continue the rc stream".
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_P04,
+      lines: [line("1.x", "main", { major: 1 })],
+      commits: [
+        commit("p04-c0", "feat: the 1.0 series", { containingRefs: ["main"] }),
+        commit("p04-c1", "feat: the 1.1 series", {
+          parents: ["p04-c0"],
+          containingRefs: ["main"],
+        }),
+        commit("p04-c2", "feat: open the 1.2.0 runway", {
+          parents: ["p04-c1"],
+          containingRefs: ["main"],
+        }),
+        commit("p04-c3", "feat: the mid-RC payload", {
+          parents: ["p04-c2"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "p04-c3")],
+      tags: [
+        tag("1.0.0", "p04-c0"),
+        tag("1.1.0", "p04-c1"),
+        tag("1.2.0-rc.1", "p04-c2"),
+        tag("1.2.0-rc.2", "p04-c2"),
+      ],
+      components: [component("release-craft", "1.2.0-rc.2")],
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "1.x" }],
+    });
+  }
+
+  it("keeps the in-flight target 1.2.0 — the rc sequence continues at rc.3", () => {
+    const world = planDecisions(input());
+    expect(planDecisions(input())).toEqual(world);
+    const state = stateFor(world, "1.x");
+    expect(state.pointer?.toString()).toBe("1.2.0-rc.2");
+    // D17(2)'s base: the highest released stable survives under the rc pointer.
+    expect(state.stableBase?.toString()).toBe("1.1.0");
+    // Equal-precedence recompute: applyBump(1.1.0, minor) = 1.2.0 equals the
+    // in-flight target (the pointer's bumpPatch) — the target and its
+    // sequence stand; a feat is not a heavier join (N2: sequence bump, not a
+    // state flip).
+    expect(wouldBeStableFor(world, "1.x")).toBe("1.2.0");
+    expect(decisionFor(world, "1.x")).toMatchObject({ kind: "release", bump: "minor" });
+    // D17(3): the rc intent suppresses the stable co-mint — stream-only.
+    expect(targetsFor(world, "1.x").stable).toBeNull();
+    const streams = streamsFor(world, "1.x", [{ kind: "prerelease", stream: "rc", lineId: "1.x" }]);
+    expect(streams).toHaveLength(1);
+    expect(streams[0]).toMatchObject({
+      identifier: "rc",
+      seed: "0",
+      pointerBase: "1.2.0-rc.2",
+      movesPointer: true,
+      tag: "1.2.0-rc.3",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M-08-style — main-line prerelease: the stream is the publication (2.4.0-rc.1,
+// stream-only; the stable co-mint suppressed, the would-be 2.4.0 the target)
+// ---------------------------------------------------------------------------
+
+describe("M-08-style: main-line prerelease — stream-only under an intent", () => {
+  // M-08's main-line half within this PR's scope: the line's first-ever
+  // prerelease publishes stream-only (D17(3)); the stable co-mint stays
+  // would-be. The fixture declares the ".1" seed (D13: only M-08/E-08
+  // declare the ".1" policy).
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_M08,
+      lines: [line("main-line", "main")],
+      commits: [
+        commit("m08-c1", "feat: the 2.3 series", { containingRefs: ["main"] }),
+        commit("m08-c2", "feat: the next runway", {
+          parents: ["m08-c1"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "m08-c2")],
+      tags: [tag("2.3.0", "m08-c1")],
+      components: [component("release-craft", "2.3.0")],
+      policy: { ...policy(DIGEST_M08), prereleaseSeed: "1" },
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "main-line" }],
+    });
+  }
+
+  it("publishes 2.4.0-rc.1 stream-only — the stable co-mint suppressed", () => {
+    const world = planDecisions(input());
+    expect(planDecisions(input())).toEqual(world);
+    // The stable-pointer branch: applyBump(2.3.0, minor) = 2.4.0 is the
+    // would-be stable the stream runs toward.
+    expect(wouldBeStableFor(world, "main-line")).toBe("2.4.0");
+    // D17(3): stream-only — the plan's stable stays null.
+    expect(targetsFor(world, "main-line").stable).toBeNull();
+    const streams = streamsFor(world, "main-line", [
+      { kind: "prerelease", stream: "rc", lineId: "main-line" },
+    ]);
+    expect(streams).toHaveLength(1);
+    expect(streams[0]).toMatchObject({
+      identifier: "rc",
+      seed: "1",
+      pointerBase: "2.3.0",
+      movesPointer: true,
+      tag: "2.4.0-rc.1",
+    });
   });
 });
 
@@ -716,11 +865,11 @@ describe("P-07: RC-first on the maintenance line, under a 2.x main", () => {
     // The policy-mandated RC: the stream mints 1.2.4-rc.0 — the patch target
     // 1.2.4 with a fresh rc key at its seed. Neither a global-pointer answer
     // (2.1.1-rc.0) nor the skipped-RC stable (1.2.4) is in the output.
-    const target = targetsFor(world, "1.x");
-    if (target.stable === null) {
-      throw new Error("fixture broken: the release decision must compute a stable target");
-    }
-    expect(target.stable.version.toString()).toBe("1.2.4");
+    // D17(3): the rc intent suppresses the stable co-mint; the would-be view
+    // (intents stripped) still computes the patch target 1.2.4 the stream
+    // runs toward.
+    expect(wouldBeStableFor(world, "1.x")).toBe("1.2.4");
+    expect(targetsFor(world, "1.x").stable).toBeNull();
     const streams = streamsFor(world, "1.x", [{ kind: "prerelease", stream: "rc", lineId: "1.x" }]);
     expect(streams).toHaveLength(1);
     const mint = streams.find((candidate) => candidate.identifier === "rc");
@@ -789,7 +938,7 @@ describe("PL-01: one package changed, one package released", () => {
       ],
       // Fork 11's declared template grammar: {major}/{minor}/{patch}/
       // {prerelease} tokens; a stable version renders {prerelease} empty.
-      policy: policy(DIGEST_PL01, { "1.x": "lib-a-{major}.{minor}.{patch}" }),
+      policy: policy(DIGEST_PL01, { "1.x": "lib-a-{major}.{minor}.{patch}{prerelease}" }),
       intents: [{ kind: "release" }],
     });
   }
@@ -1056,6 +1205,7 @@ describe("E-04: policy flips under a stored plan — fingerprints are the recogn
       policyDigest: world.input.policy.digest,
       inputsFingerprint: inputsFingerprint(world.input),
       lines: [planLineOf(world, "1.x")],
+      explanation: { foreignTags: [], conflicts: [], excluded: [] },
     };
   }
 
@@ -1129,6 +1279,7 @@ describe("E-11: hotfix interleave — same target version, different plans", () 
       policyDigest: world.input.policy.digest,
       inputsFingerprint: inputsFingerprint(world.input),
       lines: [planLineOf(world, "1.x")],
+      explanation: { foreignTags: [], conflicts: [], excluded: [] },
     };
   }
 

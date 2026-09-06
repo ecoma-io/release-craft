@@ -1,9 +1,11 @@
 /**
  * §2.6–§2.8 target computation (`plan.ts`) — black-box tests over the
  * observable `TargetPlan`/`PlannedStream` values: stable bump arithmetic
- * through the kernel's bump doors with pre-1.0 dampening (§2.7), prerelease
+ * through the kernel's bump doors with pre-1.0 dampening (§2.7), the D17
+ * target rules (promotion, the P-04/P-05 in-flight-target rule, D17(3)
+ * suppression, release-as, the D17(1)/S-02 birth refusal), prerelease
  * sequencing over the rebuilt line state (§2.8), the declared seed (fork 17,
- * decision-log D13), the recorded pointer base and move flag (D9), and the
+ * decision-log D13), the recorded pointer base and move flag (D10), and the
  * tag-format knob (fork 11). Fixtures are self-contained, mirroring the
  * attribute.adversarial.test.ts idiom; assertions target observable
  * outcomes only — versions, tags, seeds, pointer bases — never internals.
@@ -48,6 +50,7 @@ function line(id: string = "app"): LineConfig {
 function stateOf(
   pointer: string | null,
   streams: readonly (readonly [string, string, number])[] = [],
+  stableBase: string | null = null,
 ): LineState {
   const keys: StreamKeyState[] = [];
   for (const entry of streams) {
@@ -59,6 +62,7 @@ function stateOf(
   }
   return {
     pointer: pointer === null ? null : Version.parse(pointer),
+    stableBase: stableBase === null ? null : Version.parse(stableBase),
     streams: keys,
   };
 }
@@ -74,6 +78,19 @@ function release(bump: Bump): LineDecision {
     range: RANGE,
     policyDigest: POLICY_DIGEST,
     detail: "fixture release decision",
+  };
+}
+
+/** A promotion decision (P-03): bump null, the change set inherited. */
+function promotion(): LineDecision {
+  return {
+    kind: "release",
+    bump: null,
+    changes: [],
+    lineId: "app",
+    range: RANGE,
+    policyDigest: POLICY_DIGEST,
+    detail: "fixture promotion decision",
   };
 }
 
@@ -95,57 +112,173 @@ function intent(stream: string, lineId: string = "app"): OperatorIntent {
 
 describe("planTargets — stable bump arithmetic (§2.7)", () => {
   it("applies a patch bump to the rebuilt pointer", () => {
-    const plan = planTargets(release("patch"), stateOf("1.2.3"), line(), policy());
+    const plan = planTargets([], release("patch"), stateOf("1.2.3"), line(), policy());
 
     expect(plan.stable?.version.toString()).toBe("1.2.4");
     expect(plan.stable?.tag).toBe("1.2.4");
-    // The frozen PlanTargets signature carries no intents: the targets-only
-    // view plans no streams (planStreams is the composed seam).
+    // planTargets composes the streams too; with no intents demanded, the
+    // stream list is empty (planStreams is the composed seam).
     expect(plan.streams).toStrictEqual([]);
   });
 
   it("applies minor and major bumps through the kernel doors", () => {
-    const minor = planTargets(release("minor"), stateOf("1.2.3"), line(), policy());
-    const major = planTargets(release("major"), stateOf("1.2.3"), line(), policy());
+    const minor = planTargets([], release("minor"), stateOf("1.2.3"), line(), policy());
+    const major = planTargets([], release("major"), stateOf("1.2.3"), line(), policy());
 
     expect(minor.stable?.version.toString()).toBe("1.3.0");
     expect(major.stable?.version.toString()).toBe("2.0.0");
   });
 
   it("dampens a major bump while the pointer sits below 1.0.0 (§2.7)", () => {
-    const plan = planTargets(release("major"), stateOf("0.4.2"), line(), policy());
+    const plan = planTargets([], release("major"), stateOf("0.4.2"), line(), policy());
 
     expect(plan.stable?.version.toString()).toBe("0.5.0");
   });
 
   it("does not dampen when the knob is off or the pointer has left 0.y.z", () => {
     const knobOff = planTargets(
+      [],
       release("major"),
       stateOf("0.4.2"),
       line(),
       policy({ pre10Dampening: false }),
     );
-    const pastOne = planTargets(release("major"), stateOf("1.2.0"), line(), policy());
+    const pastOne = planTargets([], release("major"), stateOf("1.2.0"), line(), policy());
 
     expect(knobOff.stable?.version.toString()).toBe("1.0.0");
     expect(pastOne.stable?.version.toString()).toBe("2.0.0");
   });
 
-  it("treats a null pointer as line birth: bumps from zero, never dampened", () => {
-    const patch = planTargets(release("patch"), stateOf(null), line(), policy());
-    const minor = planTargets(release("minor"), stateOf(null), line(), policy());
-    const major = planTargets(release("major"), stateOf(null), line(), policy());
+  it("refuses a release decision on a birthed line — the bootstrap target is door-composed (D17(1)/S-02)", () => {
+    // The first release targets the recorded bootstrap version, input
+    // PlanTargets does not receive; deriving a bump-from-zero fallback here
+    // is exactly the silently-wrong behavior D17(1) rules out.
+    const attempt = (): unknown =>
+      planTargets([], release("minor"), stateOf(null), line(), policy());
 
-    expect(patch.stable?.version.toString()).toBe("0.0.1");
-    expect(minor.stable?.version.toString()).toBe("0.1.0");
-    expect(major.stable?.version.toString()).toBe("1.0.0");
+    expect(attempt).toThrow(InvalidPlanningInputError);
+    expect(attempt).toThrow(/D17\(1\)/);
+    expect(attempt).toThrow(/S-02/);
   });
 
   it("gives a non-release decision a null stable target", () => {
-    const plan = planTargets(noOp(), stateOf("1.2.3"), line(), policy());
+    const plan = planTargets([], noOp(), stateOf("1.2.3"), line(), policy());
 
     expect(plan.stable).toBeNull();
     expect(plan.streams).toStrictEqual([]);
+  });
+});
+
+describe("planTargets — D17 target rules", () => {
+  it("keeps the in-flight target when the recompute lands at it (P-04)", () => {
+    // stableBase 1.1.0 + minor recomputes 1.2.0; the in-flight target
+    // (bumpPatch of pointer 1.2.0-rc.2) is 1.2.0 — equal precedence keeps
+    // the in-flight target, so the stream continues rc.2 → rc.3.
+    const wouldBe = planTargets(
+      [],
+      release("minor"),
+      stateOf("1.2.0-rc.2", [["1.2.0", "rc", 2]], "1.1.0"),
+      line(),
+      policy(),
+    );
+    expect(wouldBe.stable?.version.toString()).toBe("1.2.0");
+
+    const suppressed = planTargets(
+      [intent("rc")],
+      release("minor"),
+      stateOf("1.2.0-rc.2", [["1.2.0", "rc", 2]], "1.1.0"),
+      line(),
+      policy(),
+    );
+    // D17(3): the prerelease intent suppresses the stable co-mint — the
+    // streams carry the target instead.
+    expect(suppressed.stable).toBeNull();
+    expect(suppressed.streams.map((planned) => planned.version.toString())).toStrictEqual([
+      "1.2.0-rc.3",
+    ]);
+  });
+
+  it("moves the target above the in-flight class and resets the key (P-05)", () => {
+    // stableBase 1.1.0 + major recomputes 2.0.0, outranking the in-flight
+    // 1.2.0 — the target moves and the fresh key reseeds (rc.0, not rc.2).
+    const wouldBe = planTargets(
+      [],
+      release("major"),
+      stateOf("1.2.0-rc.1", [["1.2.0", "rc", 1]], "1.1.0"),
+      line(),
+      policy(),
+    );
+    expect(wouldBe.stable?.version.toString()).toBe("2.0.0");
+
+    const suppressed = planTargets(
+      [intent("rc")],
+      release("major"),
+      stateOf("1.2.0-rc.1", [["1.2.0", "rc", 1]], "1.1.0"),
+      line(),
+      policy(),
+    );
+    expect(suppressed.stable).toBeNull();
+    expect(suppressed.streams.map((planned) => planned.version.toString())).toStrictEqual([
+      "2.0.0-rc.0",
+    ]);
+  });
+
+  it("dampens the recomputed candidate, never the in-flight target itself", () => {
+    // stableBase 0.3.2 + major dampens to 0.4.0 — equal to the in-flight
+    // target, so it stands; the knob off recomputes 1.0.0, which outranks.
+    const damped = planTargets(
+      [],
+      release("major"),
+      stateOf("0.4.0-rc.1", [["0.4.0", "rc", 1]], "0.3.2"),
+      line(),
+      policy(),
+    );
+    expect(damped.stable?.version.toString()).toBe("0.4.0");
+
+    const raw = planTargets(
+      [],
+      release("major"),
+      stateOf("0.4.0-rc.1", [["0.4.0", "rc", 1]], "0.3.2"),
+      line(),
+      policy({ pre10Dampening: false }),
+    );
+    expect(raw.stable?.version.toString()).toBe("1.0.0");
+  });
+
+  it("promotes the pointed-at release when the decision's bump is null (P-03)", () => {
+    const plan = planTargets(
+      [],
+      promotion(),
+      stateOf("1.2.0-rc.2", [["1.2.0", "rc", 2]]),
+      line(),
+      policy(),
+    );
+
+    expect(plan.stable?.version.toString()).toBe("1.2.0");
+  });
+
+  it("overrides the computed stable with the first release-as version (compatibility row 2)", () => {
+    const plan = planTargets(
+      [{ kind: "release-as", version: "3.1.4" }],
+      release("minor"),
+      stateOf("1.2.3"),
+      line(),
+      policy(),
+    );
+    expect(plan.stable?.version.toString()).toBe("3.1.4");
+    expect(plan.stable?.tag).toBe("3.1.4");
+
+    const firstWins = planTargets(
+      [
+        { kind: "release-as", version: "3.1.4" },
+        { kind: "release-as", version: "4.0.0" },
+      ],
+      release("minor"),
+      stateOf("1.2.3"),
+      line(),
+      policy(),
+    );
+    expect(firstWins.stable?.version.toString()).toBe("3.1.4");
   });
 });
 
@@ -194,12 +327,13 @@ describe("planStreams — prerelease sequencing (§2.8)", () => {
   });
 
   it("a moved target starts a new key at the seed, resetting the sequence (P-05)", () => {
-    const state = stateOf("1.2.0-rc.1", [["1.2.0", "rc", 1]]);
+    const state = stateOf("1.2.0-rc.1", [["1.2.0", "rc", 1]], "1.1.0");
 
     const streams = planStreams([intent("rc")], release("major"), state, line(), policy());
 
-    // The stable target recomputes to 2.0.0; the re-based rc key is fresh,
-    // so the sequence resets to the seed instead of continuing to rc.2.
+    // The stable target recomputes to 2.0.0 from the stable base; the
+    // re-based rc key is fresh, so the sequence resets to the seed instead
+    // of continuing to rc.2.
     expect(streams[0]?.version.toString()).toBe("2.0.0-rc.0");
     expect(streams[0]?.identifier).toBe("rc");
     expect(streams[0]?.seed).toBe("0");
@@ -213,7 +347,7 @@ describe("planStreams — prerelease sequencing (§2.8)", () => {
 
     // P-06's operator intent is "advance rc only": one stream planned, the
     // alpha key observed but untouched. (Demanding alpha here would plan
-    // 1.2.0-alpha.5 below the rc.1 pointer — D9's refusal, covered below.)
+    // 1.2.0-alpha.5 below the rc.1 pointer — D10's refusal, covered below.)
     const streams = planStreams([intent("rc")], release("patch"), state, line(), policy());
 
     expect(streams.map((planned) => planned.version.toString())).toStrictEqual(["1.2.0-rc.2"]);
@@ -249,7 +383,7 @@ describe("planStreams — prerelease sequencing (§2.8)", () => {
     expect(streams[0]?.movesPointer).toBe(false);
   });
 
-  it("refuses a mint that sorts below the released pointer (D9's override branch)", () => {
+  it("refuses a mint that sorts below the released pointer (D10's override branch)", () => {
     // P-02's ladder regression shape: rc is live at rc.1 while the operator
     // demands beta — beta.0 sorts below rc.1, and this policy input declares
     // no ladder override, so planning fails closed naming both versions.
@@ -265,25 +399,27 @@ describe("planStreams — prerelease sequencing (§2.8)", () => {
 
 describe("tag formatting (fork 11)", () => {
   it("applies the declared per-line tag format template to stream and stable tags", () => {
-    const streamPolicy = policy({
-      tagFormats: { app: "ecoma-app-v{major}.{minor}.{patch}-{prerelease}" },
+    // One declared format names both kinds: the {prerelease} token renders
+    // `-` + identifiers for a prerelease and empty for a stable (input.ts
+    // requires the token), so no template carries a literal separator.
+    const bothPolicy = policy({
+      tagFormats: { app: "ecoma-app-v{major}.{minor}.{patch}{prerelease}" },
     });
     const streams = planStreams(
       [intent("rc")],
       release("patch"),
       stateOf("1.2.0-rc.3", [["1.2.0", "rc", 3]]),
       line(),
-      streamPolicy,
+      bothPolicy,
     );
     expect(streams[0]?.tag).toBe("ecoma-app-v1.2.0-rc.4");
 
-    const stablePolicy = policy({ tagFormats: { app: "ecoma-app-v{major}.{minor}.{patch}" } });
-    const stable = planTargets(release("minor"), stateOf("1.2.3"), line(), stablePolicy);
+    const stable = planTargets([], release("minor"), stateOf("1.2.3"), line(), bothPolicy);
     expect(stable.stable?.tag).toBe("ecoma-app-v1.3.0");
   });
 
   it("defaults to the bare version when no format is declared for the line", () => {
-    const plan = planTargets(release("minor"), stateOf("1.2.3"), line(), policy());
+    const plan = planTargets([], release("minor"), stateOf("1.2.3"), line(), policy());
 
     expect(plan.stable?.tag).toBe("1.3.0");
   });
