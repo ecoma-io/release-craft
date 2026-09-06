@@ -30,7 +30,7 @@ channel door).
 HookStep {
   id: string                                   // non-empty, unique per attempt
   anchor: { stage: StageKey; position: "before" | "after" }
-  claims: readonly string[]                    // preconditions: claim requirements
+  guard: string                                // one declared guard name, recorded verbatim
   postconditions: readonly PostconditionKind[] // recorded proofs required
 }
 PostconditionKind = "content-fingerprint-present" | "evidence-present"
@@ -65,7 +65,12 @@ accepts the declarations; `StepKey` widens to `StageKey | HookStepKey`
 with `StageKey` aliasing the unchanged canonical eight; every port that
 means "one of the canonical stages" (`requestStep`'s stage parameter,
 `requiresHeldClaim`) narrows to `StageKey`; `ResumeOutcome.from` widens
-to `StepKey`.
+to `StepKey`; `appendStart` gains an optional trailing `guard` parameter
+(the hook's declared guard name, recorded verbatim on the start record as
+the one `GuardResult` its aggregate check produced — the write-ahead door,
+so hooks never bypass it); the resume classification's
+first-uncompleted walk uses the effective step list (hooks included,
+external satisfaction still judged over canonical stages only).
 
 ### 2.2 The scheduler
 
@@ -74,13 +79,29 @@ scheduleHooks(attempt, ledger, claims, effects): readonly HookOutcome[]
 ```
 
 The scheduler reads the declared hooks off the attempt (§2.1) and walks
-the effective step list in order (ADR-0007 decision 9): canonical stages
-behave exactly as the kernel and ledger already classify them; at a hook
-step it
+the effective step list in order (ADR-0007 decision 9):
 
-1. verifies the declared claims through the kernel's guard machinery
-   (preconditions are guards, ADR-0007 decision 4) and records them
-   verbatim on the start record,
+```text
+scheduleHooks(
+  attempt, attribution, ledger, claims, effects,
+): { attempt: ReleaseAttempt; outcomes: readonly HookOutcome[] }
+```
+
+`attribution` is the driving actor's — records are attributed events
+(§2.6); the contract's first sketch omitted it, and appending a start
+record demands it. `effects` maps hook id to the caller-injected effect.
+Canonical stages behave exactly as the kernel and ledger already classify
+them; at a hook step the scheduler
+
+1. runs the kernel's guard rule — one aggregate check, scope-agnostic:
+   the attempt holds a claim (`claims.held`), the claim is the attempt's
+   (`holder === attemptId`), and the store verifies its token. The
+   `ClaimView` port exposes exactly one held claim and `ClaimScope` is an
+   object union, so there is no name-to-scope mapping: the hook declares
+   exactly one guard name, and that name records the one check's result —
+   verbatim — on the start record (a `GuardResult` entry per check run,
+   never per declared name). A failed check is the kernel's recorded
+   refusal — the same shape a mutating stage without its claim takes,
 2. appends the hook's start — durable before the effect may run
    (write-ahead, ADR-0006 decision 2),
 3. invokes the caller-injected effect at the seam:
@@ -88,6 +109,10 @@ step it
    — synchronous, the engine never stores or invents it (decision 2),
 4. checks the observation against the declared postconditions and records
    the completion with its proof (§2.4), or the failure (§2.5).
+
+The scheduler never mutates the attempt value — the returned `attempt` is
+the successor (blocked after a §2.5 escalation, otherwise unchanged), and
+the walk stops at the first refusal or escalation (ordered execution).
 
 A completed hook is never re-executed: the ledger projection answers the
 replay, and `classifyResume` walks the effective step list — a resume may
@@ -119,9 +144,11 @@ A `content-fingerprint-present` postcondition requires the observation to
 carry a `contentFingerprint`, recorded verbatim on the completion record;
 an `evidence-present` postcondition requires non-empty `evidence`. The
 proof lives on the record: replay and resume re-read it, never re-run the
-effect. A hook completion with its proof replays as `noop` over the same
-fingerprint and `conflict` over a different one, exactly as a stage's
-completion does.
+effect. Replay is scheduler-driven: a completed hook replays as a `completed`
+outcome carrying the recorded proof — the effect is never re-run to obtain
+a proof to compare. The `noop`-vs-`conflict` fingerprint comparison stays
+where the stage replay door (`requestStep`) owns it; hooks never re-execute
+to feed it (ADR-0007 decision 6).
 
 ### 2.5 Reconciliation — fail-closed, in the existing vocabulary
 
@@ -134,6 +161,12 @@ completion does.
   attempt stays blocked until Phase 5's resolution loop closes it
   (revalidation under the stored plan, or a human resolution for
   `unattributed-state`).
+- The failed hook record is not E-01's crash doctrine: the resume
+  classification's structural pass reads a failed `hook:` record against
+  the attempt's state — a blocked attempt means the escalation is already
+  classified (the resolution loop answers it); a failed hook record under
+  a non-blocked attempt is a tail contradiction and escalates. Canonical
+  failed stages keep §2.4's crash path unchanged.
 - No new attempt state, no new ledger record kind, no silent pass.
 
 ## 3. Laws
