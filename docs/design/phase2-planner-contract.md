@@ -208,8 +208,9 @@ data), never silent exclusion (PL-04's posture).
 M-02, M-07). Normalization: tag names are parsed to `Version` through the
 kernel's grammar (no `v` prefixes; per-component tag formats are declared
 input configuration — fork 11's naming knob). Admissibility: a tag joins a
-line's history only when its normalized version falls in that line's version
-namespace per declared line configuration; foreign or unattributable tags are
+line's history only when its normalized version falls in that line's
+declared version band (`LineConfig.versionBand`, D15 — major, optionally
+minor; absent admits every admissible tag); foreign or unattributable tags are
 excluded from history **and surfaced** in the plan's explanation data (E-06
 conservatism — adoption without attribution is refused at planning time).
 Line state (released pointer, stream states) is rebuilt from tags at plan
