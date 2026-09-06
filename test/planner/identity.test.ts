@@ -46,7 +46,7 @@ function plan(lines: readonly PlanLine[], supersedes: string | null): Omit<Relea
     inputsFingerprint: `inputs_sha256:${"0".repeat(64)}`,
     refusedIntents: [],
     lines,
-    explanation: { foreignTags: [], conflicts: [], excluded: [] },
+    explanation: { foreignTags: [], conflicts: [], excluded: [], withheld: [] },
   };
 }
 

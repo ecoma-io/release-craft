@@ -281,6 +281,104 @@ describe("normalize — the closed input boundary (§2.1)", () => {
       const rejected = reject(archived);
       expect(fieldsOf(rejected)).toContain("lines[0].lifecycle");
     });
+
+    it("rejects an allow list that is neither a union member nor a list, naming the indexed field", () => {
+      const rejected = reject(withLines([{ ...baseLine(), streams: { allow: wrong(7) } }]));
+      expect(fieldsOf(rejected)).toContain("lines[0].streams.allow");
+    });
+
+    it("rejects an empty stream identifier in the allow list, naming the indexed field", () => {
+      const rejected = reject(withLines([{ ...baseLine(), streams: { allow: ["rc", ""] } }]));
+      expect(fieldsOf(rejected)).toContain("lines[0].streams.allow[1]");
+    });
+
+    it("rejects a duplicate stream identifier, naming the second occurrence and the value", () => {
+      const rejected = reject(withLines([{ ...baseLine(), streams: { allow: ["rc", "rc"] } }]));
+
+      expect(fieldsOf(rejected)).toContain("lines[0].streams.allow[1]");
+      const violation = rejected.violations.find(
+        (candidate) => candidate.field === "lines[0].streams.allow[1]",
+      );
+      expect(violation?.problem).toContain("rc");
+    });
+
+    it("accepts an empty allow list — valid data: the line mints no streams", () => {
+      const input = withLines([{ ...baseLine(), streams: { allow: [] } }]);
+      const snapshot = structuredClone(input);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input);
+      expect(result).toEqual(snapshot);
+    });
+
+    it("rejects a line seed outside the declared fork, naming the indexed field", () => {
+      const rejected = reject(withLines([{ ...baseLine(), streams: { seed: wrong("2") } }]));
+      expect(fieldsOf(rejected)).toContain("lines[0].streams.seed");
+    });
+
+    it("rejects a withhold rule with an empty scope, naming the indexed field", () => {
+      const rejected = reject(
+        withLines([{ ...baseLine(), withhold: [{ scope: "", reason: "held for review" }] }]),
+      );
+      expect(fieldsOf(rejected)).toContain("lines[0].withhold[0].scope");
+    });
+
+    it("rejects a withhold rule with an empty reason, naming the indexed field", () => {
+      const rejected = reject(
+        withLines([{ ...baseLine(), withhold: [{ scope: "docs/*", reason: "" }] }]),
+      );
+      expect(fieldsOf(rejected)).toContain("lines[0].withhold[0].reason");
+    });
+
+    it("rejects an empty publishes binding, naming the indexed field", () => {
+      const rejected = reject(withLines([{ ...baseLine(), publishes: "" }]));
+      expect(fieldsOf(rejected)).toContain("lines[0].publishes");
+    });
+
+    it("rejects a publishes binding naming an undeclared component, naming the component and the gap", () => {
+      const rejected = reject(withLines([{ ...baseLine(), publishes: "cli" }]));
+
+      expect(fieldsOf(rejected)).toContain("lines[0].publishes");
+      const violation = rejected.violations.find(
+        (candidate) => candidate.field === "lines[0].publishes",
+      );
+      expect(violation?.problem).toContain("cli");
+      expect(violation?.problem).toContain("binding has a gap");
+    });
+
+    it("rejects a publishes binding when the input declares other components", () => {
+      const input: PlanningInput = {
+        ...makeValidInput(),
+        components: [{ name: "app", manifestVersion: "1.2.3", paths: ["apps/app"] }],
+        lines: [{ ...baseLine(), publishes: "cli" }],
+      };
+
+      const rejected = reject(input);
+
+      expect(fieldsOf(rejected)).toContain("lines[0].publishes");
+    });
+
+    it("accepts a fully declared line policy — streams, seed, withhold, and a declared binding", () => {
+      const input: PlanningInput = {
+        ...makeValidInput(),
+        components: [{ name: "app", manifestVersion: "1.2.3", paths: ["apps/app"] }],
+        lines: [
+          {
+            ...baseLine(),
+            streams: { allow: ["rc", "beta"], seed: "1" },
+            withhold: [{ scope: "docs/*", reason: "documentation rides the next train" }],
+            publishes: "app",
+          },
+        ],
+      };
+      const snapshot = structuredClone(input);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input);
+      expect(result).toEqual(snapshot);
+    });
   });
 
   describe("components", () => {

@@ -9,14 +9,19 @@
  * module, composed and never re-implemented here. The kernel is reached only
  * through `@ecoma-io/release-craft/domain` types (ADR-0001's import rule).
  *
- * Three frozen-shape readings this assembly pins, per the contract's wording:
+ * Four frozen-shape readings this assembly pins, per the contract's wording:
  *
- * 1. **Component mapping (§2.15, D17(8), PL-01's declared-future seam).**
+ * 1. **Component mapping (§2.15, D17(8) → D18 Decision 4, PL-01's seam).**
  *    `planPropagation` is called once per plan. The door refuses to
- *    fabricate the line↔component release mapping: with releases pending,
- *    exactly one declared component must meet exactly one releasing line —
- *    mapping every declared component to the release would invent releases.
- *    A zero-release plan needs no binding and propagates honestly over an
+ *    fabricate the line↔component release mapping: each releasing line's
+ *    release entry binds to the component its declared `publishes` names;
+ *    where the declaration is absent, the D17(8) single-component posture
+ *    stands — the one declared component carries the release. A releasing
+ *    line without the declaration in any other world, or two releasing
+ *    lines binding the same component, is the caller contract violation
+ *    naming the gap (a binding naming an undeclared component is closed
+ *    out at the input seam's component universe). A
+ *    zero-release plan needs no binding and propagates honestly over an
  *    empty release list (negative evidence per declared component).
  *
  * 2. **Propagation attachment (§2.11's tuple wording).** The fingerprint
@@ -38,6 +43,13 @@
  *    commits — is aggregated verbatim from the tag-history and extraction
  *    stages into the fingerprint tuple.
  *
+ * 4. **The refusal records (§2.9, D18/M-08).** A prerelease demand a
+ *    line's declared admission posture refuses is composed into
+ *    `refusedIntents` from the same predicate `planStreams` omits the
+ *    demand with — one record per refused intent, in input order, never a
+ *    stable fallback: the refusing line's own release still mints, and
+ *    allowed requests plan as today.
+ *
  * §2.9: negative outcomes are records. An attribution refusal IS the
  * outcome — nothing else leaks — while a plan whose lines all no-op is
  * still a plan (§2.10's no-op successor shape, `lines: []`). §2.14: the
@@ -53,7 +65,7 @@ import { extract } from "./extract.js";
 import { deriveRanges, loadTagHistory } from "./history.js";
 import { inputsFingerprint, planFingerprint } from "./identity.js";
 import { InvalidPlanningInputError, normalize } from "./input.js";
-import { formatTag, planStreams, planTargets } from "./plan.js";
+import { formatTag, isStreamAllowed, planStreams, planTargets } from "./plan.js";
 import { planPropagation } from "./propagate.js";
 import { rebuildLineState } from "./state.js";
 import type {
@@ -66,6 +78,8 @@ import type {
   PlanningInput,
   PolicyInput,
   PropagationPlan,
+  RefusedIntent,
+  WithheldCommit,
   TargetPlan,
 } from "./types.js";
 
@@ -184,6 +198,25 @@ function mintedTagsOf(stable: TargetPlan["stable"], streams: readonly PlannedStr
   return [...new Set(tags)];
 }
 
+/** A refused demand's reason (§2.8, D18): the declared posture named — the
+ * stable-only knob, or the allow list the identifier sits outside — with
+ * the refused identifier. It rides the fingerprinted plan, so it is pure
+ * data of the input. */
+function refusedStreamReason(line: LineConfig, identifier: string): string {
+  const allow = line.streams?.allow;
+  if (allow === "none") {
+    return `line ${line.id} is stable-only — the line's declared stream policy admits no prerelease streams (D18)`;
+  }
+  if (allow === undefined || allow === "all") {
+    return `line ${line.id} admits prerelease stream ${JSON.stringify(identifier)} — no declared posture refuses it`;
+  }
+  return (
+    `line ${line.id}'s declared allow list (` +
+    allow.map((name) => JSON.stringify(name)).join(", ") +
+    `) does not admit prerelease stream ${JSON.stringify(identifier)} (D18)`
+  );
+}
+
 /** One §2.11 line tuple. The plan-level propagation plan rides verbatim
  * (reading 2 in the module header); the stable version is recorded as its
  * string; the streams are the planned streams verbatim. */
@@ -254,18 +287,20 @@ export const plan: Plan = (raw) => {
       "attribution produced a line the history projection did not cover",
     );
     const state = rebuildLineState(lineHistory);
-    // D17(1): the first release of a line targets the recorded bootstrap
-    // version verbatim — the frozen targets layer cannot see the input's
-    // bootstrap record and refuses the shape (planTargets throws here by
-    // design), so the door composes the birth target itself and plans the
-    // streams directly; everywhere else the targets layer plans both.
+    // D18: a refused or withheld line contributes no plan line — no
+    // targets, no streams, no release entry (§2.9's amendment): the
+    // decision record is the line's whole presence in the pass. Every
+    // other non-birth decision keeps the P-07 posture (streams mint for
+    // the line even when the stable does not move).
     const targets: TargetPlan =
-      decision.kind === "release" && state.pointer === null
-        ? {
-            stable: birthStable(input, config, intents),
-            streams: planStreams(intents, decision, state, config, input.policy),
-          }
-        : planTargets(intents, decision, state, config, input.policy);
+      decision.kind === "refused" || decision.kind === "withheld"
+        ? { stable: null, streams: [] }
+        : decision.kind === "release" && state.pointer === null
+          ? {
+              stable: birthStable(input, config, intents),
+              streams: planStreams(intents, decision, state, config, input.policy),
+            }
+          : planTargets(intents, decision, state, config, input.policy);
     if (targets.stable !== null || targets.streams.length > 0) {
       planned.push({
         lineId: line.lineId,
@@ -276,53 +311,111 @@ export const plan: Plan = (raw) => {
     }
   }
 
-  // §2.15 releases (reading 1 in the module header), behind D17(8)/PL-01's
-  // gate: the caller declares the line↔component release binding — exactly
-  // one declared component meets exactly one releasing line — and the door
-  // refuses to fabricate it. A plan with no releasing lines needs no
-  // binding and propagates honestly over the empty release list. A release
-  // decision publishes the component at its stable target — or, when a
-  // prerelease intent suppressed the co-mint (D17(3)), at the streams'
-  // highest-precedence target: the stream IS the publication there
-  // (P-04/P-05/P-07/M-08).
+  // §2.15 releases (reading 1 in the module header), behind D18 Decision 4's
+  // declared binding: each releasing line's release entry binds to the
+  // component its `publishes` names — the mapping becomes closed input, the
+  // anti-fabrication posture stands around it. Where the declaration is
+  // absent, the D17(8) single-component posture carries the release; a
+  // releasing line without the declaration in any other world, or two
+  // releasing lines binding the same component, is the caller contract
+  // violation naming the gap (an undeclared binding name cannot reach
+  // here — input normalization's component universe rejects it first). A
+  // release decision publishes the component at its stable target — or,
+  // when an admissible prerelease intent suppressed the co-mint (D17(3)),
+  // at the streams' highest-precedence target: the stream IS the
+  // publication there (P-04/P-05/P-07/M-08).
   const components = input.components ?? [];
   const releasing = planned.filter((minted) => minted.decision.kind === "release");
-  if (releasing.length > 0 && (components.length !== 1 || releasing.length !== 1)) {
-    throw new InvalidPlanningInputError([
-      {
-        field: components.length === 1 ? "lines" : "components",
-        problem:
-          `${String(components.length)} component(s) declared but ${String(releasing.length)} line(s) release ` +
-          `(${releasing.map((minted) => minted.lineId).join(", ")}) — the door refuses to fabricate the ` +
-          "line↔component release mapping (decision-log D17(8), PL-01): declare exactly one component " +
-          "for the single releasing line",
-      },
-    ]);
-  }
-  const releases: ReleaseEntry[] = [];
+  const boundReleases: { readonly minted: PlannedLine; readonly component: string }[] = [];
+  const firstBoundLine = new Map<string, string>();
   for (const minted of releasing) {
-    for (const component of components) {
-      const stable = minted.stable;
-      if (stable !== null) {
-        releases.push({ component: component.name, version: stable.version });
-        continue;
-      }
-      const publication = [...minted.streams].sort((left, right) =>
-        right.version.compare(left.version),
-      )[0];
-      if (publication === undefined) {
+    const config = requireFound(
+      configById[minted.lineId],
+      `lines.${minted.lineId}`,
+      "attribution produced a line the input does not declare",
+    );
+    let component = config.publishes;
+    if (component === undefined) {
+      if (components.length !== 1) {
         throw new InvalidPlanningInputError([
           {
-            field: `lines.${minted.lineId}`,
+            field: `lines.${minted.lineId}.publishes`,
             problem:
-              "a releasing line published neither a stable target nor a stream — target planning produced nothing to map",
+              `${String(components.length)} component(s) declared (` +
+              components.map((candidate) => JSON.stringify(candidate.name)).join(", ") +
+              `) but line "${minted.lineId}" releases without declaring publishes ` +
+              "— the door refuses to fabricate the line↔component release mapping " +
+              "(decision-log D17(8), PL-01): declare publishes on every releasing line " +
+              "the one-component posture cannot carry (D18 decision 4, ADR-0004)",
           },
         ]);
       }
-      releases.push({ component: component.name, version: publication.version });
+      const sole = requireFound(
+        components[0],
+        "components",
+        "the single-component posture carries the release, but no component is declared",
+      );
+      component = sole.name;
     }
+    const first = firstBoundLine.get(component);
+    if (first !== undefined) {
+      throw new InvalidPlanningInputError([
+        {
+          field: `lines.${minted.lineId}.publishes`,
+          problem:
+            `lines "${first}" and "${minted.lineId}" both bind their releases to component ` +
+            `${JSON.stringify(component)} — a declared component carries one release per ` +
+            "pass, so the mapping is ambiguous (D18 decision 4, ADR-0004): give each " +
+            "releasing line its own component",
+        },
+      ]);
+    }
+    firstBoundLine.set(component, minted.lineId);
+    boundReleases.push({ minted, component });
   }
+  const releases: ReleaseEntry[] = boundReleases.map(({ minted, component }) => {
+    const stable = minted.stable;
+    if (stable !== null) {
+      return { component, version: stable.version };
+    }
+    const publication = [...minted.streams].sort((left, right) =>
+      right.version.compare(left.version),
+    )[0];
+    if (publication === undefined) {
+      throw new InvalidPlanningInputError([
+        {
+          field: `lines.${minted.lineId}`,
+          problem:
+            "a releasing line published neither a stable target nor a stream — target planning produced nothing to map",
+        },
+      ]);
+    }
+    return { component, version: publication.version };
+  });
   const propagation = planPropagation(components, releases);
+
+  // D18/M-08 (ADR-0004 decision 1): the prerelease demands the lines'
+  // declared admission postures refuse — one record per refused intent, in
+  // input order, from the same predicate planStreams omits the demand with.
+  // A refusal is a fingerprinted record, never a stable fallback: the
+  // refusing line's own release still mints, an allowed request plans as
+  // today, and an intent naming an undeclared line stays inert — no
+  // declared posture exists to refuse it.
+  const refusedIntents: RefusedIntent[] = [];
+  for (const intent of intents) {
+    if (intent.kind !== "prerelease") {
+      continue;
+    }
+    const config = configById[intent.lineId];
+    if (config === undefined || isStreamAllowed(config, intent.stream)) {
+      continue;
+    }
+    refusedIntents.push({
+      intent,
+      lineId: intent.lineId,
+      reason: refusedStreamReason(config, intent.stream),
+    });
+  }
 
   // §2.10/§2.11/§2.14: assemble the closed tuple and fingerprint it.
   // `supersedes` is always null from the pure door — threading a prior
@@ -334,19 +427,55 @@ export const plan: Plan = (raw) => {
   // in stage order, always present so excluded is never invisible. It is
   // part of the fingerprint tuple (§2.11), so an explanation-only
   // difference changes the planId.
+  // D18 (PL-07): the withhold-deferred set, curated onto the plan's
+  // explanation — the decision records carry the raw commits; here each
+  // deferral names its line, matched scope, and the rule's reason, so a
+  // stored plan shows what is waiting inside the un-released span
+  // (recoverable after an unfreeze — deferral is never deletion).
+  const withheldOnPlan: WithheldCommit[] = [];
+  for (const decision of decisions) {
+    const deferred =
+      decision.kind === "withheld"
+        ? decision.withheld
+        : decision.kind === "release"
+          ? (decision.withheld ?? [])
+          : [];
+    if (deferred.length === 0) {
+      continue;
+    }
+    const rules = configById[decision.lineId]?.withhold ?? [];
+    for (const parsed of deferred) {
+      // decide defers only rule-matched commits, so this is a tripwire,
+      // not a filter: a deferred commit may never disappear from the
+      // persisted explanation (excluded is not invisible).
+      const rule = requireFound(
+        rules.find((candidate) => candidate.scope === parsed.scope),
+        `lines.${decision.lineId}.withhold`,
+        `a deferred commit (${parsed.sha}) matches no declared withhold rule — the decision and the plan explanation disagree`,
+      );
+      withheldOnPlan.push({
+        lineId: decision.lineId,
+        sha: parsed.sha,
+        scope: rule.scope,
+        reason: rule.reason,
+      });
+    }
+  }
   const planBody = {
     supersedes: null,
     policyDigest: input.policy.digest,
     inputsFingerprint: inputsFingerprint(input),
     lines,
-    // D18: requested streams the lines' declared policies refused — the
-    // composition lands with the line-policy slice; the empty default is
-    // the fingerprinted record of "nothing was refused".
-    refusedIntents: [],
+    // D18/M-08: the requested streams the lines' declared postures refused —
+    // composed above from the same predicate planStreams omits demands
+    // with; the empty default is the fingerprinted record "nothing was
+    // refused".
+    refusedIntents,
     explanation: {
       foreignTags: history.lines.flatMap((line) => line.foreign),
       conflicts: extraction.conflicts,
       excluded: extraction.excluded,
+      withheld: withheldOnPlan,
     },
   };
   return {

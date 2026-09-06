@@ -42,8 +42,14 @@ function policy(overrides: Partial<PolicyInput> = {}): PolicyInput {
   };
 }
 
-function line(id: string = "app"): LineConfig {
-  return { id, feedRef: "main", lifecycle: "active", declared: true };
+function line(id: string = "app", overrides: Partial<Omit<LineConfig, "id">> = {}): LineConfig {
+  return {
+    id,
+    feedRef: "main",
+    lifecycle: "active",
+    declared: true,
+    ...overrides,
+  };
 }
 
 /** A rebuilt line state in the §2.13 shape: pointer plus observed stream keys. */
@@ -394,6 +400,111 @@ describe("planStreams — prerelease sequencing (§2.8)", () => {
     expect(attempt).toThrow(InvalidPlanningInputError);
     expect(attempt).toThrow(/1\.2\.4-beta\.0/);
     expect(attempt).toThrow(/1\.2\.4-rc\.1/);
+  });
+});
+
+describe("planStreams — the line's declared stream policy (§2.8, D18)", () => {
+  it("mints a listed opaque identifier and omits an unlisted one from the same plan", () => {
+    const configured = line("app", { streams: { allow: ["nightly"] } });
+
+    const streams = planStreams(
+      [intent("nightly"), intent("alpha")],
+      release("patch"),
+      stateOf("1.2.3"),
+      configured,
+      policy(),
+    );
+
+    // The opaque identifier is legal exactly by declaration (fork 4): it
+    // mints. The unlisted alpha is refused by the declared posture —
+    // omitted here, never thrown; assemble composes the refusal record.
+    expect(streams.map((planned) => planned.identifier)).toStrictEqual(["nightly"]);
+    expect(streams[0]?.version.toString()).toBe("1.2.4-nightly.0");
+    expect(streams[0]?.seed).toBe("0");
+  });
+
+  it("mints zero streams for a line whose declared posture is allow none", () => {
+    const configured = line("app", { streams: { allow: "none" } });
+
+    const streams = planStreams(
+      [intent("rc")],
+      release("patch"),
+      stateOf("1.2.3"),
+      configured,
+      policy(),
+    );
+
+    // M-08's stable-only knob: the demand is refused, never a stable fallback.
+    expect(streams).toStrictEqual([]);
+  });
+
+  it("a refused demand does not suppress the line's stable target (D18)", () => {
+    const targets = planTargets(
+      [intent("rc")],
+      release("patch"),
+      stateOf("1.2.3"),
+      line("app", { streams: { allow: "none" } }),
+      policy(),
+    );
+
+    // M-08's stable half: the prerelease demand is refused, but the line's
+    // own release still mints — the plan never goes silently empty.
+    expect(targets.stable?.version.toString()).toBe("1.2.4");
+    expect(targets.streams).toStrictEqual([]);
+  });
+
+  it("an admissible demand still suppresses the stable co-mint alongside refused ones", () => {
+    const targets = planTargets(
+      [intent("nightly"), intent("alpha")],
+      release("patch"),
+      stateOf("1.2.3"),
+      line("app", { streams: { allow: ["nightly"] } }),
+      policy(),
+    );
+
+    // D17(3) holds for the admissible nightly demand: the streams carry
+    // the target and no stable co-mints; alpha is merely refused.
+    expect(targets.stable).toBeNull();
+    expect(targets.streams.map((planned) => planned.identifier)).toStrictEqual(["nightly"]);
+  });
+
+  it("a line-level seed override wins for its line; the other keeps the global seed (D18)", () => {
+    const seeded = line("seeded", { streams: { seed: "1" } });
+    const plain = line("plain");
+    const demands = [intent("rc", "seeded"), intent("rc", "plain")];
+
+    const seededStreams = planStreams(
+      demands,
+      release("patch"),
+      stateOf("1.2.3"),
+      seeded,
+      policy(),
+    );
+    const plainStreams = planStreams(demands, release("patch"), stateOf("1.2.3"), plain, policy());
+
+    // The declared line override lands in the recorded seed (fork 17): the
+    // seeded line's fresh key starts at rc.1...
+    expect(seededStreams[0]?.version.toString()).toBe("1.2.4-rc.1");
+    expect(seededStreams[0]?.seed).toBe("1");
+    // ...while the line without the override still reads the global seed.
+    expect(plainStreams[0]?.version.toString()).toBe("1.2.4-rc.0");
+    expect(plainStreams[0]?.seed).toBe("0");
+  });
+
+  it("an absent streams declaration keeps the default posture: every demand mints", () => {
+    const streams = planStreams(
+      [intent("alpha"), intent("rc")],
+      release("patch"),
+      stateOf("1.2.3"),
+      line(),
+      policy(),
+    );
+
+    // Defaults-as-data (ADR-0004): no streams declaration is allow "all",
+    // the global seed governs, and the plan is bit-for-bit the old shape.
+    expect(streams.map((planned) => planned.identifier)).toStrictEqual(["alpha", "rc"]);
+    expect(streams[0]?.version.toString()).toBe("1.2.4-alpha.0");
+    expect(streams[1]?.seed).toBe("0");
   });
 });
 

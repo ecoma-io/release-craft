@@ -1205,7 +1205,8 @@ describe("E-04: policy flips under a stored plan — fingerprints are the recogn
       policyDigest: world.input.policy.digest,
       inputsFingerprint: inputsFingerprint(world.input),
       lines: [planLineOf(world, "1.x")],
-      explanation: { foreignTags: [], conflicts: [], excluded: [] },
+      refusedIntents: [],
+      explanation: { foreignTags: [], conflicts: [], excluded: [], withheld: [] },
     };
   }
 
@@ -1279,7 +1280,8 @@ describe("E-11: hotfix interleave — same target version, different plans", () 
       policyDigest: world.input.policy.digest,
       inputsFingerprint: inputsFingerprint(world.input),
       lines: [planLineOf(world, "1.x")],
-      explanation: { foreignTags: [], conflicts: [], excluded: [] },
+      refusedIntents: [],
+      explanation: { foreignTags: [], conflicts: [], excluded: [], withheld: [] },
     };
   }
 

@@ -397,6 +397,11 @@ export type LineDecision =
        * change set is inherited, so nothing was resolved from pending. */
       readonly bump: Bump | null;
       readonly changes: readonly ParsedCommit[];
+      /** D18 (PL-07): the withhold-matched commits the release's range
+       * pinned itself below — present only when declared rules deferred
+       * changes; the plan's explanation enumerates them with their rules'
+       * scope and reason (excluded is not invisible). */
+      readonly withheld?: readonly ParsedCommit[];
     } & RecordBase)
   | ({
       readonly kind: "no-op";
@@ -629,13 +634,29 @@ export interface ReleasePlan {
     readonly foreignTags: readonly ForeignTag[];
     readonly conflicts: readonly IdentityConflict[];
     readonly excluded: readonly ExcludedCommit[];
+    /** D18 (PL-07): the withhold-deferred commits across the pass — the
+     * rule-matched changes the release ranges pinned below (or, for a
+     * fully-deferred line, withheld outright), each with its line, matched
+     * scope, and the rule's reason. Deferral is recoverable, so the stored
+     * plan must show what is waiting (excluded is not invisible). */
+    readonly withheld: readonly WithheldCommit[];
   };
 }
 
-/** A requested stream the line's declared policy refuses (§2.9, D18/M-08):
- * recorded on the plan — never retried, never silently absorbed into a
- * stable fallback. The rest of the plan is unaffected: M-08's stable-only
- * line still releases its own change set in the same pass. */
+/** D18 (PL-07) — one withhold-deferred change on the plan's explanation:
+ * the decision record carries the raw commits; this is the curated
+ * plan-level view naming the rule that deferred each. */
+export interface WithheldCommit {
+  readonly lineId: string;
+  readonly sha: string;
+  readonly scope: string;
+  readonly reason: string;
+}
+
+/** D18/M-08 — a requested stream the line's declared policy refuses
+ * (§2.9): recorded on the plan — never retried, never silently absorbed
+ * into a stable fallback. The rest of the plan is unaffected: M-08's
+ * stable-only line still releases its own change set in the same pass. */
 export interface RefusedIntent {
   readonly intent: OperatorIntent;
   readonly lineId: string;

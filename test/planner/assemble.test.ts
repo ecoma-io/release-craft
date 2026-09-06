@@ -4,15 +4,20 @@
  * fail-closed refusal of docs/design/release-scenarios.md, plus the door
  * pins D17 adds — the P-03 promote door, the release-anyway forced record,
  * the ReleasePlan.explanation aggregation, and the line↔component mapping
- * refusal — and the §2.11 plan-shape rules (minted-tag preconditions and
- * artifacts) and the frozen-shape readings the assembly
- * pins:
+ * refusal — and the D18 line-policy composition adds — the recorded stream
+ * refusals (M-08), the allow-list posture, the declared publishes binding,
+ * and the refused/withheld line consumption — with the §2.11 plan-shape
+ * rules (minted-tag preconditions and artifacts) and the frozen-shape
+ * readings the assembly pins:
  *
- * 1. Component mapping (§2.15, D17(8), PL-01's declared-future seam): the
- *    door refuses to fabricate the line↔component release mapping — with
- *    releases pending, exactly one declared component must meet exactly
- *    one releasing line; zero-release plans propagate honestly over an
- *    empty release list (negative evidence per declared component).
+ * 1. Component mapping (§2.15, D17(8) → D18 Decision 4, PL-01's seam): each
+ *    releasing line's release entry binds to the component its declared
+ *    `publishes` names; absent the declaration, the D17(8) single-component
+ *    posture carries the release. A releasing line without the declaration
+ *    in any other world, a binding naming an undeclared component, or two
+ *    lines binding one component is refused, naming the gap. Zero-release
+ *    plans propagate honestly over an empty release list (negative
+ *    evidence per declared component).
  * 2. Propagation attachment (§2.11's tuple wording): the one plan-level
  *    PropagationPlan rides verbatim on every assembled line.
  *
@@ -65,6 +70,12 @@ const DIGEST_P03 = "sha256:" + "0".repeat(64);
 const DIGEST_FORCED = "sha256:" + "1".repeat(64);
 const DIGEST_EXPLAIN = "sha256:" + "2".repeat(64);
 const DIGEST_P07 = "sha256:" + "3".repeat(64);
+const DIGEST_M08 = "sha256:" + "4".repeat(64);
+const DIGEST_D18_LIST = "sha256:" + "5".repeat(64);
+const DIGEST_D18_BIND = "sha256:" + "6".repeat(64);
+const DIGEST_D18_SOLO = "sha256:" + "7".repeat(64);
+const DIGEST_D18_REFUSED = "sha256:" + "8".repeat(64);
+const DIGEST_D18_WITHHELD = "sha256:" + "9".repeat(64);
 
 function policy(digest: string, tagFormats: Readonly<Record<string, string>> = {}): PolicyInput {
   return {
@@ -442,7 +453,8 @@ describe("M-07 through the door — two lines, own ranges, divergent histories",
       ],
       refs: [ref("2.x", "m07-2.3.0"), ref("1.9", "m07-divergent-fix")],
       tags: [tag("2.3.0", "m07-2.3.0"), tag("1.9.0", "m07-1.9.0")],
-      // D17(8): the one releasing line meets exactly one declared component.
+      // D17(8) default posture: absent publishes, the one declared
+      // component carries the single releasing line (D18).
       components: [component("release-craft", "1.9.0")],
       intents: [{ kind: "release" }],
     });
@@ -597,10 +609,10 @@ describe("PL-02 case 2 through the door — the ambiguous mapping is refused", (
   }
 
   it("refuses to fabricate the line↔component release mapping (D17(8))", () => {
-    // Three declared components and one releasing line: assembling the plan
-    // would map every component to the release — inventing releases (an
-    // unexecutable range-widening edge pins this failure). The door raises
-    // the caller contract violation naming the binding gap instead.
+    // Three declared components and one releasing line with no declared
+    // publishes: the one-component posture cannot carry the release, and
+    // the door refuses to fabricate the line↔component release mapping.
+    // It raises the caller contract violation naming the binding gap.
     // PL-02's propagation semantics — the range-widening edges this door
     // used to assemble — stay pinned at the direct planPropagation layer in
     // plan.golden.test.ts.
@@ -608,6 +620,383 @@ describe("PL-02 case 2 through the door — the ambiguous mapping is refused", (
     expect(attempt).toThrow(InvalidPlanningInputError);
     expect(attempt).toThrow(/1\.x/);
     expect(attempt).toThrow(/line↔component release mapping/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M-08 — the stable-only line: the prerelease request is a recorded
+// refusal, the line's own release still mints (D18)
+// ---------------------------------------------------------------------------
+
+describe("M-08 through the door — the refused rc beside the stable mint", () => {
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_M08,
+      lines: [{ ...line("1.9", "feed/1.9", { major: 1, minor: 9 }), streams: { allow: "none" } }],
+      commits: [
+        commit("m08-c1", "feat: the 1.9 line", { containingRefs: ["feed/1.9"] }),
+        commit("m08-fix", "fix: the stable-only fix", {
+          parents: ["m08-c1"],
+          containingRefs: ["feed/1.9"],
+        }),
+      ],
+      refs: [ref("feed/1.9", "m08-fix")],
+      tags: [tag("1.9.0", "m08-c1")],
+      components: [component("release-craft", "1.9.0")],
+      intents: [{ kind: "release" }, { kind: "prerelease", stream: "rc", lineId: "1.9" }],
+    });
+  }
+
+  it("records the refused rc intent while the line's own stable still mints (D18)", () => {
+    const outcome = plan(input());
+    // M-08's rejection half: the rc request on the stable-only line is a
+    // recorded refusal naming the declared posture — never an exception,
+    // never a stable fallback.
+    expect(decisionFor(outcome, "1.9")).toMatchObject({
+      kind: "release",
+      bump: "patch",
+      range: { lineId: "1.9", releasedUpTo: "m08-c1", head: "m08-fix" },
+    });
+    const assembled = plannedOf(outcome).plan;
+    expect(assembled.refusedIntents).toEqual([
+      {
+        intent: { kind: "prerelease", stream: "rc", lineId: "1.9" },
+        lineId: "1.9",
+        reason: `line 1.9 is stable-only — the line's declared stream policy admits no prerelease streams (D18)`,
+      },
+    ]);
+    // M-08's release half: the refusal changes nothing else in the plan —
+    // 1.9.1 mints in the same pass and no stream is planned for the line.
+    const minted = planLineOf(outcome);
+    expect(minted.lineId).toBe("1.9");
+    expect(minted.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
+    expect(minted.streams).toEqual([]);
+    expect(minted.changes).toEqual([
+      { id: "m08-fix", lineage: ["m08-fix"], type: "fix", bump: "patch" },
+    ]);
+    expect(minted.propagation).toEqual({
+      edges: [],
+      order: ["release-craft"],
+      notMoved: [],
+    });
+    // §2.14: the door is pure — identical inputs, identical whole outcome.
+    expect(plan(input())).toEqual(outcome);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D18 §2.8 — the allow-list posture: a listed identifier is a declaration
+// that mints; an unlisted one is the recorded refusal
+// ---------------------------------------------------------------------------
+
+describe("D18 §2.8 through the door — the allow-list posture", () => {
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_D18_LIST,
+      lines: [{ ...line("1.x", "main", { major: 1 }), streams: { allow: ["beta"] } }],
+      commits: [
+        commit("lst-c1", "feat: the 1.2 line", { containingRefs: ["main"] }),
+        commit("lst-fix", "fix: the joining fix", {
+          parents: ["lst-c1"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "lst-fix")],
+      tags: [tag("1.2.0", "lst-c1")],
+      components: [component("release-craft", "1.2.0")],
+      intents: [
+        { kind: "prerelease", stream: "rc", lineId: "1.x" },
+        { kind: "prerelease", stream: "beta", lineId: "1.x" },
+      ],
+    });
+  }
+
+  it("refuses the unlisted rc demand and mints the declared beta stream", () => {
+    const outcome = plan(input());
+    const assembled = plannedOf(outcome).plan;
+    // The rc demand sits outside the declared allow list — one record,
+    // naming the list; the beta demand is a declaration, so no record.
+    expect(assembled.refusedIntents).toEqual([
+      {
+        intent: { kind: "prerelease", stream: "rc", lineId: "1.x" },
+        lineId: "1.x",
+        reason: `line 1.x's declared allow list ("beta") does not admit prerelease stream "rc" (D18)`,
+      },
+    ]);
+    // The admissible beta demand suppresses the stable co-mint (D17(3)) and
+    // mints at the would-be stable target: the stream is the publication.
+    expect(decisionFor(outcome, "1.x")).toMatchObject({ kind: "release", bump: "patch" });
+    const minted = planLineOf(outcome);
+    expect(minted.stable).toBeNull();
+    expect(minted.changes).toEqual([
+      { id: "lst-fix", lineage: ["lst-fix"], type: "fix", bump: "patch" },
+    ]);
+    expect(minted.streams.map((stream) => stream.identifier)).toEqual(["beta"]);
+    const stream = minted.streams[0];
+    if (stream === undefined) {
+      throw new Error("fixture broken: the beta stream must be planned");
+    }
+    expect(stream.tag).toBe("1.2.1-beta.0");
+    expect(minted.propagation.order).toEqual(["release-craft"]);
+    expect(plan(input())).toEqual(outcome);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D18 Decision 4 — the declared publishes binding dissolves the D17(8)
+// refusal exactly where every releasing line declares it
+// ---------------------------------------------------------------------------
+
+describe("D18 Decision 4 through the door — the declared publishes binding", () => {
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_D18_BIND,
+      lines: [
+        { ...line("1.x", "main", { major: 1 }), publishes: "lib-a" },
+        { ...line("2.x", "next", { major: 2 }), publishes: "lib-b" },
+      ],
+      commits: [
+        commit("bnd-c1", "feat: the 1.x line", { containingRefs: ["main"] }),
+        commit("bnd-minor", "feat: the 1.x feature", {
+          parents: ["bnd-c1"],
+          containingRefs: ["main"],
+        }),
+        commit("bnd-c2", "feat: the 2.x line", { containingRefs: ["next"] }),
+        commit("bnd-break", "feat!: break the lib-b surface", {
+          parents: ["bnd-c2"],
+          containingRefs: ["next"],
+        }),
+      ],
+      refs: [ref("main", "bnd-minor"), ref("next", "bnd-break")],
+      tags: [tag("1.2.0", "bnd-c1"), tag("2.0.0", "bnd-c2")],
+      components: [
+        component("lib-a", "1.2.0"),
+        component("lib-b", "2.0.0", [{ name: "lib-a", range: "^1.2.0" }]),
+        component("app", "1.0.0", [
+          { name: "lib-a", range: "^1.2.0" },
+          { name: "lib-b", range: "^2.0.0" },
+        ]),
+      ],
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("assembles two releasing lines bound to two declared components", () => {
+    const outcome = plan(input());
+    const assembled = plannedOf(outcome).plan;
+    // The dissolved D17(8) refusal: two releasing lines, each declaring its
+    // binding — the mapping is closed input, the plan assembles both mints.
+    expect(assembled.lines.map((entry) => entry.lineId)).toEqual(["1.x", "2.x"]);
+    const [first, second] = assembled.lines;
+    if (first === undefined || second === undefined) {
+      throw new Error("fixture broken: both lines must assemble");
+    }
+    expect(decisionFor(outcome, "1.x")).toMatchObject({ kind: "release", bump: "minor" });
+    expect(decisionFor(outcome, "2.x")).toMatchObject({ kind: "release", bump: "major" });
+    expect(first.stable).toEqual({ version: "1.3.0", tag: "1.3.0" });
+    expect(second.stable).toEqual({ version: "3.0.0", tag: "3.0.0" });
+    // Both entries flowed into the one plan-level propagation: lib-b's
+    // breaking 3.0.0 widens app's ^2.0.0, while lib-a's minor 1.3.0 stays
+    // inside every ^1.2.0. Both releases are ordered nodes; app is widened.
+    expect(first.propagation).toEqual({
+      edges: [{ from: "lib-b", to: "app", reason: "range-widening" }],
+      order: ["lib-a", "lib-b", "app"],
+      notMoved: [],
+    });
+    expect(second.propagation).toEqual(first.propagation);
+    expect(plan(input())).toEqual(outcome);
+  });
+
+  it("keeps the D17(8) refusal when the multi-component world lacks the binding", () => {
+    const world = input();
+    const stripped = {
+      ...world,
+      lines: world.lines.map((config) => {
+        if (config.id !== "2.x") {
+          return config;
+        }
+        const { publishes: _omit, ...rest } = config;
+        return rest;
+      }),
+    };
+    // The declaration is the dissolve: where it is missing in a world the
+    // one-component posture cannot carry, the door refuses with the same
+    // exception, naming the line and the binding gap.
+    const attempt = (): PlanningOutcome => plan(stripped);
+    expect(attempt).toThrow(InvalidPlanningInputError);
+    expect(attempt).toThrow(/2\.x/);
+    expect(attempt).toThrow(/publishes/);
+    expect(attempt).toThrow(/line↔component release mapping/);
+  });
+
+  it("refuses two releasing lines binding the same declared component", () => {
+    const world = input();
+    const clashing = {
+      ...world,
+      lines: world.lines.map((config) => ({ ...config, publishes: "lib-a" })),
+    };
+    // A declared component carries one release per pass: two lines on one
+    // component is the ambiguous mapping, named with both lines.
+    const attempt = (): PlanningOutcome => plan(clashing);
+    expect(attempt).toThrow(InvalidPlanningInputError);
+    expect(attempt).toThrow(/"1\.x"/);
+    expect(attempt).toThrow(/"2\.x"/);
+    expect(attempt).toThrow(/"lib-a"/);
+  });
+
+  it("refuses a binding naming an undeclared component", () => {
+    // The undeclared name never reaches the binding resolution: input
+    // normalization's closed component universe refuses it first, through
+    // the same exception, naming the gap.
+    const world = input();
+    const stray = {
+      ...world,
+      lines: world.lines.map((config) => ({ ...config, publishes: "ghost" })),
+    };
+    const attempt = (): PlanningOutcome => plan(stray);
+    expect(attempt).toThrow(InvalidPlanningInputError);
+    expect(attempt).toThrow(/"ghost"/);
+    expect(attempt).toThrow(/undeclared component/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D18's zero-declaration path — the single-component posture without
+// publishes is bit-for-bit today's behavior
+// ---------------------------------------------------------------------------
+
+describe("the single-component posture through the door — absent publishes unchanged", () => {
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_D18_SOLO,
+      lines: [line("1.x", "main", { major: 1 })],
+      commits: [
+        commit("solo-c1", "feat: the 1.2 line", { containingRefs: ["main"] }),
+        commit("solo-fix", "fix: the solo patch", {
+          parents: ["solo-c1"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "solo-fix")],
+      tags: [tag("1.2.0", "solo-c1")],
+      components: [component("release-craft", "1.2.0")],
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("carries the release on the one declared component with nothing declared (D18)", () => {
+    const outcome = plan(input());
+    const assembled = plannedOf(outcome).plan;
+    // Absent publishes keeps the D17(8) posture: the single declared
+    // component carries the release, and no refusal is recorded.
+    expect(assembled.refusedIntents).toEqual([]);
+    const minted = planLineOf(outcome);
+    expect(minted.lineId).toBe("1.x");
+    expect(minted.stable).toEqual({ version: "1.2.1", tag: "1.2.1" });
+    expect(minted.propagation).toEqual({
+      edges: [],
+      order: ["release-craft"],
+      notMoved: [],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D18 Decision 2 — the lifecycle refusal: a refused line contributes no
+// plan line through the same path as any refused decision
+// ---------------------------------------------------------------------------
+
+describe("D18 lifecycle through the door — the retired line's refused record", () => {
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_D18_REFUSED,
+      lines: [
+        { ...line("1.x", "main", { major: 1 }), lifecycle: "retired" },
+        line("2.x", "next", { major: 2 }),
+      ],
+      commits: [
+        commit("life-c1", "feat: the 1.x line", { containingRefs: ["main"] }),
+        commit("life-fix", "fix: late work on the retired line", {
+          parents: ["life-c1"],
+          containingRefs: ["main"],
+        }),
+        commit("life-c2", "feat: the 2.x line", { containingRefs: ["next"] }),
+        commit("life-feat", "feat: the 2.x feature", {
+          parents: ["life-c2"],
+          containingRefs: ["next"],
+        }),
+      ],
+      refs: [ref("main", "life-fix"), ref("next", "life-feat")],
+      tags: [tag("1.0.0", "life-c1"), tag("2.0.0", "life-c2")],
+      components: [component("release-craft", "2.0.0")],
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("gives the retired line a refused record, no plan line beside the mint", () => {
+    const outcome = plan(input());
+    // D18 decision 2: release-shaped planning refuses on the retired line —
+    // the record stands on the decisions, the plan assembles nothing for
+    // the line, and the active line's mint is unaffected.
+    expect(decisionFor(outcome, "1.x")).toMatchObject({
+      kind: "refused",
+      cause: "line-retired",
+      lineId: "1.x",
+      policyDigest: DIGEST_D18_REFUSED,
+    });
+    const assembled = plannedOf(outcome).plan;
+    expect(assembled.lines.map((entry) => entry.lineId)).toEqual(["2.x"]);
+    const minted = assembled.lines[0];
+    if (minted === undefined) {
+      throw new Error("fixture broken: the active line must assemble");
+    }
+    expect(minted.stable).toEqual({ version: "2.1.0", tag: "2.1.0" });
+    expect(assembled.refusedIntents).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D18 Decision 3 — the withhold deferral: a withheld line contributes no
+// plan line, the record enumerates the deferred set
+// ---------------------------------------------------------------------------
+
+describe("D18 withhold through the door — the deferred line's withheld record", () => {
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_D18_WITHHELD,
+      lines: [
+        {
+          ...line("1.x", "main", { major: 1 }),
+          withhold: [{ scope: "security", reason: "pending CVE triage" }],
+        },
+      ],
+      commits: [
+        commit("wh-c1", "feat: the 1.2 line", { containingRefs: ["main"] }),
+        commit("wh-fix", "fix(security): the deferred fix", {
+          parents: ["wh-c1"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "wh-fix")],
+      tags: [tag("1.2.0", "wh-c1")],
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("gives the withheld line a record and no plan line (D18 decision 3)", () => {
+    const outcome = plan(input());
+    // PL-07 through the door: the matching change defers, never deletes —
+    // the record enumerates it and the line left with nothing
+    // release-worthy assembles no plan line.
+    expect(decisionFor(outcome, "1.x")).toMatchObject({
+      kind: "withheld",
+      cause: "policy-filter",
+      lineId: "1.x",
+      policyDigest: DIGEST_D18_WITHHELD,
+      withheld: [{ sha: "wh-fix" }],
+    });
+    expect(plannedOf(outcome).plan.lines).toEqual([]);
+    expect(plannedOf(outcome).plan.refusedIntents).toEqual([]);
   });
 });
 
@@ -862,7 +1251,7 @@ describe("the explanation data through the door — excluded is not invisible", 
     expect(assembled.planId).toBe(planFingerprint(tuple));
     const stripped = {
       ...tuple,
-      explanation: { foreignTags: [], conflicts: [], excluded: [] },
+      explanation: { foreignTags: [], conflicts: [], excluded: [], withheld: [] },
     };
     expect(assembled.planId).not.toBe(planFingerprint(stripped));
   });

@@ -32,11 +32,12 @@
  * Streams are keyed by (target, identifier) over the rebuilt `LineState`
  * (§2.13): an observed key continues at `sequence + 1`; a fresh key — a new
  * target (P-05) or a new identifier on the same target (P-02's
- * per-identifier reset) — starts at the declared seed,
- * `policy.prereleaseSeed` (fork 17 resolved as declared seed policy,
- * decision-log D13: `.0` is the kernel default, `.1` by explicit
- * declaration). Which seed the plan ran under is recorded per stream. The
- * mint composes `target-identifier.sequence` through `Version.parse` — the
+ * per-identifier reset) — starts at the declared seed: the line's
+ * `streams.seed` override when it declares one, else `policy.prereleaseSeed`
+ * (fork 17 resolved as declared seed policy, decision-log D13: `.0` is the
+ * kernel default, `.1` by explicit declaration; §2.8/D18 for the override).
+ * Which seed the plan ran under is recorded per stream.
+ * The mint composes `target-identifier.sequence` through `Version.parse` — the
  * same composition the kernel's `streamVersion` performs. The kernel's
  * `advanceStream` cannot serve directly: it always seeds fresh keys at 0
  * and replays no history gaps, while the seed is line policy the kernel
@@ -96,9 +97,12 @@ const BIRTH_BASE = Version.parse("0.0.0");
  * demand. A release decision over a line with no released versions is a
  * caller contract error here — the first release targets the recorded
  * bootstrap version (D17(1)/S-02), input this layer does not receive; the
- * door composes it, so no derived fallback is ever minted. A `prerelease`
- * intent naming the line suppresses the stable co-mint (D17(3)): the streams
- * carry the target, the stable stays `null`.
+ * door composes it, so no derived fallback is ever minted. An ADMISSIBLE
+ * `prerelease` demand suppresses the stable co-mint (D17(3)): the streams
+ * carry the target, the stable stays `null`. A refused demand does not
+ * suppress (§2.8, D18) — the stable-only line still releases its own change
+ * set (M-08's stable half), while assemble composes the `refusedIntents`
+ * record from the same predicate (`isStreamAllowed`).
  */
 export const planTargets: PlanTargets = (intents, decision, state, line, policy) => {
   if (decision.kind === "release" && state.pointer === null) {
@@ -112,13 +116,36 @@ export const planTargets: PlanTargets = (intents, decision, state, line, policy)
       },
     ]);
   }
+  // D17(3)'s suppression keys on an admissible demand (§2.8, D18): a
+  // refused demand leaves the stable target standing — the stable-only
+  // line still releases its own change set (M-08's stable half).
   const suppressed = intents.some(
-    (candidate) => candidate.kind === "prerelease" && candidate.lineId === line.id,
+    (candidate) =>
+      candidate.kind === "prerelease" &&
+      candidate.lineId === line.id &&
+      isStreamAllowed(line, candidate.stream),
   );
   return {
     stable: suppressed ? null : stableTarget(intents, decision, state, line, policy),
     streams: planStreams(intents, decision, state, line, policy),
   };
+};
+
+/**
+ * §2.8 (D18) — the line's declared admission posture; assemble composes
+ * `refusedIntents` from the same predicate. Absent `streams` is the
+ * defaults-as-data posture (ADR-0004): every demanded identifier is
+ * allowed, and the global `policy.prereleaseSeed` governs fresh keys.
+ */
+export const isStreamAllowed = (line: LineConfig, identifier: string): boolean => {
+  const allow = line.streams?.allow;
+  if (allow === undefined || allow === "all") {
+    return true;
+  }
+  if (allow === "none") {
+    return false;
+  }
+  return allow.includes(identifier);
 };
 
 /**
@@ -130,6 +157,9 @@ export const planTargets: PlanTargets = (intents, decision, state, line, policy)
  * in play), the pointer's own next patch. `bumpPatch` over a prerelease
  * pointer is the release that pointer already points at, the kernel's
  * documented convention.
+ * A demanded identifier the line's declared posture refuses (§2.8, D18) is
+ * not minted and not an error — it is omitted here; assemble composes the
+ * refusal record from the same predicate (`isStreamAllowed`).
  */
 export const planStreams = (
   intents: readonly OperatorIntent[],
@@ -144,7 +174,9 @@ export const planStreams = (
 
   const demands = intents.filter(
     (candidate): candidate is PrereleaseIntent =>
-      candidate.kind === "prerelease" && candidate.lineId === line.id,
+      candidate.kind === "prerelease" &&
+      candidate.lineId === line.id &&
+      isStreamAllowed(line, candidate.stream),
   );
   // Input order — the plan's stream list is stable for identical input.
   return demands.map((demand) => planStream(demand, target, state, line, policy, pointerBase));
@@ -165,7 +197,10 @@ function planStream(
   const observed = state.streams.find(
     (key) => key.identifier === demand.stream && key.target.equals(target),
   );
-  const sequence = observed !== undefined ? observed.sequence + 1 : Number(policy.prereleaseSeed);
+  // The line's declared seed override (§2.8, D18): streams.seed wins over
+  // the global policy seed for this line's fresh keys.
+  const seed = line.streams?.seed ?? policy.prereleaseSeed;
+  const sequence = observed !== undefined ? observed.sequence + 1 : Number(seed);
   const minted = Version.parse(`${target.toString()}-${demand.stream}.${String(sequence)}`);
 
   // §2.8's released-pointer convention: the pointer stands unless the mint
@@ -196,8 +231,9 @@ function planStream(
     identifier: demand.stream,
     version: minted,
     tag: formatTag(minted, policy.tagFormats[line.id]),
-    // The seed the plan ran under, recorded per stream (fork 17/D13).
-    seed: policy.prereleaseSeed,
+    // The seed the plan ran under, recorded per stream (fork 17/D13) —
+    // the line's declared override when it declares one (§2.8, D18).
+    seed,
     pointerBase,
     movesPointer,
   };
