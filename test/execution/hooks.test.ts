@@ -457,7 +457,7 @@ describe("kill-anywhere with hooks (§4.2): truncation at every effective bounda
         if (isHookStepKey(key)) {
           recordHook(ledger, attempt, key.slice("hook:".length));
         } else {
-          completeStage(ledger, attempt, key);
+          completeStage(ledger, attempt, key as StageKey);
         }
       }
       if (boundary === 0) {

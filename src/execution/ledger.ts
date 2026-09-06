@@ -160,6 +160,19 @@ const deepFreezeRecord = (record: LedgerRecord): LedgerRecord => {
         ...record.record,
         guards: Object.freeze(record.record.guards.map((guard) => Object.freeze({ ...guard }))),
         attribution: Object.freeze({ ...record.record.attribution }),
+        // The generation record's halves (phase 7 contract §2.3) freeze
+        // with the record — the triple and its dependency digests are
+        // recorded values, immutable like everything else on the tail.
+        ...(record.record.artifact === undefined
+          ? {}
+          : { artifact: Object.freeze({ ...record.record.artifact }) }),
+        ...(record.record.dependsOn === undefined
+          ? {}
+          : {
+              dependsOn: Object.freeze(
+                record.record.dependsOn.map((edge) => Object.freeze({ ...edge })),
+              ),
+            }),
       }),
     });
   }

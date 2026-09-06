@@ -13,7 +13,8 @@
  * no-silent-failure law; no clock, randomness, or environment reads.
  */
 import { InvalidExecutionTransitionError } from "./attempt.js";
-import { effectiveSteps, isHookStepKey } from "./hooks.js";
+import { effectiveSteps } from "./hooks.js";
+import { isArtifactStepKey, isHookStepKey } from "./step-keys.js";
 import { requestStep } from "./outcome.js";
 import {
   CANONICAL_STAGES,
@@ -35,8 +36,9 @@ import {
  * remaining-work pointer. Null when every step completed. A step's own
  * `started` state counts as uncompleted: a crash window between the
  * write-ahead record and the effect means the step must run again (E-01,
- * E-02). Hooks ride the list at their anchors (ADR-0007 decision 6) — a
- * resume may continue at a hook step. */
+ * E-02). Hooks ride the list at their anchors (ADR-0007 decision 6), and
+ * artifact steps at theirs (ADR-0008 decision 10) — a resume may continue
+ * at an extension step. */
 const firstUncompleted = (attempt: ReleaseAttempt, ledger: ExecutionLedger): StepKey | null => {
   for (const step of effectiveSteps(attempt)) {
     if (ledger.step(attempt.attemptId, step) !== "completed") {
@@ -99,18 +101,19 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
       };
     }
     if (step.to === "failed") {
-      // A failed hook record is classified, not crashed (phase 6 contract
-      // §2.5; ADR-0007 decision 8): the scheduler appended it together
-      // with the blocked(validation) attempt, and §2.7's resolution loop
-      // answers it. The same record under a non-blocked attempt is a tail
+      // A failed hook or artifact record is classified, not crashed
+      // (phase 6 contract §2.5; ADR-0007 decision 8; phase 7 contract
+      // §2.5: an artifact failure "classifies exactly as a hook's does",
+      // ADR-0008 decision 8). The scheduler appended it together with the
+      // blocked(validation) attempt, and §2.7's resolution loop answers
+      // it. The same record under a non-blocked attempt is a tail
       // contradiction — recorded state a human must judge.
-      if (isHookStepKey(step.stepKey)) {
-        // A failed hook record is classified, not crashed (phase 6 contract
-        // §2.5; ADR-0007 decision 8). Blocked now: the §2.7 loop answers
-        // below. Re-armed already: the append-only failed record never
-        // leaves the tail, so its recovery is the later resolution record
-        // for the same key — anything else is a tail contradiction a human
-        // must judge.
+      if (isHookStepKey(step.stepKey) || isArtifactStepKey(step.stepKey)) {
+        // A failed extension-step record is classified, not crashed.
+        // Blocked now: the §2.7 loop answers below. Re-armed already: the
+        // append-only failed record never leaves the tail, so its
+        // recovery is the later resolution record for the same key —
+        // anything else is a tail contradiction a human must judge.
         if (attempt.state !== "blocked") {
           const resolved = tail
             .slice(at + 1)

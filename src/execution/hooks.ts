@@ -18,47 +18,57 @@
 import { block, InvalidExecutionTransitionError } from "./attempt.js";
 import { CANONICAL_STAGES } from "./types.js";
 import {
+  type ArtifactStep,
   type Attribution,
   type ClaimView,
   type ExecutionLedger,
   type HookEffect,
   type HookOutcome,
   type HookStep,
-  type HookStepKey,
   type HooksRun,
   type ReleaseAttempt,
   type StageKey,
   type StepKey,
   type TransitionRecord,
 } from "./types.js";
+import { artifactStepKey, hookStepKey, isHookStepKey } from "./step-keys.js";
 
-/** The hook's ledger key (§2.1): `hook:<id>`, unique per attempt. */
-export const hookStepKey = (id: string): HookStepKey => `hook:${id}`;
-
-/** The key-space test: is this step key a hook's rather than a stage's?
- * The resume classification reads it to route failed records (§2.5) —
- * canonical failed stages keep E-01's crash doctrine; hook failures are
- * the blocked(validation) escalation. */
-export const isHookStepKey = (stepKey: StepKey): stepKey is HookStepKey =>
-  stepKey.startsWith("hook:");
-
-/** The attempt's effective step list (§2.1; ADR-0007 decision 3): the
- * canonical eight with each declared hook inserted at its anchor — before
- * or after the anchored stage — declaration order breaking ties at the
- * same anchor. The plan value and fingerprint are untouched: this list is
- * execution-side, derived from the attempt's declared hooks. */
+/** The attempt's effective step list (§2.1; ADR-0007 decision 3 and
+ * ADR-0008 decision 3): the canonical eight with each declared extension
+ * step — hook or artifact — inserted at its anchor, before or after the
+ * anchored stage. Ties inside one declaration list break in declaration
+ * order; because hooks and artifact steps are two declaration lists, the
+ * cross-kind tie is the named rule (amended into §2.1 and the ADR): at
+ * the same anchor and position, hooks precede artifact steps — the older
+ * extension landed first. The plan value and fingerprint are untouched:
+ * this list is execution-side, derived from the attempt's declared
+ * extensions. */
 export const effectiveSteps = (attempt: ReleaseAttempt): readonly StepKey[] => {
   const hooks = attempt.hooks ?? [];
-  const anchored = (stage: StageKey, position: "before" | "after"): readonly HookStep[] =>
+  const artifacts = attempt.artifacts ?? [];
+  const anchoredHooks = (stage: StageKey, position: "before" | "after"): readonly HookStep[] =>
     hooks.filter((hook) => hook.anchor.stage === stage && hook.anchor.position === position);
+  const anchoredArtifacts = (
+    stage: StageKey,
+    position: "before" | "after",
+  ): readonly ArtifactStep[] =>
+    artifacts.filter(
+      (artifact) => artifact.anchor.stage === stage && artifact.anchor.position === position,
+    );
   const steps: StepKey[] = [];
   for (const stage of CANONICAL_STAGES) {
-    for (const hook of anchored(stage, "before")) {
+    for (const hook of anchoredHooks(stage, "before")) {
       steps.push(hookStepKey(hook.id));
     }
+    for (const artifact of anchoredArtifacts(stage, "before")) {
+      steps.push(artifactStepKey(artifact.id));
+    }
     steps.push(stage);
-    for (const hook of anchored(stage, "after")) {
+    for (const hook of anchoredHooks(stage, "after")) {
       steps.push(hookStepKey(hook.id));
+    }
+    for (const artifact of anchoredArtifacts(stage, "after")) {
+      steps.push(artifactStepKey(artifact.id));
     }
   }
   return steps;

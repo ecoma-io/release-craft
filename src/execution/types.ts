@@ -48,6 +48,11 @@ export interface ReleaseAttempt {
    * `attemptIdentity` (`attempt_sha256` over `{planId, ordinal}`) and
    * never part of the plan fingerprint. Frozen with the attempt. */
   readonly hooks?: readonly HookStep[];
+  /** The declared artifact steps (phase 7 contract §2.1): execution-side
+   * data read by the scheduler, the resume classification, and the
+   * publish gate — never part of `attemptIdentity` and never part of the
+   * plan fingerprint. Frozen with the attempt. */
+  readonly artifacts?: readonly ArtifactStep[];
 }
 
 // ---------------------------------------------------------------------------
@@ -196,10 +201,15 @@ export type StageKey = (typeof CANONICAL_STAGES)[number];
  * stage key. */
 export type HookStepKey = `hook:${string}`;
 
-/** A step key — a canonical stage or a hook step (ADR-0007 decision 3's
- * named extension of the closed eight; phase 7's artifact steps extend the
- * same seam through their own ADR). */
-export type StepKey = StageKey | HookStepKey;
+/** An artifact step's ledger key space (phase 7 contract §2.1;
+ * ADR-0008 decision 3): `artifact:<id>`, unique per attempt, the ledger
+ * key of the generation record. */
+export type ArtifactStepKey = `artifact:${string}`;
+
+/** A step key — a canonical stage, a hook step, or an artifact step
+ * (ADR-0007 decision 3 and ADR-0008 decision 3's named extensions: the
+ * closed three). */
+export type StepKey = StageKey | HookStepKey | ArtifactStepKey;
 
 /** A step's state (§2.6) — E-02's ledger fields verbatim ("npm —
  * completed; GitHub Release — started; channels — pending"). */
@@ -252,6 +262,24 @@ export interface TransitionRecord {
   readonly recordedAt?: string;
   /** The input digest recorded at `started` (§2.7); Phase 5 fills it. */
   readonly contentFingerprint?: string;
+  /** The generation record's content half (phase 7 contract §2.3;
+   * ADR-0008 decision 5): the recorded (kind, coordinates, digest)
+   * triple — the domain `Artifact` value verbatim. Present only on a
+   * completed artifact step's record; the scheduler writes it, never a
+   * stage or a hook. */
+  readonly artifact?: {
+    readonly kind: string;
+    readonly coordinates: string;
+    readonly digest: string;
+  };
+  /** The generation record's dependency half (§2.4): the declared
+   * dependencies' recorded digests, carried verbatim — the digests this
+   * completion verified against in the same generation. Only a completed
+   * artifact step's record carries it. */
+  readonly dependsOn?: readonly {
+    readonly artifactId: string;
+    readonly digest: string;
+  }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +373,113 @@ export type HookOutcome =
 export interface HooksRun {
   readonly attempt: ReleaseAttempt;
   readonly outcomes: readonly HookOutcome[];
+}
+
+// ---------------------------------------------------------------------------
+// §2.5c — artifacts as steps (phase 7 contract §2; ADR-0008)
+// ---------------------------------------------------------------------------
+
+/** A declared artifact step (§2.1): pure data — the engine never stores
+ * or invents the producer (ADR-0008 decision 2), and the declared labels
+ * are names, never references (decision 4). The `guard` name is recorded
+ * verbatim; the postconditions re-use the hook's recorded-proof kinds. */
+export interface ArtifactStep {
+  /** Non-empty, unique per attempt — the ledger key is `artifact:<id>`. */
+  readonly id: string;
+  /** The anchor: exactly one canonical stage, before or after it (same
+   * tie rules as hooks; the cross-kind tie is named — hooks first). */
+  readonly anchor: {
+    readonly stage: StageKey;
+    readonly position: HookAnchorPosition;
+  };
+  /** The declared precondition guard name: the kernel's one aggregate
+   * held-and-verified check produces its `GuardResult`, recorded
+   * verbatim on the start record. */
+  readonly guard: string;
+  /** The artifact kind — an opaque declared label (the domain door's
+   * rule: non-empty, unpadded; validated, never normalized). */
+  readonly kind: string;
+  /** The artifact coordinates — opaque, no operation parses, compares,
+   * orders, or dereferences them (ADR-0008 decision 4). */
+  readonly coordinates: string;
+  /** The declared `dependsOn` edges — sibling artifact ids only, no
+   * duplicates, acyclic (§2.1's structural door rules). */
+  readonly dependsOn: readonly string[];
+  /** The recorded proofs the completion must carry (§2.2). */
+  readonly postconditions: readonly PostconditionKind[];
+}
+
+/** What a caller-injected producer observed at the seam (§2.2): the
+ * producer's recorded claim about content it observed — the engine
+ * computes no digest (ADR-0008 decision 2). The digest is the
+ * generation record's content identity; there is no second fingerprint
+ * field. */
+export interface ArtifactObservation {
+  /** Who produced the observation (§2.6). */
+  readonly attribution: Attribution;
+  /** The content digest — the domain `Artifact` triple's third member,
+   * recorded verbatim. Opaque, non-empty, unpadded. */
+  readonly digest: string;
+  /** The evidence reference, required by an evidence-present
+   * postcondition. */
+  readonly evidence?: EvidenceRef;
+  /** Caller-supplied timestamp: metadata, never ordering (§2.10). */
+  readonly recordedAt?: string;
+}
+
+/** The seam input (§2.2): identity and the declared labels only — the
+ * producer never sees the plan, the attempt value, or the ledger
+ * (ADR-0008 decision 7). */
+export interface ArtifactProducerInput {
+  readonly attemptId: string;
+  readonly artifactId: string;
+  /** The declared kind, verbatim. */
+  readonly kind: string;
+  /** The declared coordinates, verbatim. */
+  readonly coordinates: string;
+  /** The anchored stage the step rides (§2.1). */
+  readonly stage: StageKey;
+}
+
+/** The caller-injected producer: synchronous, returned to the engine at
+ * the seam. The engine invokes it and records what it returns — nothing
+ * else (ADR-0008 decision 2). */
+export type ArtifactProducer = (input: ArtifactProducerInput) => ArtifactObservation;
+
+/** One artifact step's recorded outcome (§2.2): `completed` carries the
+ * generation record (the triple and dependency digests live there);
+ * `refused` is the kernel's recorded precondition refusal — no record,
+ * exactly a mutating stage's shape; `failed` is the §2.5 escalation —
+ * the failed record appended, the attempt blocked. */
+export type ArtifactOutcome =
+  | {
+      readonly kind: "completed";
+      readonly stepKey: ArtifactStepKey;
+      readonly artifactId: string;
+      readonly record: TransitionRecord;
+      readonly recordedAt?: string;
+    }
+  | {
+      readonly kind: "refused";
+      readonly stepKey: StepKey;
+      readonly detail: string;
+      /** The artifact the refusal is about, when the walk reached one. */
+      readonly artifactId?: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly stepKey: ArtifactStepKey;
+      readonly artifactId: string;
+      readonly detail: string;
+      readonly record: TransitionRecord;
+    };
+
+/** `scheduleArtifacts`' result: the successor attempt (blocked after a
+ * §2.5 escalation, otherwise the input) and the outcomes recorded so
+ * far — the walk stops at the first refusal or escalation. */
+export interface ArtifactsRun {
+  readonly attempt: ReleaseAttempt;
+  readonly outcomes: readonly ArtifactOutcome[];
 }
 
 // ---------------------------------------------------------------------------
