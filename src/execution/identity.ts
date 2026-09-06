@@ -21,3 +21,14 @@ import { canonicalJson } from "../planner/index.js";
 export const attemptIdentity = (planId: string, ordinal: number): string => {
   return `attempt_sha256:${createHash("sha256").update(canonicalJson({ ordinal, planId })).digest("hex")}`;
 };
+
+/**
+ * The content fingerprint (phase 5 contract §2.6; ADR-0006 decision 8):
+ * `content_sha256:<hex>` over the canonical JSON of the step's declared
+ * content inputs — the same canonicalizer as the attempt id, no clock, no
+ * environment. This is the durable mechanics ADR-0005 decision 8 deferred:
+ * Phase 4 carried the field's presence; the ledger fills it with this.
+ */
+export const contentFingerprint = (inputs: Record<string, string>): string => {
+  return `content_sha256:${createHash("sha256").update(canonicalJson(inputs)).digest("hex")}`;
+};
