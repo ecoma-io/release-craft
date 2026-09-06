@@ -148,6 +148,18 @@ minor: 9}`; `1.x` → `{major: 1}`); absence admits every admissible tag
     inferred from line ids or branch names — the band is data, the loader
     never guesses.
 
+17. **The package graph is declared dependency metadata, and propagation is
+    recorded, never implied** (contract §2.15): `ComponentMeta.dependencies`
+    carries the declared edges with their range expressions (`^`/`~`/exact)
+    as closed input — read from manifests, never discovered from the
+    filesystem (invariant 2). A component release forces a dependent bump
+    exactly when its new version falls outside the dependent's declared
+    range; dependents widen transitively, in topological order, and every
+    component that did not move carries negative evidence (`PL-01`–`PL-03`,
+    `PL-03`'s "non-impact must be demonstrable"). A dependency naming an
+    undeclared component is a caller contract violation, not a planning
+    outcome.
+
 ## Consequences
 
 - The planner adds **no runtime dependency** and imports **nothing** outside
