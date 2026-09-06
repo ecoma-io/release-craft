@@ -12,9 +12,9 @@ discipline, the claim protocol's domain half, or the artifact graph.
 ## 1. Scope and non-goals
 
 In scope: a git-backed adapter layer implementing the `ExecutionLedger`,
-`AttemptRegister`, and `ClaimStore` ports with the decision-record home
-alongside; the tag-push CAS as the claim store's atomic accept; the
-ref-side namespace door; a git-backed producer for the artifact seam;
+`AttemptRegister`, and `ClaimStore` ports; the tag-push CAS as the claim
+store's one-ref accept with the binding's mint door; the ref-side
+namespace door; a git-backed producer for the artifact seam;
 persist–reload equivalence and double-run determinism over real
 repositories.
 
@@ -51,8 +51,10 @@ src/adapters/git/          // the only new layer; consumes, never re-owns
 
 ### 2.2 The persistence guarantees (fork 16)
 
-For every persisted scope — an attempt's ledger records, the register's
-ordinal counter, the decision-record stream:
+For every persisted scope — in Phase 8: an attempt's ledger records and
+the register's ordinal counter. The decision-record stream is deferred
+(§2.6): its discipline is fixed here for its future consumer, its
+surface arrives with the consumer that needs it.
 
 1. **Canonical form.** Records persist exactly as the engine holds them:
    the canonical serialized form the fingerprints already pin. The
@@ -65,9 +67,10 @@ ordinal counter, the decision-record stream:
    writer held — `toStrictEqual` equality is the test's shape — and
    `classifyResume` over a reloaded tail must equal classification over
    the original, record for record.
-4. **One discipline for every scope.** Ledger, register, decision
-   records: the same guarantees, no second storage format (D14's
-   "persistence is adjacent" resolves as adjacency, not divergence).
+4. **One discipline for every scope.** Ledger and register: the same
+   guarantees, no second storage format (D14's "persistence is
+   adjacent" resolves as adjacency, not divergence) — and the deferred
+   decision-record stream inherits exactly this discipline (§2.6).
 
 The reference mapping (the implementation PR may refine it, never the
 guarantees): each scope anchors to exactly one ref whose history is the
@@ -80,35 +83,63 @@ fast-forward-only ref whose tip encodes the next ordinal.
 
 ```text
 accept(claim) →
-  tag absent at the recorded base  → created, accepted
-  tag present                      → refused, conflict recorded
+  claim ref absent   → created, accepted (the ref's blob: the claim record)
+  claim ref present  → refused, denied naming the winner's recorded holder
+
+mint(tag, target) — the binding's tag door, not the port —
+  no held claim on the tag   → refused, nothing written
+  tag ref absent             → created at the supplied target
+  tag ref present            → refused, conflict recorded
 ```
 
-- The atomic accept is git's ref creation — check-and-set at the ref.
-  The deterministic winner the protocol already elects (ADR-0005
-  decisions 4–5) is physically enforced by the object store: two
-  writers, one ref, exactly one winner.
+- The accept's atomic boundary is exactly one ref — the scope's claim
+  ref under the binding's claim namespace, whose target blob is the
+  claim's canonical JSON record. Check-and-set at the ref: two writers,
+  one ref, exactly one winner; the deterministic winner the protocol
+  already elects (ADR-0005 decisions 4–5) is physically enforced by the
+  object store. An orphan object written before a refused ref update is
+  unreachable and is not a claim; adjudication reads only the ref.
 - The loser holds `abandoned(follower-of:<winner>)` — the shape Phase 4
   locked — and the conflict is a recorded decision (E-02's conflict
   vocabulary), never an exception crossing the door.
-- Force updates, deletions, and re-creations under an existing ref
-  refuse at the same door with the same recorded-reason discipline.
-- Tags remain the authoritative record (P-01): the binding never
-  substitutes a ledger row for the ref, and never records a completion
-  the ref did not take.
+- A stable-version claim is a record, not a lease: `release` of its
+  token is a no-op and a later `verify` still reads held — the release
+  record stands (P-01). The non-tag claims are leases: `release` is a
+  check-and-set delete of the scope's claim ref; a later `verify` reads
+  lost.
+- The physical tag (`refs/tags/<tag>`) is minted at the binding's tag
+  door — never inside `acquire`. The door admits the write only under a
+  claim ref the calling attempt holds, takes the target (the attempt's
+  recorded base) as a supplied value from the assembly — never chosen
+  by the binding, no ambient `HEAD` — and creates if and only if the
+  tag ref is absent.
+- Force updates and re-creations under an existing ref refuse at both
+  doors with the same recorded-reason discipline. Tags remain the
+  authoritative record (P-01): the binding never substitutes a ledger
+  row for the ref, and never records a completion the ref did not take.
 
 ### 2.4 The ref-side namespace door (E-08, M-11)
 
-- The door precedes every tag write: a tag outside the namespace the
-  attempt's own plan values declare is refused before git sees it, with
-  the refusal naming the tag, the namespace, and the declared source.
+- The door runs at both doors, before any ref moves: a claim whose
+  derived tag name lies outside the namespace the attempt's own plan
+  values declare is refused before git sees it — the acquisition
+  returns `ClaimDenied { refusal: "namespace" }` with `holder` absent —
+  and a mint outside it returns
+  `{ kind: "refused", reason: "namespace", detail }`; both name the
+  tag, the namespace, and the declared source.
+  A policy refusal has no winner; the claim state never moved. The
+  `ClaimDenied` widening is the implementation's one reviewed port
+  change (§1's non-goals, its own PR): `ClaimDenied.holder` becomes
+  optional and carries the `refusal` marker; the in-memory store never
+  sets it, and no engine behavior reads it.
 - The global tag-namespace precondition (M-11) is honoured physically:
   two scopes racing one global namespace resolve through the same CAS —
   the second writer's accept refuses on the ref, not on a bookkeeping
   row.
-- The door reads declared namespaces from the attempt's carried values
-  only — no registry, no network, no working-tree reads (ADR-0009
-  decision 5's locality).
+- The door reads the declared tag naming from the configuration the
+  binding is opened with — the plan's own declared values (D14's
+  per-package naming as declared configuration) — no registry, no
+  network, no working-tree reads (ADR-0009 decision 5's locality).
 
 ### 2.5 The git-backed producer (ADR-0008 decision 12's first half)
 
@@ -120,6 +151,60 @@ accept(claim) →
   generation triple and the content fingerprint.
 - Registry/remote interaction stays Phase 9's: the producer's entire
   surface is content in, digest out.
+
+### 2.6 The binding's public surface (the barrel)
+
+The layer exports one constructor and its value through
+`src/adapters/git/index.js` (consumed in tests via the package surface,
+ADR-0009 decision 8):
+
+```text
+openGitBinding({ repo, tagNaming }) → GitBinding
+
+GitBinding
+  .ledger    : ExecutionLedger      (the port, git-backed)
+  .register  : AttemptRegister      (the port, git-backed)
+  .claims    : ClaimStore           (the port — acquire creates the claim
+                                     ref; a namespace refusal returns
+                                     ClaimDenied { refusal: "namespace" }
+                                     with holder absent)
+  .mintTag(input: { attemptId, token, tag, target }) → TagMintResult
+
+TagMintResult =
+  | { kind: "minted";   tag: string; target: string }
+  | { kind: "refused";  reason: "namespace" | "unclaimed" | "foreign-token";
+      tag: string; detail: string }
+  | { kind: "conflict"; tag: string; detail: string }  // tag ref present —
+                                                       // the existing ref wins
+
+tagNaming: {
+  namespaces: readonly string[],            // the declared namespace roots
+  tagFor(scope: ClaimScope): string | null, // null = outside every declared
+                                            // namespace → refused at acquire
+}
+```
+
+- `refused` names the failure class — outside every declared namespace
+  (`namespace`), no held claim derives that tag (`unclaimed`), or a
+  claim is held but by another attempt's token (`foreign-token`); and
+  `conflict` names a present tag ref. Every outcome's `detail` names
+  the tag, the namespace, and the declared source. Refusals and
+  conflicts are returned values, not exceptions: the caller records
+  them through the ledger's own doors (E-02's conflict vocabulary).
+  Nothing the door refused left state behind.
+- `mintTag` is the binding's own door — it is not on the `ClaimStore`
+  port. It verifies the token against a held claim whose derived tag
+  name matches, requires `target` as a supplied value (a recorded base
+  from the assembly — never `HEAD`, never ambient state), and creates
+  the tag ref if and only if it is absent.
+- The decision-record stream is explicitly out of Phase 8's surface.
+  §2.2's third scope names a discipline, but no `DecisionRecord` shape
+  exists in the engine today and no consumer records planner decision
+  records yet — the contract invents neither. When the first consumer
+  arrives, its door and its amendment land with it; the persistence
+  discipline it inherits is already fixed here. Phase 8's fixture 1
+  pins the two scopes the engine holds values for — the ledger tail
+  and the register ordinal.
 
 ## 3. Laws
 
@@ -145,23 +230,29 @@ All engine-facing tests import through `../src/index.ts` only; binding
 tests use the adapter barrel and real (temporary) repositories. The
 phase's named fixtures:
 
-1. **Persist–reload equivalence** — a completed attempt's records, the
-   register's ordinal, and the decision-record stream reload byte-exact
-   into fresh values; `classifyResume` over the reloaded tail equals
-   classification over the original; double-run over persist–reload
-   classifies identically.
+1. **Persist–reload equivalence** — a completed attempt's records and
+   the register's ordinal reload byte-exact into fresh values;
+   `classifyResume` over the reloaded tail equals classification over
+   the original; double-run over persist–reload classifies identically.
 2. **Forward-only refusal** — a write that would rewrite or diverge from
    the recorded history refuses at the door with a recorded reason;
    nothing on disk moves; the refused door leaves the tail readable and
    classifiable.
 3. **CAS winner/loser under concurrency** — two writers accept the same
-   tag: exactly one creation lands, the loser records
-   `abandoned(follower-of:…)` with the winner named; the ref's tip names
-   the winner; a force update and a re-creation refuse.
-4. **Namespace door** — a tag outside the declared namespace refuses
-   before git sees it (no ref created), naming tag, namespace, and
-   source; two scopes racing one global namespace resolve through the
-   CAS; a namespace-legal tag passes untouched.
+   scope: exactly one claim ref is created, the loser records
+   `abandoned(follower-of:…)` with the winner named; the ref's blob
+   names the winner; a force update and a re-creation refuse. The tag
+   door follows: the winner mints the tag at its supplied target
+   (`minted`), a second mint of the same tag conflicts, a mint under
+   another attempt's token refuses (`foreign-token`), and a mint with
+   no claim refuses (`unclaimed`).
+4. **Namespace door** — a claim whose derived tag name lies outside the
+   declared namespaces refuses before git sees it (`ClaimDenied` with
+   `refusal: "namespace"`, no holder, no ref created), naming tag,
+   namespace, and source; a mint outside the namespaces refuses
+   (`refused`, reason `namespace`); two scopes racing one global
+   namespace resolve through the CAS; a namespace-legal claim and mint
+   pass untouched.
 5. **Digest-sourced generations** — the git-backed producer's digest
    changes with content and is stable across identical content;
    `scheduleArtifacts` over the binding's producer completes the
