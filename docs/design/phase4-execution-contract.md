@@ -223,7 +223,9 @@ claim view, the step record view, the requested step) returns one of:
   unattributed external state, stale evidence): suspended, resumable
   (§2.2).
 - `refused(detail)` — a protocol violation that is _not_ a programming error
-  (mutation without claim, a step on a terminal attempt via the record path).
+  (mutation without a held claim; Phase 5's ledger replay door will record a
+  refusal for a step on a terminal attempt — in Phase 4 that request throws,
+  per §2.2's terminal-is-terminal and ADR-0005 decision 3).
 
 Content equality for `noop` vs `conflict` is judged over the step's recorded
 content fingerprint — the (attempt, step) idempotency key plus the input
@@ -349,8 +351,10 @@ ADR-0001 decision 9's shape). The phase's named fixtures:
    denies naming the holder; coexisting scopes (stable-version + sequence on
    one line) both grant; `release-line` excludes both.
 3. **Human abort** — abort by a human actor moves to `abandoned`; every later
-   `requestStep` returns `refused`; a retry attempt over the same plan gets a
-   fresh ordinal and proceeds (the abort never leaks into the new attempt).
+   `requestStep` on the aborted attempt throws (terminal is terminal, §2.2);
+   a retry attempt over the same plan gets a fresh ordinal and proceeds (the
+   abort never leaks into the new attempt). Phase 5's ledger replay door is
+   where a terminal step request becomes a recorded refusal instead.
 4. **Superseded plan** — supersede moves non-terminal attempts to
    `superseded` at the boundary; an attempt past `tag` records the
    supersession and does not void; nothing is deleted.
