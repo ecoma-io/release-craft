@@ -143,6 +143,13 @@ used verbatim and are not re-decided.
   (AR-01, PR-02) are now owned here. The taxonomy needs no row moves:
   Artifact is already LOCK, and the deferral that named this phase
   (AR-02's execution-phase fragment) closes with D23.
+- [matrix-coverage.md](../design/matrix-coverage.md): AR-02 moves to
+  **owned (phase 7)** — its resolution names this contract's door
+  validation (§2.1) and verify precondition (§2.4) with the fixture pin
+  deferred to the implementation PR; G-16 closes against D23; the
+  promotion-axis row and E-10's nightly-stamp note cite this ADR. The
+  class census is unchanged: AR-02 leaves the partial list only when the
+  implementation PR pins its fixtures.
 
 ## Consequences
 
