@@ -45,6 +45,7 @@ function plan(lines: readonly PlanLine[], supersedes: string | null): Omit<Relea
     policyDigest: "test-policy-v1",
     inputsFingerprint: `inputs_sha256:${"0".repeat(64)}`,
     lines,
+    explanation: { foreignTags: [], conflicts: [], excluded: [] },
   };
 }
 
@@ -185,6 +186,30 @@ describe("inputsFingerprint — §2.11/E-04 input-world identity", () => {
     const before = inputsFingerprint(input([commit("sha-a", "feat: one")]));
     const after = inputsFingerprint(
       input([commit("sha-a", "feat: one"), commit("sha-b", "fix: two")]),
+    );
+    expect(after).not.toBe(before);
+  });
+
+  it("keeps a docs-only commit out of the world (PL-08) — the fingerprint is unchanged", () => {
+    const before = inputsFingerprint(input([commit("sha-a", "feat: one")]));
+    const after = inputsFingerprint(
+      input([commit("sha-a", "feat: one"), commit("sha-b", "docs: notes")]),
+    );
+    expect(after).toBe(before);
+  });
+
+  it("changes when a release-triggering commit joins the world (PL-08's complement)", () => {
+    const before = inputsFingerprint(input([commit("sha-a", "feat: one")]));
+    const after = inputsFingerprint(
+      input([commit("sha-a", "feat: one"), commit("sha-b", "feat: two")]),
+    );
+    expect(after).not.toBe(before);
+  });
+
+  it("changes when a breaking commit of an unlisted type joins (PL-05: the marker dominates)", () => {
+    const before = inputsFingerprint(input([commit("sha-a", "feat: one")]));
+    const after = inputsFingerprint(
+      input([commit("sha-a", "feat: one"), commit("sha-b", "chore!: drop the old flag")]),
     );
     expect(after).not.toBe(before);
   });

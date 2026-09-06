@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { InvalidPlanningInputError, normalize } from "../../src/planner/input.js";
 import type {
   CommitObservation,
+  ComponentMeta,
   LineConfig,
   OperatorIntent,
   PlanningInput,
@@ -15,8 +16,9 @@ import type {
  * The contract suite for the planner's input boundary (phase2 contract
  * §2.1): `normalize` deep-validates a `PlanningInput`, throws the planner's
  * own error naming every violation in deterministic order, and returns the
- * same closed value unchanged. The planner invents nothing and mutates
- * nothing; these tests pin that posture from the caller's side.
+ * closed value with exact-duplicate intents collapsed (m-6b — the same
+ * reference when nothing duplicates). The planner invents nothing and
+ * mutates nothing; these tests pin that posture from the caller's side.
  */
 
 /** A fixed 64-hex policy digest — realistic shape, stable across runs. */
@@ -58,7 +60,7 @@ function makeValidInput(): PlanningInput {
   return {
     policy: {
       digest: DIGEST,
-      bumpMappingId: "conventional-default",
+      bumpMappingId: "default",
       prereleaseLadder: ["alpha", "beta", "rc"],
       prereleaseSeed: "0",
       pre10Dampening: true,
@@ -97,6 +99,10 @@ function withLines(lines: readonly LineConfig[]): PlanningInput {
 
 function withIntents(intents: readonly OperatorIntent[]): PlanningInput {
   return { ...makeValidInput(), intents };
+}
+
+function withComponents(components: readonly ComponentMeta[]): PlanningInput {
+  return { ...makeValidInput(), components };
 }
 
 /**
@@ -188,6 +194,16 @@ describe("normalize — the closed input boundary (§2.1)", () => {
       const rejected = reject(withPolicy({ tagFormats: { main: "" } }));
       expect(fieldsOf(rejected)).toContain('policy.tagFormats["main"]');
     });
+
+    it("rejects a bump mapping id other than the declared default, naming policy.bumpMappingId", () => {
+      const rejected = reject(withPolicy({ bumpMappingId: "conventional-default" }));
+      expect(fieldsOf(rejected)).toContain("policy.bumpMappingId");
+    });
+
+    it("rejects a tag format missing the {prerelease} token, naming the keyed field", () => {
+      const rejected = reject(withPolicy({ tagFormats: { main: "{major}.{minor}.{patch}" } }));
+      expect(fieldsOf(rejected)).toContain('policy.tagFormats["main"]');
+    });
   });
 
   describe("repository.commits", () => {
@@ -267,6 +283,55 @@ describe("normalize — the closed input boundary (§2.1)", () => {
     });
   });
 
+  describe("components", () => {
+    it("accepts well-formed component metadata, unchanged", () => {
+      const input = withComponents([
+        { name: "app", manifestVersion: "1.2.3", paths: ["apps/app"] },
+        {
+          name: "lib",
+          manifestVersion: "0.9.0",
+          paths: ["libs/lib"],
+          dependencies: [{ name: "app", range: "^1.2.3" }],
+        },
+      ]);
+      const snapshot = structuredClone(input);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input); // validation-only — no copy, no mutation
+      expect(result).toEqual(snapshot);
+    });
+
+    it("rejects an empty component name, naming the indexed field", () => {
+      const rejected = reject(withComponents([{ name: "", manifestVersion: "1.2.3", paths: [] }]));
+      expect(fieldsOf(rejected)).toContain("components[0].name");
+    });
+  });
+
+  describe("bootstrap", () => {
+    it("rejects a recorded version that does not parse as a Version, naming bootstrap.version", () => {
+      const input: PlanningInput = {
+        ...makeValidInput(),
+        bootstrap: { version: "1.2", who: "operator", when: "2026-01-01T00:00:00Z" },
+      };
+
+      const rejected = reject(input);
+
+      expect(fieldsOf(rejected)).toContain("bootstrap.version");
+    });
+
+    it("accepts a recorded version that parses (S-02: absence is legal, presence must parse)", () => {
+      const input: PlanningInput = {
+        ...makeValidInput(),
+        bootstrap: { version: "1.2.3", who: "operator", when: "2026-01-01T00:00:00Z" },
+      };
+
+      const result = normalize(input);
+
+      expect(result).toBe(input);
+    });
+  });
+
   describe("intents", () => {
     it("rejects an empty prerelease stream, naming the indexed field", () => {
       const intent = withIntents([{ kind: "prerelease", stream: "", lineId: "main" }]);
@@ -278,12 +343,30 @@ describe("normalize — the closed input boundary (§2.1)", () => {
       const rejected = reject(withIntents([{ kind: "release-as", version: "" }]));
       expect(fieldsOf(rejected)).toContain("intents[0].version");
     });
+
+    it("rejects a promote naming an undeclared line, naming the indexed field", () => {
+      const rejected = reject(withIntents([{ kind: "promote", lineId: "develop" }]));
+      expect(fieldsOf(rejected)).toContain("intents[0].lineId");
+    });
+
+    it("rejects a prerelease naming an undeclared line, naming the indexed field", () => {
+      const rejected = reject(
+        withIntents([{ kind: "prerelease", stream: "rc", lineId: "develop" }]),
+      );
+      expect(fieldsOf(rejected)).toContain("intents[0].lineId");
+    });
+
+    it("rejects a release-as version that does not parse as a Version, naming the indexed field", () => {
+      const rejected = reject(withIntents([{ kind: "release-as", version: "1.2.x" }]));
+      expect(fieldsOf(rejected)).toContain("intents[0].version");
+    });
     it("accepts every declared intent kind with a well-formed payload, unchanged", () => {
       const input = withIntents([
         { kind: "release" },
         { kind: "release-anyway" },
         { kind: "prerelease", stream: "beta", lineId: "main" },
         { kind: "release-as", version: "2.4.0" },
+        { kind: "promote", lineId: "main" },
       ]);
       const snapshot = structuredClone(input);
 
@@ -291,6 +374,41 @@ describe("normalize — the closed input boundary (§2.1)", () => {
 
       expect(result).toBe(input);
       expect(result).toEqual(snapshot);
+    });
+  });
+
+  describe("exact-duplicate intents (m-6b)", () => {
+    it("collapses exact duplicates to their first occurrence, preserving order", () => {
+      const input = withIntents([
+        { kind: "release" },
+        { kind: "prerelease", stream: "rc", lineId: "main" },
+        { kind: "release" },
+        { kind: "prerelease", stream: "rc", lineId: "main" },
+        { kind: "promote", lineId: "main" },
+        { kind: "promote", lineId: "main" },
+      ]);
+
+      const result = normalize(input);
+
+      expect(result).not.toBe(input); // a duplicate dropped — the intent array is new
+      expect(result.intents).toEqual([
+        { kind: "release" },
+        { kind: "prerelease", stream: "rc", lineId: "main" },
+        { kind: "promote", lineId: "main" },
+      ]);
+    });
+
+    it("keeps intents differing in any field — only exact duplicates collapse", () => {
+      const input = withIntents([
+        { kind: "prerelease", stream: "rc", lineId: "main" },
+        { kind: "prerelease", stream: "beta", lineId: "main" },
+        { kind: "promote", lineId: "main" },
+      ]);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input); // nothing dropped — the same closed value
+      expect(result.intents).toHaveLength(3);
     });
   });
 

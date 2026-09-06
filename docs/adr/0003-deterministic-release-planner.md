@@ -160,6 +160,30 @@ minor: 9}`; `1.x` → `{major: 1}`); absence admits every admissible tag
     undeclared component is a caller contract violation, not a planning
     outcome.
 
+18. **The review-wave vocabulary and the mapping posture** (contract §2.6,
+    §2.9, §2.11, §2.13; D17): a promotion (`promote` intent over an
+    in-flight prerelease) is a `release` decision with `bump: null` and an
+    inherited empty change set targeting the pointed-at release — pending
+    changes or no rc pointer refuse as operator contradiction (P-03). A
+    `release-anyway` intent over a quiet line is a `forced` record that
+    mints nothing (S-01 — the forced mint is declared-policy territory).
+    While a prerelease holds the pointer, the in-flight-target rule
+    governs: the candidate recomputed from the line's stable base
+    (`LineState.stableBase`) against `bumpPatch(pointer)` — higher
+    precedence wins, equal keeps the target and its sequence (P-04), a
+    heavier join moves it and resets (P-05); a prerelease intent on the
+    line suppresses the stable co-mint — the streams carry the target
+    (P-07/M-08). Birth targets the recorded bootstrap version verbatim
+    (S-02); a `release-as` intent overrides the computed target (row 2).
+    The plan surfaces its exclusion data (`ReleasePlan.explanation`) and
+    `inputsFingerprint` covers the policy-relevant projection (PL-08). The
+    declared component graph stays the active §2.15 input (decision 17
+    stands); the door refuses only the fabricated line↔component release
+    mapping (PL-01's declared-future seam) — per-line decisions, targets
+    and streams stay computable at their layers, and M-08's rejection half
+    plus its two-release pass land with PR-6/PR-7's line-policy knobs and
+    binding.
+
 ## Consequences
 
 - The planner adds **no runtime dependency** and imports **nothing** outside
