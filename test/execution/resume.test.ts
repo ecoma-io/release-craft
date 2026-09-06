@@ -17,7 +17,7 @@ import {
   type ExternalSatisfaction,
   type LedgerRecord,
   type ReleaseAttempt,
-  type StepKey,
+  type StageKey,
   type StepRequest,
 } from "../../src/index.js";
 
@@ -34,7 +34,7 @@ const actor = (attempt: ReleaseAttempt, who = "automation"): Attribution => ({
   actor: who,
 });
 
-const completion = (attempt: ReleaseAttempt, stepKey: StepKey): LedgerRecord => ({
+const completion = (attempt: ReleaseAttempt, stepKey: StageKey): LedgerRecord => ({
   kind: "step",
   record: {
     attemptId: attempt.attemptId,
@@ -79,7 +79,7 @@ const crashedAfter = (count: number): { attempt: ReleaseAttempt; ledger: MemoryL
   return { attempt: attempt1, ledger };
 };
 
-const request = (attempt: ReleaseAttempt, stepKey: StepKey): StepRequest => ({
+const request = (attempt: ReleaseAttempt, stepKey: StageKey): StepRequest => ({
   stepKey,
   attribution: actor(attempt),
 });

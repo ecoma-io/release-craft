@@ -10,7 +10,7 @@ import {
   start,
   type ReleaseAttempt,
   type RequestStepOutcome,
-  type StepKey,
+  type StageKey,
   type StepRequest,
 } from "../../src/index.js";
 
@@ -28,7 +28,7 @@ const SCOPE = { kind: "stable-version", lineId: "line-main", version: "1.2.0" } 
  * record on advance — the same engine loop the fixture suites use. */
 const run = (
   attempt: ReleaseAttempt,
-  stepKey: StepKey,
+  stepKey: StageKey,
   store: MemoryClaimStore,
   log: MemoryTransitionLog,
   fingerprint?: string,

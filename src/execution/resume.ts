@@ -13,6 +13,7 @@
  * no-silent-failure law; no clock, randomness, or environment reads.
  */
 import { InvalidExecutionTransitionError } from "./attempt.js";
+import { effectiveSteps, isHookStepKey } from "./hooks.js";
 import { requestStep } from "./outcome.js";
 import {
   CANONICAL_STAGES,
@@ -29,15 +30,17 @@ import {
   type StepRequest,
 } from "./types.js";
 
-/** The first stage of the canonical sequence the ledger does not record as
- * completed — §2.3's `from` and §2.4's remaining-work pointer. Null when
- * every stage completed. The stage's own `started` state counts as
- * uncompleted: a crash window between the write-ahead record and the
- * effect means the stage must run again (E-01, E-02). */
-const firstUncompleted = (attemptId: string, ledger: ExecutionLedger): StepKey | null => {
-  for (const stage of CANONICAL_STAGES) {
-    if (ledger.step(attemptId, stage) !== "completed") {
-      return stage;
+/** The first step of the attempt's effective step list the ledger does not
+ * record as completed (phase 6 contract §2.2) — §2.3's `from` and §2.4's
+ * remaining-work pointer. Null when every step completed. A step's own
+ * `started` state counts as uncompleted: a crash window between the
+ * write-ahead record and the effect means the step must run again (E-01,
+ * E-02). Hooks ride the list at their anchors (ADR-0007 decision 6) — a
+ * resume may continue at a hook step. */
+const firstUncompleted = (attempt: ReleaseAttempt, ledger: ExecutionLedger): StepKey | null => {
+  for (const step of effectiveSteps(attempt)) {
+    if (ledger.step(attempt.attemptId, step) !== "completed") {
+      return step;
     }
   }
   return null;
@@ -83,7 +86,8 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
   // demands a preceding `started` for the same stepKey, and a failed stage
   // hands the tail to crash classification (§2.4).
   const started = new Set<StepKey>();
-  for (const record of ledger.tail(attempt.attemptId)) {
+  const tail = ledger.tail(attempt.attemptId);
+  for (const [at, record] of tail.entries()) {
     if (record.kind !== "step") {
       continue;
     }
@@ -95,6 +99,31 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
       };
     }
     if (step.to === "failed") {
+      // A failed hook record is classified, not crashed (phase 6 contract
+      // §2.5; ADR-0007 decision 8): the scheduler appended it together
+      // with the blocked(validation) attempt, and §2.7's resolution loop
+      // answers it. The same record under a non-blocked attempt is a tail
+      // contradiction — recorded state a human must judge.
+      if (isHookStepKey(step.stepKey)) {
+        // A failed hook record is classified, not crashed (phase 6 contract
+        // §2.5; ADR-0007 decision 8). Blocked now: the §2.7 loop answers
+        // below. Re-armed already: the append-only failed record never
+        // leaves the tail, so its recovery is the later resolution record
+        // for the same key — anything else is a tail contradiction a human
+        // must judge.
+        if (attempt.state !== "blocked") {
+          const resolved = tail
+            .slice(at + 1)
+            .some((later) => later.kind === "resolution" && later.stepKey === step.stepKey);
+          if (!resolved) {
+            return {
+              kind: "escalate",
+              detail: `hook ${step.stepKey} recorded failed without a blocked attempt or a closing resolution — the §2.5 escalation lives in the attempt's state, and this tail contradicts it (§2.3)`,
+            };
+          }
+        }
+        continue;
+      }
       return {
         kind: "escalate",
         detail: `step ${step.stepKey} recorded failed — failed stages demand crash classification (§2.4, E-01); resume never guesses past them`,
@@ -141,7 +170,7 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
       };
     }
   }
-  const from = firstUncompleted(attempt.attemptId, ledger);
+  const from = firstUncompleted(attempt, ledger);
   if (from === null) {
     const external = ledger.stepView().external;
     const satisfiedExternally = CANONICAL_STAGES.some(
@@ -185,7 +214,7 @@ export const classifyCrash = (
   }
   const tagPresent =
     ledger.step(attempt.attemptId, "tag") === "completed" || options.observedTag !== undefined;
-  const from = firstUncompleted(attempt.attemptId, ledger);
+  const from = firstUncompleted(attempt, ledger);
   if (from === null) {
     return {
       kind: "escalate",

@@ -62,12 +62,17 @@ verbatim and are not re-decided.
    — declared data the scheduler and resume read — while `attemptIdentity`
    stays `attempt_sha256` over `{planId, ordinal}` and the plan fingerprint
    is untouched.
-4. **Preconditions are claim requirements, evaluated as the transition's
-   guards.** A hook's preconditions name claims that must be held and
-   verified before the effect may run; they ride the kernel's existing
-   guard machinery and are recorded verbatim on the hook's start record.
-   There is no second guard system — a precondition the kernel cannot
-   verify is the kernel's recorded refusal, not a hook-runtime invention.
+4. **Preconditions are the kernel's claim rule, evaluated as the
+   transition's guards.** A hook declares exactly one guard name; it rides
+   the kernel's existing guard machinery and is recorded verbatim on the
+   hook's start record. The `ClaimView` port exposes exactly one held
+   claim and `ClaimScope` is an object union, so the evaluation is one
+   aggregate check — the attempt holds its claim and the store verifies
+   the token — and that one check's result is what the recorded
+   `GuardResult` carries (one entry per check run, never per declared
+   name); there is no name-to-scope mapping and no second guard system. A
+   failed check is the kernel's recorded refusal, not a hook-runtime
+   invention.
 5. **Postconditions are recorded proofs on the completion record.** A
    postcondition declares what proof the completion must carry (a content
    fingerprint, non-empty evidence). The scheduler checks the proof before
@@ -93,8 +98,12 @@ verbatim and are not re-decided.
    postcondition proof lands the hook's step record as `failed` and blocks
    the attempt with `blocked(validation)` — the existing blocked vocabulary,
    the cause naming the hook id and the failed postcondition — closed only
-   by Phase 5's resolution loop (§2.7 of the phase 5 contract). Nothing
-   passes silently; no new attempt state is invented.
+   by Phase 5's resolution loop (§2.7 of the phase 5 contract). The failed
+   hook record is classified, not crashed: the resume classification reads
+   it against the attempt's blocked state (a failed hook record under a
+   non-blocked attempt is a tail contradiction), while canonical failed
+   stages keep E-01's crash doctrine. Nothing passes silently; no new
+   attempt state is invented.
 9. **The scheduler is classification-driven, not timer-driven.** The
    scheduler walks the effective step list in order, drives each step
    through the kernel's doors, and invokes effects at the seam: no

@@ -17,7 +17,7 @@ import {
   transition,
   type ReleaseAttempt,
   type RequestStepOutcome,
-  type StepKey,
+  type StageKey,
   type StepRequest,
 } from "../../src/index.js";
 
@@ -38,7 +38,7 @@ const asClaim = (outcome: Claim | ClaimDenied): Claim => {
 
 const run = (
   attempt: ReleaseAttempt,
-  stepKey: StepKey,
+  stepKey: StageKey,
   store: MemoryClaimStore,
   log: MemoryTransitionLog,
   extra: Partial<StepRequest> = {},

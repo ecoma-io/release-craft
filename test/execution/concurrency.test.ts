@@ -14,7 +14,7 @@ import {
   transition,
   type ReleaseAttempt,
   type RequestStepOutcome,
-  type StepKey,
+  type StageKey,
   type StepRequest,
 } from "../../src/index.js";
 
@@ -43,7 +43,7 @@ const asDenied = (outcome: Claim | ClaimDenied): ClaimDenied => {
  * record on advance — the engine loop of fixture 1, minus the ledger. */
 const run = (
   attempt: ReleaseAttempt,
-  stepKey: StepKey,
+  stepKey: StageKey,
   store: MemoryClaimStore,
   log: MemoryTransitionLog,
   extra: Partial<StepRequest> = {},
