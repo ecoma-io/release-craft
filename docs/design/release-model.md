@@ -527,9 +527,10 @@ document: U4 by the kind column above, U6 by the boundary table below.)
    adjudication and bounded sequence retry; the physical primitive (the
    tag-push CAS) stays deliberately open for the Phase 8 adapter ADR.**
    **Update (Phase 8 contract, [ADR-0009](../adr/0009-git-binding.md)):
-   the physical half is resolved — the tag-push CAS is git's ref creation
-   behind the claim store's atomic accept (ADR-0009 §2.3); fixtures pin
-   with the implementation PR.**
+   the physical half is resolved — the accept is the claim ref's
+   check-and-set creation and the tag is minted at the binding's door
+   under the held claim (ADR-0009 §2.3); fixtures pin with the
+   implementation PR.**
 2. **Ledger and decision-record storage; persistence versus recomputation**
    (fork 16). Resolved by: Phase 2's decision records needing a home — the
    constraint that it stays outside `core/domain/` (ADR-0001) is already
