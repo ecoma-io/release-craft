@@ -51,11 +51,15 @@ ArtifactStepKey = `artifact:${string}`           // the ledger key is artifact:<
 ```
 
 Insertion rules (ADR-0008 decision 3): the declaration anchors at exactly
-one canonical stage, before or after it; declaration order breaks
-same-anchor ties among extension steps (hooks and artifact steps sharing
-an anchor interleave in declaration order, extension kind ignored). The
-effective step list stays the single ordering the scheduler and resume
-walk; the ledger stays keyed by `(attemptId, stepKey)`.
+one canonical stage, before or after it. Same-anchor ties break in
+declaration order; because hooks and artifact steps are two declaration
+lists, a shared anchor has no single declaration order — so the
+cross-kind tie rule is named here (amended with the implementation PR):
+at the same anchor and position, **hooks (in declaration order) precede
+artifact steps (in declaration order)** — the older extension landed
+first, and within one list the declaration order rules. The effective
+step list stays the single ordering the scheduler and resume walk; the
+ledger stays keyed by `(attemptId, stepKey)`.
 
 Protocol validation at the `openAttempt` door (ADR-0008 decision 7),
 deterministic, no graph inference: `kind` and `coordinates` are opaque,
@@ -116,9 +120,11 @@ anything is invoked; at an artifact step —
 1. the guard rule runs exactly as a hook's (one aggregate check, the
    declared guard name recorded verbatim on the start record's one
    `GuardResult`),
-2. the start appends — durable before the producer may run,
-3. the producer invokes at the seam,
-4. the verify precondition checks the generation (§2.4),
+2. the verify precondition checks the generation (§2.4) — before any
+   write-ahead, so a missing dependency proof is the recorded refusal
+   with no record appended, the same shape an unheld claim takes,
+3. the start appends — durable before the producer may run,
+4. the producer invokes at the seam,
 5. the completion records with its proof (§2.3), or the failure (§2.5).
 
 The walk never mutates the attempt in place; the returned `attempt` is
@@ -206,10 +212,10 @@ All tests import through `../src/index.ts` only. The phase's named
 fixtures:
 
 1. **Attachment and ordering** — artifact steps interleave at their
-   anchors with hooks (declaration order breaks same-anchor ties across
-   both extension kinds); the effective step list is stable; the plan
-   fingerprint and `attemptIdentity` never move when artifact steps
-   attach.
+   anchors with hooks (same-anchor ties: hooks precede artifact steps,
+   each list in declaration order — §2.1's named cross-kind rule); the
+   effective step list is stable; the plan fingerprint and
+   `attemptIdentity` never move when artifact steps attach.
 2. **Generation immutability under rebuild** — a completed attempt's
    generation is readable forever; a rebuild attempt under the same
    version identity records a new generation beside the old; no record
