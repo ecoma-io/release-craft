@@ -384,3 +384,63 @@ describe("§2.9: kernel-rejected change identity", () => {
     expect(exclusion?.detail).toContain("whitespace");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PL-04 — decision level: no release is attributable to the release PR's own
+// commit R ("no release attributable to R; if other pending commits exist the
+// plan proceeds without R; otherwise PL-06's empty-change-set behavior
+// applies" — the decision row atop the self-reference exclusion above)
+// ---------------------------------------------------------------------------
+
+describe("PL-04: no release attributable to R", () => {
+  // R carries the reserved self-reference trailer namespace exactly as the
+  // attribution-layer exclusion fixture builds it; on line 1.9 its subject
+  // names the line's release PR.
+  const r = (parent: string) =>
+    commit("r", [parent], "chore: release 1.9\n\nRelease-Craft: plan 01d4479c", ["1.9"]);
+
+  /** Every pending change id across the attributed plan — the raw material
+   * the decision layer grades. R must never appear among them. */
+  function allPendingIds(outcome: AttributionOutcome): string[] {
+    return attributedLines(outcome).flatMap((l) => l.pending.map((c) => c.change?.id ?? c.sha));
+  }
+
+  it("proceeds without R when a release-worthy fix is pending beside it", () => {
+    const commits = [
+      commit("c9", ["c8"], "chore: cut 1.9.0", ["1.9"]),
+      r("c9"),
+      commit("f", ["r"], "fix(parser): handle empty input", ["1.9"]),
+    ];
+    const inp = input(commits);
+    const outcome = attribute(extracted(inp), inp, [range("1.9", "c9", "f")]);
+    expect(outcome.kind).toBe("attributed");
+    // The release's change set is the fix alone (the patch cut beyond the
+    // 1.9.0 baseline is driven by F, not by R).
+    expect(allPendingIds(outcome)).toEqual(["f"]);
+    // No pending member anywhere in the plan carries R: no release is
+    // attributable to R.
+    expect(allPendingIds(outcome)).not.toContain("r");
+    // R is surfaced as excluded bookkeeping, not silently dropped.
+    expect(
+      attributedLines(outcome)
+        .find((l) => l.lineId === "1.9")
+        ?.excluded.map((e) => e.sha),
+    ).toContain("r");
+  });
+
+  it("records the empty change set when R is all that is left (the PL-06 posture)", () => {
+    const commits = [commit("c9", ["c8"], "chore: cut 1.9.0", ["1.9"]), r("c9")];
+    const inp = input(commits);
+    const outcome = attribute(extracted(inp), inp, [range("1.9", "c9", "r")]);
+    expect(outcome.kind).toBe("attributed");
+    // Nothing release-worthy survives R's exclusion: the line's change set
+    // is empty — the no-op posture, nothing mints beyond the 1.9.0 baseline.
+    expect(allPendingIds(outcome)).toEqual([]);
+    // R itself is surfaced as excluded, never a change.
+    expect(
+      attributedLines(outcome)
+        .find((l) => l.lineId === "1.9")
+        ?.excluded.map((e) => e.sha),
+    ).toContain("r");
+  });
+});

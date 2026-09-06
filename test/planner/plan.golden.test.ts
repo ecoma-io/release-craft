@@ -1311,3 +1311,94 @@ describe("E-11: hotfix interleave — same target version, different plans", () 
     expect(inputsFingerprint(worldA.input)).not.toBe(inputsFingerprint(worldB.input));
   });
 });
+// ---------------------------------------------------------------------------
+// PL-06 — empty change set: every commit ignored by policy (the named pin
+// for the shape S-01 and PL-03's second run already exercise: a line at
+// 2.3.0 whose pending commits are all docs/chore — nothing release-worthy,
+// so the plan exits with the no-op record and mints nothing)
+// ---------------------------------------------------------------------------
+
+describe("PL-06: empty change set by policy — every commit ignored, nothing minted", () => {
+  const DIGEST_PL06 = "sha256:" + "r".repeat(64);
+
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_PL06,
+      lines: [line("2.x", "main", { major: 2 })],
+      commits: [
+        commit("pl06-t1", "feat: the 2.3.0 groundwork", { containingRefs: ["main"] }),
+        commit("pl06-d1", "docs: expand the runbook", {
+          parents: ["pl06-t1"],
+          containingRefs: ["main"],
+        }),
+        commit("pl06-c1", "chore: rotate the CI cache", {
+          parents: ["pl06-d1"],
+          containingRefs: ["main"],
+        }),
+        commit("pl06-d2", "docs(contributing): note the review ladder", {
+          parents: ["pl06-c1"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "pl06-d2")],
+      tags: [tag("2.3.0", "pl06-t1")],
+    });
+  }
+
+  it("records the no-op with its reason — the per-commit classification proves emptiness", () => {
+    const world = planDecisions(input());
+    expect(planDecisions(input())).toEqual(world);
+    const decision = decisionFor(world, "2.x");
+    // Table 1, PL-06: "no release; the plan exits with `no-op` plus the
+    // reason (per-commit classification proving emptiness)."
+    expect(decision).toMatchObject({
+      kind: "no-op",
+      cause: "no-release-worthy-changes",
+      lineId: "2.x",
+      policyDigest: DIGEST_PL06,
+    });
+    if (decision.kind !== "no-op") {
+      throw new Error("fixture broken: the all-filtered runway must decide a no-op");
+    }
+    // The evaluated range is 2.3.0..HEAD — releasedUpTo at the tagged
+    // commit, head at the last docs commit.
+    expect(decision.range).toEqual({ lineId: "2.x", releasedUpTo: "pl06-t1", head: "pl06-d2" });
+    // Every pending commit is enumerated in input order — none survived
+    // classification, so the emptiness is proven per commit (D9's
+    // never-a-mint, never-an-exception obligation).
+    expect(decision.ignored.map((parsed) => parsed.sha)).toEqual(["pl06-d1", "pl06-c1", "pl06-d2"]);
+    // The record's reason names each ignored commit.
+    for (const sha of ["pl06-d1", "pl06-c1", "pl06-d2"]) {
+      expect(decision.detail).toContain(sha);
+    }
+  });
+
+  it("mints nothing — no plan line for the line, no stable target, no stream", () => {
+    const world = planDecisions(input());
+    // The no-op mints nothing: no stable target, no stream.
+    expect(targetsFor(world, "2.x").stable).toBeNull();
+    expect(streamsFor(world, "2.x", [])).toEqual([]);
+    // No plan line can be assembled — the integrator's §2.11 mapping
+    // refuses a non-release decision, so execution is handed nothing.
+    expect(() => planLineOf(world, "2.x")).toThrow(/no release decision to assemble/);
+  });
+
+  it("leaves 2.3.0 the released version — pointer and stable base unmoved, no new tag", () => {
+    const world = planDecisions(input());
+    // The projection carries exactly the one release tag — nothing minted
+    // beside it, nothing kept out.
+    const history = historyFor(world, "2.x");
+    expect(history.foreign).toEqual([]);
+    expect(
+      history.tags.map((candidate) => ({ name: candidate.name, commit: candidate.commit })),
+    ).toEqual([{ name: "2.3.0", commit: "pl06-t1" }]);
+    // Table 1, PL-06 versions: "none; `2.3.0` remains the released version."
+    const state = stateFor(world, "2.x");
+    if (state.pointer === null || state.stableBase === null) {
+      throw new Error("fixture broken: the tagged line must raise a released pointer");
+    }
+    expect(state.pointer.toString()).toBe("2.3.0");
+    expect(state.stableBase.toString()).toBe("2.3.0");
+    expect(state.streams).toEqual([]);
+  });
+});

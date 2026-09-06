@@ -665,3 +665,93 @@ describe("resolveBump — §2.7 declared mapping", () => {
     expect(resolveBump(pending, policy())).toBe("major");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PL-05 — ambiguous commits: the unresolvable evidence and the deduplicated set
+// ---------------------------------------------------------------------------
+
+describe("decideLine — PL-05 ambiguous commits", () => {
+  it("records the genuinely unresolvable commit as a refused block naming the contested identity — no release, no target or stream, none minted (PL-05a; the decide-layer record is refused/kernel-rejection — one change identity carried by two members)", () => {
+    // The row's shape (a) reaches the decision layer as evidence it cannot
+    // rank: a merge commit and its branch commit both carry the one change
+    // identity, and the kernel's "one identity is one member" rule makes the
+    // change set unconstructable. The layer records the block (invariant 4)
+    // instead of guessing a winner or silently releasing. (The scope-clash
+    // form of the ambiguity fails closed upstream, in attribution — its
+    // refusal never reaches decideLine.)
+    const pending = [
+      parsed("sha-merge-m", "fix", "chg:m1"),
+      parsed("sha-branch-m", "fix", "chg:m1"),
+    ];
+
+    const evaluated = range();
+    const decision = decideLine(
+      attribution("main", pending, ["chg:released"]),
+      planInput(),
+      evaluated,
+    );
+
+    expect(decision.kind).toBe("refused");
+    if (decision.kind !== "refused") {
+      throw new Error("expected a refused record");
+    }
+    expect(decision.cause).toBe("kernel-rejection");
+    // The ambiguous evidence is named: the contested identity.
+    expect(decision.detail).toContain("chg:m1");
+    expect(decision.policyDigest).toBe(POLICY_DIGEST);
+    expect(decision.range).toBe(evaluated);
+    // The row's "(a) none": the recorded block carries no target, no
+    // stream, and no minted version — exactly the refused record's fields.
+    expect(Object.keys(decision).sort()).toEqual([
+      "cause",
+      "detail",
+      "kind",
+      "lineId",
+      "policyDigest",
+      "range",
+    ]);
+  });
+
+  it("releases normally from the deduplicated set — the merge commit is structural, the branch member carries the change once (PL-05c)", () => {
+    // The row's shape (c): the range holds merge commit M whose branch
+    // commit is also individually in range. Under the recorded range-walk
+    // policy the merge is deduplicated upstream — extraction classifies it
+    // structural, not change-bearing — so the decision layer sees the
+    // deduplicated set and answers with an ordinary release, each change
+    // exactly once.
+    const branchFix = parsed("sha-branch-m", "fix", "chg:m1");
+    const deduplicated: LineAttribution = {
+      ...attribution("main", [branchFix], ["chg:released"]),
+      excluded: [
+        {
+          sha: "sha-merge-m",
+          rule: "unparseable",
+          detail: "merge commit: structural, not change-bearing",
+        },
+      ],
+    };
+
+    const decision = decideLine(deduplicated, planInput(), range());
+
+    expect(decision.kind).toBe("release");
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    // The bump resolves from the deduplicated member alone.
+    expect(decision.bump).toBe("patch");
+    // The change set carries the deduplicated member(s): the branch fix
+    // once — the merge commit's duplicate occurrence is nowhere in it.
+    expect(decision.changes.map((entry) => entry.sha)).toEqual(["sha-branch-m"]);
+    expect(decision.changes[0]?.change?.id).toBe("chg:m1");
+    // A normal release — no withheld, no forced, no extra record fields.
+    expect(Object.keys(decision).sort()).toEqual([
+      "bump",
+      "changes",
+      "detail",
+      "kind",
+      "lineId",
+      "policyDigest",
+      "range",
+    ]);
+  });
+});

@@ -455,7 +455,11 @@ describe("normalize — the closed input boundary (§2.1)", () => {
     });
 
     it("rejects a prerelease without a line — stream demand is always per line", () => {
-      const rejected = reject(withIntents([{ kind: "prerelease", stream: "rc" }]));
+      // The operator door admits raw intent objects; the typed layer
+      // cannot express the omission the runtime check refuses.
+      const rejected = reject(
+        withIntents([{ kind: "prerelease", stream: "rc" } as unknown as OperatorIntent]),
+      );
       expect(fieldsOf(rejected)).toContain("intents[0].lineId");
     });
 

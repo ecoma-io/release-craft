@@ -60,6 +60,11 @@ const DIGEST_PL07_UNFROZEN = "sha256:" + "D".repeat(64);
 const DIGEST_PL07_ALL = "sha256:" + "E".repeat(64);
 const DIGEST_LC = "sha256:" + "F".repeat(64);
 const DIGEST_BIND = "sha256:" + "G".repeat(64);
+const DIGEST_M10_RENAME = "sha256:" + "H".repeat(64);
+const DIGEST_M10_RETIRE = "sha256:" + "I".repeat(64);
+const DIGEST_ATK6 = "sha256:" + "J".repeat(64);
+const DIGEST_ATK7 = "sha256:" + "K".repeat(64);
+const DIGEST_ATK8 = "sha256:" + "L".repeat(64);
 
 function policy(digest: string, tagFormats: Readonly<Record<string, string>> = {}): PolicyInput {
   return {
@@ -661,5 +666,279 @@ describe("the binding goldens through the door — two lines, two declared compo
     expect(attempt).toThrow(/"1\.9"/);
     expect(attempt).toThrow(/publishes/);
     expect(attempt).toThrow(/line↔component release mapping/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M-10 — the rename half: the line's id and feed ref carry the new name
+// ("1.9-lts") while the history keeps the 1.9.x tags — the release resolves
+// from the line's own tags regardless of the name
+// ---------------------------------------------------------------------------
+
+describe("M-10 through the door — the renamed line releases normally", () => {
+  it("releases 1.9.1 on the renamed line, resolved from its own 1.9.x tags", () => {
+    const outcome = plan(
+      buildInput({
+        digest: DIGEST_M10_RENAME,
+        lines: [line("1.9-lts", "feed/1.9-lts", { major: 1, minor: 9 })],
+        commits: [
+          commit("m10r-base", "feat: the 1.9 line", { containingRefs: ["feed/1.9-lts"] }),
+          commit("m10r-fix", "fix: the lts fix", {
+            parents: ["m10r-base"],
+            containingRefs: ["feed/1.9-lts"],
+          }),
+        ],
+        refs: [ref("feed/1.9-lts", "m10r-fix")],
+        tags: [tag("1.9.0", "m10r-base")],
+        components: [component("release-craft", "1.9.0")],
+        intents: [{ kind: "release" }],
+      }),
+    );
+    // The rename is an input-level observation: the line id and feed ref
+    // carry the new name while the tags stay 1.9.x — the base resolves from
+    // the line's own tag regardless of the name, and the line releases
+    // normally (M-10: rename → release 1.9-lts normally, 1.9.1).
+    expect(decisionFor(outcome, "1.9-lts")).toMatchObject({
+      kind: "release",
+      bump: "patch",
+      range: { lineId: "1.9-lts", releasedUpTo: "m10r-base", head: "m10r-fix" },
+    });
+    const renamed = planLineFor(outcome, "1.9-lts");
+    expect(renamed.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
+    expect(renamed.changes).toEqual([
+      { id: "m10r-fix", lineage: ["m10r-fix"], type: "fix", bump: "patch" },
+    ]);
+    expect(plannedOf(outcome).plan.lines.map((entry) => entry.lineId)).toEqual(["1.9-lts"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M-10 — the retire half: the retired line's decision record is a refusal
+// whose range still names the pending span (the withheld commit at its
+// head), and no plan line, target, or stream results for it — the global
+// release demand never mints
+// ---------------------------------------------------------------------------
+
+describe("M-10 through the door — the retired line withholds its pending release-worthy commit", () => {
+  it("records the refusal carrying the pending commit and mints nothing for the line", () => {
+    const outcome = plan(
+      buildInput({
+        digest: DIGEST_M10_RETIRE,
+        lines: [{ ...line("1.9", "feed/1.9", { major: 1, minor: 9 }), lifecycle: "retired" }],
+        commits: [
+          commit("m10q-base", "feat: the 1.9 line", { containingRefs: ["feed/1.9"] }),
+          commit("m10q-f", "fix: the pending fix the retirement withholds", {
+            parents: ["m10q-base"],
+            containingRefs: ["feed/1.9"],
+          }),
+        ],
+        refs: [ref("feed/1.9", "m10q-f")],
+        tags: [tag("1.9.0", "m10q-base")],
+        intents: [{ kind: "release" }],
+      }),
+    );
+    // Retire → no release; F withheld (M-10): the refusal record still
+    // scopes the pending span — the released bound stands at the tag, the
+    // head names the withheld commit — while release-shaped planning
+    // refuses outright.
+    expect(decisionFor(outcome, "1.9")).toMatchObject({
+      kind: "refused",
+      cause: "line-retired",
+      lineId: "1.9",
+      policyDigest: DIGEST_M10_RETIRE,
+      range: { lineId: "1.9", releasedUpTo: "m10q-base", head: "m10q-f" },
+    });
+    expect(decisionFor(outcome, "1.9").detail).toContain(`line "1.9" is retired`);
+    expect(decisionFor(outcome, "1.9").detail).toContain(
+      "no targets, no streams, no release entry",
+    );
+    // The refusal record is the retired line's whole presence: no plan
+    // line, no target, no stream, and no per-line refusal record — the
+    // release demand never mints.
+    const assembled = plannedOf(outcome).plan;
+    expect(assembled.lines).toEqual([]);
+    expect(assembled.refusedIntents).toEqual([]);
+    expect(plannedOf(outcome).decisions).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attack 6 — all-deferred: the withhold rule matches every release-worthy
+// commit, the breaking one included, beside a docs commit — everything
+// defers, nothing mints, and the un-released span keeps the whole set
+// ---------------------------------------------------------------------------
+
+describe("the all-deferred attack through the door — nothing release-worthy survives the rules", () => {
+  it("yields the withheld record enumerating the breaking commit and the fix, no plan line, no no-op", () => {
+    const outcome = plan(
+      buildInput({
+        digest: DIGEST_ATK6,
+        lines: [
+          {
+            ...line("1.9", "feed/1.9", { major: 1, minor: 9 }),
+            withhold: [{ scope: "api", reason: "api is frozen for the migration window" }],
+          },
+        ],
+        commits: [
+          commit("atk6-base", "feat: the 1.9 line", { containingRefs: ["feed/1.9"] }),
+          // The breaking commit is the earliest withheld one: the major
+          // driver defers, so nothing mints — range pinning defers the
+          // later fix along with it, and the docs commit at the tip is
+          // not release-triggering and stays inside the un-released span.
+          commit("atk6-brk", "feat(api)!: break the wire protocol", {
+            parents: ["atk6-base"],
+            containingRefs: ["feed/1.9"],
+          }),
+          commit("atk6-fix", "fix(api): the deferred fix", {
+            parents: ["atk6-brk"],
+            containingRefs: ["feed/1.9"],
+          }),
+          commit("atk6-docs", "docs: the frozen-window note", {
+            parents: ["atk6-fix"],
+            containingRefs: ["feed/1.9"],
+          }),
+        ],
+        refs: [ref("feed/1.9", "atk6-docs")],
+        tags: [tag("1.9.0", "atk6-base")],
+        intents: [{ kind: "release" }],
+      }),
+    );
+    // The withheld enumeration is scoped to the rule-matching release-worthy
+    // set: the breaking feat and the fix defer — the docs commit is
+    // policy-ignored, never enumerated, and the withheld record replaces
+    // both a mint and a no-op.
+    const decision = decisionFor(outcome, "1.9");
+    expect(decision).toMatchObject({
+      kind: "withheld",
+      cause: "policy-filter",
+      lineId: "1.9",
+      policyDigest: DIGEST_ATK6,
+      withheld: [{ sha: "atk6-brk" }, { sha: "atk6-fix" }],
+    });
+    expect(decision.detail).toContain(`atk6-brk (feat): "api is frozen for the migration window"`);
+    expect(decision.detail).toContain(`atk6-fix (fix): "api is frozen for the migration window"`);
+    expect(decision.detail).toContain("deferred inside the un-released span, never deleted");
+    const assembled = plannedOf(outcome).plan;
+    expect(assembled.lines).toEqual([]);
+    expect(assembled.refusedIntents).toEqual([]);
+    expect(plannedOf(outcome).decisions).toHaveLength(1);
+    // The persisted explanation carries the whole deferred set, curated
+    // with the matched scope and the rule's reason (D18, PL-07).
+    expect(assembled.explanation.withheld).toEqual([
+      {
+        lineId: "1.9",
+        sha: "atk6-brk",
+        scope: "api",
+        reason: "api is frozen for the migration window",
+      },
+      {
+        lineId: "1.9",
+        sha: "atk6-fix",
+        scope: "api",
+        reason: "api is frozen for the migration window",
+      },
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attack 7 — the retired line under both demand shapes: the release-shaped
+// demand lands on the line-retired decision record, the prerelease demand
+// records per the declared stream posture, and neither fabricates a target
+// or a stream
+// ---------------------------------------------------------------------------
+
+describe("the retired-line attack through the door — both demand shapes record, neither mints", () => {
+  it("records the release refusal and the stable-only posture refusal, fabricating no target or stream", () => {
+    const outcome = plan(
+      buildInput({
+        digest: DIGEST_ATK7,
+        lines: [
+          {
+            ...line("1.9", "feed/1.9", { major: 1, minor: 9 }),
+            lifecycle: "retired",
+            streams: { allow: "none" },
+          },
+        ],
+        commits: [
+          commit("atk7-base", "feat: the 1.9 line", { containingRefs: ["feed/1.9"] }),
+          commit("atk7-f", "fix: the pending fix on the retired line", {
+            parents: ["atk7-base"],
+            containingRefs: ["feed/1.9"],
+          }),
+        ],
+        refs: [ref("feed/1.9", "atk7-f")],
+        tags: [tag("1.9.0", "atk7-base")],
+        intents: [{ kind: "release" }, { kind: "prerelease", stream: "rc", lineId: "1.9" }],
+      }),
+    );
+    // The release-shaped demand's refusal is the line-retired record; the
+    // prerelease demand rides the declared stable-only posture — D18
+    // decisions 1 and 2 compose independently on the refused line.
+    expect(decisionFor(outcome, "1.9")).toMatchObject({
+      kind: "refused",
+      cause: "line-retired",
+      lineId: "1.9",
+      policyDigest: DIGEST_ATK7,
+    });
+    expect(plannedOf(outcome).plan.refusedIntents).toEqual([
+      {
+        intent: { kind: "prerelease", stream: "rc", lineId: "1.9" },
+        lineId: "1.9",
+        reason: `line 1.9 is stable-only — the line's declared stream policy admits no prerelease streams (D18)`,
+      },
+    ]);
+    // Neither demand fabricates anything: the refusal record is the line's
+    // whole presence — no plan line, no target, no stream.
+    expect(plannedOf(outcome).plan.lines).toEqual([]);
+    expect(plannedOf(outcome).decisions).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Attack 8 — the binding-alias gap: two releasing lines whose declared
+// publishes name the SAME component — the mapping is ambiguous and the
+// door refuses, naming the declared component and both colliding lines
+// (D18 decision 4 posture; the alias variant the two-component goldens and
+// the lost-binding negative do not cover)
+// ---------------------------------------------------------------------------
+
+describe("the binding-alias attack through the door — one declared component, two releasing lines", () => {
+  it("refuses the ambiguous mapping, naming the shared component and both colliding lines", () => {
+    const world = buildInput({
+      digest: DIGEST_ATK8,
+      lines: [
+        { ...line("2.x", "main", { major: 2 }), publishes: "app" },
+        { ...line("1.9", "feed/1.9", { major: 1, minor: 9 }), publishes: "app" },
+      ],
+      commits: [
+        commit("atk8-2a", "feat: the 2.x line", { containingRefs: ["main"] }),
+        commit("atk8-break", "feat!: break the app surface", {
+          parents: ["atk8-2a"],
+          containingRefs: ["main"],
+        }),
+        commit("atk8-19a", "feat: the 1.9 line", { containingRefs: ["feed/1.9"] }),
+        commit("atk8-fix", "fix: the 1.9 fix", {
+          parents: ["atk8-19a"],
+          containingRefs: ["feed/1.9"],
+        }),
+      ],
+      refs: [ref("main", "atk8-break"), ref("feed/1.9", "atk8-fix")],
+      tags: [tag("2.0.0", "atk8-2a"), tag("1.9.0", "atk8-19a")],
+      components: [component("app", "2.0.0")],
+      intents: [{ kind: "release" }],
+    });
+    // Both lines release (major on 2.x, patch on 1.9), so the binding sees
+    // two releases claiming one declared component — a declared component
+    // carries one release per pass, and the ambiguity is the door's
+    // refusal naming the component and both lines, never a fabricated
+    // mapping.
+    const attempt = (): PlanningOutcome => plan(world);
+    expect(attempt).toThrow(InvalidPlanningInputError);
+    expect(attempt).toThrow(/both bind their releases to component "app"/);
+    expect(attempt).toThrow(/"2\.x"/);
+    expect(attempt).toThrow(/"1\.9"/);
+    expect(attempt).toThrow(/the mapping is ambiguous/);
+    expect(attempt).toThrow(/publishes/);
   });
 });

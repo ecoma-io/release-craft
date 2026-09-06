@@ -214,4 +214,34 @@ describe("inputsFingerprint — §2.11/E-04 input-world identity", () => {
     );
     expect(after).not.toBe(before);
   });
+  it("reproduces the fingerprint when the retry re-observes the identical world, frozen commit times included (E-05: the retry is a continuation, not a recomputation)", () => {
+    const planned = input([
+      { ...commit("sha-a", "feat: one"), committedAt: COMMITTED_AT },
+      { ...commit("sha-b", "fix: two"), committedAt: COMMITTED_AT },
+    ]);
+    const retried = input([
+      { ...commit("sha-a", "feat: one"), committedAt: COMMITTED_AT },
+      { ...commit("sha-b", "fix: two"), committedAt: COMMITTED_AT },
+    ]);
+    expect(inputsFingerprint(retried)).toBe(inputsFingerprint(planned));
+  });
+  it("does not move when only a commit's committedAt changes — the enumerated world is the policy-relevant projection, not the raw world (E-05: frozen time is input data, never identity)", () => {
+    const before = inputsFingerprint(input([commit("sha-a", "feat: one")]));
+    const after = inputsFingerprint(
+      input([{ ...commit("sha-a", "feat: one"), committedAt: "2026-01-02T12:00:00Z" }]),
+    );
+    expect(after).toBe(before);
+  });
+
+  it("differs when the recorded frozen time of the bootstrap decision changes — recorded time is enumerated input (E-05: time is an input value, never a clock read)", () => {
+    const before = inputsFingerprint({
+      ...input([commit("sha-a", "feat: one")]),
+      bootstrap: { version: "1.0.0", who: "the operator", when: COMMITTED_AT },
+    });
+    const after = inputsFingerprint({
+      ...input([commit("sha-a", "feat: one")]),
+      bootstrap: { version: "1.0.0", who: "the operator", when: "2026-01-02T12:00:00Z" },
+    });
+    expect(after).not.toBe(before);
+  });
 });
