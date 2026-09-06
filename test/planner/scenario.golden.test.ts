@@ -1,8 +1,8 @@
 /**
- * End-to-end golden scenarios for the PR-3 layer — S-01, S-02, S-03 and
- * M-07 of docs/design/release-scenarios.md, pinned at the decision-record
- * level (phase2-planner-contract.md §2.5, §2.7, §2.9 and §2.13;
- * decision-log D15).
+ * End-to-end golden scenarios for the PR-3 layer — S-01, S-02, S-03,
+ * S-04, S-05 and M-07 of docs/design/release-scenarios.md, pinned at the
+ * decision-record level (phase2-planner-contract.md §2.5, §2.7, §2.9 and
+ * §2.13; decision-log D15).
  *
  * Where the PR-2 golden file feeds `attribute` declared ranges, every test
  * here composes the real modules end to end — `normalize` → `extract` →
@@ -52,6 +52,8 @@ const DIGEST_S01 = "sha256:" + "a".repeat(64);
 const DIGEST_S02 = "sha256:" + "b".repeat(64);
 const DIGEST_S03 = "sha256:" + "c".repeat(64);
 const DIGEST_M07 = "sha256:" + "d".repeat(64);
+const DIGEST_S04 = "sha256:" + "e".repeat(64);
+const DIGEST_S05 = "sha256:" + "f".repeat(64);
 
 function policy(digest: string): PolicyInput {
   return {
@@ -400,6 +402,171 @@ describe("S-03: manifest drift — the hotfixes that never came home", () => {
       changes: [{ sha: "s03-fix-main" }],
     });
     expect(planLines(input())).toEqual(planned);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-04 — release-worthy without changelog-worthy: the bump-driving
+// classification and the note-producing classification are independent
+// (Table 1, S-04). The contract's config excluding scope `internal` from
+// changelog notes is a note-classification knob — no such field exists on
+// PlanningInput — so the decision-record layer's pin is that the internal
+// scope neither demotes nor skips the release; conflating the two
+// classifications would skip it.
+// ---------------------------------------------------------------------------
+
+describe("S-04: release-worthy, not changelog-worthy", () => {
+  // Stated initial state: branch main only, tags through 1.0.4, manifest
+  // 1.0.4; stated inputs: the two fix(internal) merges pending and
+  // operator intent "release".
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_S04,
+      lines: [line("1.x", "main", { major: 1 })],
+      commits: [
+        commit("s04-1.0.0", "feat: the 1.0 line", { containingRefs: ["main"] }),
+        commit("s04-1.0.4", "fix: the previous patch", {
+          parents: ["s04-1.0.0"],
+          containingRefs: ["main"],
+        }),
+        commit("s04-fix-1", "fix(internal): harden token scrubbing", {
+          parents: ["s04-1.0.4"],
+          containingRefs: ["main"],
+        }),
+        commit("s04-fix-2", "fix(internal): close race in session cache", {
+          parents: ["s04-fix-1"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "s04-fix-2")],
+      tags: [tag("1.0.0", "s04-1.0.0"), tag("1.0.4", "s04-1.0.4")],
+      components: [component("release-craft", "1.0.4")],
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("releases both internal-scoped fixes as a patch — note exclusion never suppresses the release", () => {
+    const planned = planLines(input());
+    const decision = decisionFor(planned, "1.x");
+    expect(decision.kind).toBe("release");
+    expect(decision).toMatchObject({
+      kind: "release",
+      bump: "patch",
+      lineId: "1.x",
+      policyDigest: DIGEST_S04,
+      range: { lineId: "1.x", releasedUpTo: "s04-1.0.4", head: "s04-fix-2" },
+      changes: [{ sha: "s04-fix-1" }, { sha: "s04-fix-2" }],
+    });
+    // §2.14: the same closed inputs must fingerprint-equal on a second pass.
+    expect(planLines(input())).toEqual(planned);
+  });
+
+  it("resolves the patch from the fix classification alone — the internal scope rides parsed and inert (§2.7)", () => {
+    const planned = planLines(input());
+    expect(attributionFor(planned, "1.x").pending).toMatchObject([
+      { sha: "s04-fix-1", type: "fix", scope: "internal", breaking: false },
+      { sha: "s04-fix-2", type: "fix", scope: "internal", breaking: false },
+    ]);
+    expect(resolveBump(attributionFor(planned, "1.x").pending, input().policy)).toBe("patch");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S-05 — major cut while the maintenance line lives: the new 2.x line cuts
+// 2.0.0 from its own birth range while line 1.x stays live and unaffected
+// (Table 1, S-05). The tags interleave in walk order — global tag order is
+// not version order (§2.13).
+// ---------------------------------------------------------------------------
+
+describe("S-05: major cut, maintenance line lives", () => {
+  // Stated initial state: main (manifest 1.0.0, never released past the
+  // shared root) carries the breaking commit; release/1.x is live through
+  // 1.0.2 with one pending chore. The new 2.x line has no 2.x tags, so its
+  // range starts at line birth and the first version is the operator's
+  // recorded bootstrap call — "cut 2.0.0 from main" (S-02's law); the
+  // breaking feat! resolves the major, resetting minor and patch.
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_S05,
+      lines: [line("1.x", "release/1.x", { major: 1 }), line("2.x", "main", { major: 2 })],
+      commits: [
+        commit("s05-root", "feat: the shared 1.0 foundation", {
+          containingRefs: ["main", "release/1.x"],
+        }),
+        commit("s05-1x-1", "fix: harden the 1.x parser", {
+          parents: ["s05-root"],
+          containingRefs: ["release/1.x"],
+        }),
+        commit("s05-1x-2", "chore: cut 1.0.2", {
+          parents: ["s05-1x-1"],
+          containingRefs: ["release/1.x"],
+        }),
+        commit("s05-1x-chore", "chore: prune stale 1.x docs", {
+          parents: ["s05-1x-2"],
+          containingRefs: ["release/1.x"],
+        }),
+        commit("s05-cut", "chore: branch for the 2.x line", {
+          parents: ["s05-root"],
+          containingRefs: ["main"],
+        }),
+        commit("s05-feat", "feat!: require config schema v2", {
+          parents: ["s05-cut"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "s05-feat"), ref("release/1.x", "s05-1x-chore")],
+      // Walk order is the input order: the 1.x line's newer tags interleave
+      // around 1.0.0, the tag sitting on the commit main's history shares.
+      tags: [tag("1.0.1", "s05-1x-1"), tag("1.0.0", "s05-root"), tag("1.0.2", "s05-1x-2")],
+      // The stale manifest rides as declared projection and appears in no
+      // assertion below (invariant 6, mirroring S-03).
+      components: [component("release-craft", "1.0.0")],
+      bootstrap: { version: "2.0.0", who: "the operator", when: COMMITTED_AT },
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("cuts 2.0.0 from main — the breaking feat! resolves major over the birth range", () => {
+    const planned = planLines(input());
+    const decision = decisionFor(planned, "2.x");
+    expect(decision.kind).toBe("release");
+    expect(decision).toMatchObject({
+      kind: "release",
+      bump: "major",
+      lineId: "2.x",
+      policyDigest: DIGEST_S05,
+      range: { lineId: "2.x", releasedUpTo: null, head: "s05-feat" },
+      changes: [{ sha: "s05-root" }, { sha: "s05-feat" }],
+    });
+    // §2.14: the same closed inputs must fingerprint-equal on a second pass.
+    expect(planLines(input())).toEqual(planned);
+  });
+
+  it("keeps each line's history its own — 1.0.x is foreign to 2.x and version order survives the walk order (§2.13)", () => {
+    const planned = planLines(input());
+    const oneX = historyFor(planned, "1.x");
+    expect(oneX.tags.map((admissible) => admissible.name)).toEqual(["1.0.0", "1.0.1", "1.0.2"]);
+    expect(oneX.foreign).toEqual([]);
+    // foreign keeps walk (input) order: 1.0.1 and 1.0.2 — the live 1.x
+    // line's newer tags — walk around 1.0.0, and none of them is 2.x's
+    // bound.
+    const twoX = historyFor(planned, "2.x");
+    expect(twoX.tags).toEqual([]);
+    expect(twoX.foreign.map((tagged) => tagged.name)).toEqual(["1.0.1", "1.0.0", "1.0.2"]);
+  });
+
+  it("leaves the maintenance line a recorded no-op — evaluated, ignored, untouched", () => {
+    const planned = planLines(input());
+    const decision = decisionFor(planned, "1.x");
+    expect(decision.kind).toBe("no-op");
+    expect(decision).toMatchObject({
+      kind: "no-op",
+      cause: "no-release-worthy-changes",
+      lineId: "1.x",
+      policyDigest: DIGEST_S05,
+      range: { lineId: "1.x", releasedUpTo: "s05-1x-2", head: "s05-1x-chore" },
+      ignored: [{ sha: "s05-1x-chore" }],
+    });
   });
 });
 

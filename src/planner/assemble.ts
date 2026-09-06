@@ -311,6 +311,47 @@ export const plan: Plan = (raw) => {
     }
   }
 
+  // M-11, plan level: the tag namespace is global (invariant 6) — two
+  // lines minting the same tag in one pass is a self-conflicting plan,
+  // each line's tag-absent precondition falsifying the other's. The door
+  // refuses before assembly, naming the colliding tag, both lines, and
+  // both decisions' head commits. Per-package tag formats keep distinct-
+  // namespace worlds (one tag shape per component) legal; identical
+  // formats colliding on the same next version is the operator's repair.
+  const tagOwner = new Map<string, string>();
+  for (const minted of planned) {
+    const tags = [
+      ...(minted.stable === null ? [] : [minted.stable.tag]),
+      ...minted.streams.map((stream) => stream.tag),
+    ];
+    for (const tag of tags) {
+      const priorLineId = tagOwner.get(tag);
+      if (priorLineId !== undefined) {
+        const prior = requireFound(
+          planned.find((candidate) => candidate.lineId === priorLineId),
+          `lines.${priorLineId}`,
+          "collision check named a line the planned set does not carry",
+        );
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "refused",
+            cause: "version-collision",
+            commits: [prior.decision.range.head, minted.decision.range.head],
+            policyDigest: input.policy.digest,
+            detail:
+              `version collision: tag ${JSON.stringify(tag)} is minted by both ` +
+              `line ${JSON.stringify(priorLineId)} (head ${prior.decision.range.head}) ` +
+              `and line ${JSON.stringify(minted.lineId)} (head ${minted.decision.range.head}) — ` +
+              "one tag in the global namespace cannot carry two bodies (M-11): " +
+              "give the lines distinct per-package tag formats or distinct targets",
+          },
+        };
+      }
+      tagOwner.set(tag, minted.lineId);
+    }
+  }
+
   // §2.15 releases (reading 1 in the module header), behind D18 Decision 4's
   // declared binding: each releasing line's release entry binds to the
   // component its `publishes` names — the mapping becomes closed input, the

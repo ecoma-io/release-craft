@@ -424,6 +424,91 @@ describe("S-03 through the door — the healthy patch release", () => {
 });
 
 // ---------------------------------------------------------------------------
+// S-04/S-05 — the bump-driving classification is independent of
+// changelog-worthiness; the major cut beside a live maintenance line
+// ---------------------------------------------------------------------------
+
+describe("S-04 through the door — release-worthy, not changelog-worthy", () => {
+  const DIGEST_S04 = "sha256:" + "u".repeat(64);
+
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_S04,
+      lines: [line("1.x", "main", { major: 1 })],
+      commits: [
+        commit("s04-1.0.4", "feat: the 1.0 line", { containingRefs: ["main"] }),
+        commit("s04-fix-1", "fix: guard the parser against empty config", {
+          parents: ["s04-1.0.4"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "s04-fix-1")],
+      tags: [tag("1.0.4", "s04-1.0.4")],
+      components: [component("release-craft", "1.0.4")],
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("releases the patch 1.0.5 from the fix alone — the internal-scoped fix is release-worthy", () => {
+    const outcome = plan(input());
+    expect(decisionFor(outcome, "1.x")).toMatchObject({
+      kind: "release",
+      bump: "patch",
+      range: { lineId: "1.x", releasedUpTo: "s04-1.0.4", head: "s04-fix-1" },
+    });
+    const assembled = planLineOf(outcome);
+    if (assembled.stable === null) {
+      throw new Error("fixture broken: the patch must be planned");
+    }
+    expect(assembled.stable.version).toBe("1.0.5");
+    expect(assembled.stable.tag).toBe("1.0.5");
+  });
+});
+
+describe("S-05 through the door — the major cut beside a live maintenance line", () => {
+  const DIGEST_S05 = "sha256:" + "v".repeat(64);
+
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_S05,
+      lines: [line("2.x", "main", { major: 2 }), line("1.x", "release/1", { major: 1 })],
+      commits: [
+        commit("s05-1.0.0", "feat: the shared base", { containingRefs: ["main", "release/1"] }),
+        commit("s05-1.0.1", "fix: the maintenance patch", {
+          parents: ["s05-1.0.0"],
+          containingRefs: ["release/1"],
+        }),
+        commit("s05-feat", "feat!: the new major", {
+          parents: ["s05-1.0.0"],
+          containingRefs: ["main"],
+        }),
+      ],
+      refs: [ref("main", "s05-feat"), ref("release/1", "s05-1.0.1")],
+      // Interleaved walk order: the 1.x tags are NEWER in name order than
+      // the 2.x base — each line's history stays its own (§2.13).
+      tags: [tag("1.0.1", "s05-1.0.1"), tag("1.0.0", "s05-1.0.0")],
+      bootstrap: { version: "2.0.0", who: "the operator", when: "2026-01-01T00:00:00Z" },
+      components: [component("release-craft", "1.0.1")],
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("cuts 2.0.0 on the new line while the maintenance line stays a recorded no-op", () => {
+    const outcome = plan(input());
+    expect(decisionFor(outcome, "2.x")).toMatchObject({ kind: "release", bump: "major" });
+    const lines = plannedOf(outcome).plan.lines;
+    const cutting = lines.find((candidate) => candidate.lineId === "2.x");
+    if (cutting?.stable == null) {
+      throw new Error("fixture broken: the major cut must be planned");
+    }
+    expect(cutting.stable.version).toBe("2.0.0");
+    expect(cutting.stable.tag).toBe("2.0.0");
+    expect(decisionFor(outcome, "1.x")).toMatchObject({ kind: "no-op" });
+    expect(lines.find((candidate) => candidate.lineId === "1.x")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // M-07 — two lines with own ranges: the no-op mints nothing, input order holds
 // ---------------------------------------------------------------------------
 

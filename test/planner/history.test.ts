@@ -260,3 +260,58 @@ describe("deriveRanges — §2.5 derivation", () => {
     ]);
   });
 });
+// E-10's anomalous clock (G-20 — "anomalous-clock history over the range
+// walk"): a tag's stamped time is never an ordering hint. This layer cannot
+// even see one — a TagObservation carries only a name and a commit — so the
+// only chronology a walk could consume is the feed order a chronological
+// listing produces. When stamps contradict version order, that feed order
+// contradicts precedence too; the projection and the range bound must
+// follow precedence anyway.
+describe("E-10 (G-20) — anomalous clock: the walk follows kernel precedence, never tag stamps or feed recency", () => {
+  it("treats the precedence-max tag as the line head even when the stamp-ordered feed ends with its base", () => {
+    // Stamp order under the anomalous clock: 1.0.2's commit is stamped
+    // EARLIER than 1.0.1's, so a chronological listing yields 1.0.2 first
+    // and 1.0.1 last — a recency-driven walk would crown 1.0.1 the head
+    // and bound the line to sha-late.
+    const lines = [line("main", "feed/0")];
+    const result = loadTagHistory(
+      [tag("1.0.2", "sha-early"), tag("1.0.1", "sha-late")],
+      lines,
+      policy(),
+    );
+
+    const main = historyById(result, "main");
+    // The projection inverts the feed: 1.0.1 is the base, 1.0.2 the head.
+    expect(namesOf(main.tags)).toEqual(["1.0.1", "1.0.2"]);
+    const headTag = main.tags[1];
+    if (headTag === undefined) {
+      throw new Error("fixture broken: expected 1.0.2 projected as the line head");
+    }
+    expect(headTag.name).toBe("1.0.2");
+    expect(headTag.commit).toBe("sha-early");
+
+    // The line's range bound follows the walk: the earlier-stamped commit
+    // bounds the line, never the latest stamp.
+    const ranges = deriveRanges(result, [ref("feed/0", "sha-head")], lines);
+    expect(ranges).toEqual([{ lineId: "main", releasedUpTo: "sha-early", head: "sha-head" }]);
+  });
+
+  it("keeps precedence order and head selection when every tag shares one identical stamp", () => {
+    // Identical stamps on every tag leave a chronological listing no
+    // signal at all — its order is arbitrary (here: refname-descending).
+    // Whatever order arrives, the projected history and the derived bound
+    // are the precedence order's.
+    const lines = [line("main", "feed/0")];
+    const result = loadTagHistory(
+      [tag("1.0.2", "sha-c"), tag("1.0.1", "sha-b"), tag("1.0.0", "sha-a")],
+      lines,
+      policy(),
+    );
+
+    const main = historyById(result, "main");
+    expect(namesOf(main.tags)).toEqual(["1.0.0", "1.0.1", "1.0.2"]);
+
+    const ranges = deriveRanges(result, [ref("feed/0", "sha-head")], lines);
+    expect(ranges).toEqual([{ lineId: "main", releasedUpTo: "sha-c", head: "sha-head" }]);
+  });
+});
