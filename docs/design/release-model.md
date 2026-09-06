@@ -491,8 +491,8 @@ Everything beyond the defaults is additive declaration in the same schema
 - channels, their rollback posture, and promotion policies (PR-04, PR-05,
   P-03);
 - dependency propagation policy over compatible ranges (PL-02, open fork 12);
-- artifact sets, generations, and evidence freshness rules (AR-01, PR-02,
-  PR-03);
+- artifact sets and generations (AR-01, PR-02 — owned since the artifact
+  phase, ADR-0008), with evidence freshness rules (PR-03) still carried;
 
 ### The honest cost
 
