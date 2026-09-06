@@ -359,3 +359,123 @@ export interface SequenceRetryPolicy {
 export type SequenceRetryDecision =
   | { readonly kind: "retry"; readonly sequence: number }
   | { readonly kind: "conflict"; readonly detail: string };
+
+// ---------------------------------------------------------------------------
+// §2.1–§2.8 (phase 5 contract) — the ledger's vocabulary (E-01..E-06, E-09)
+// ---------------------------------------------------------------------------
+
+/** A step's state as the ledger reports it (§2.1): `none` when nothing is
+ * recorded — the plain states are E-02's fields verbatim. */
+export type LedgerStepState = "none" | "started" | "completed" | "failed";
+
+/** Why a blocked attempt may resume (§2.7, E-04): a revalidation names the
+ * plan fingerprint re-proven under the stored plan; a human resolution
+ * records the attributed decision (E-06's `unattributed-state` path). */
+export type BlockedResolution =
+  | { readonly kind: "revalidation"; readonly planFingerprint: string }
+  | { readonly kind: "human"; readonly note: string };
+
+/** The ledger's durable unit (§2.1, §2.2, §2.5, §2.7): append-only,
+ * deep-frozen on append, ordered by append position — never by a clock.
+ * The plan record is the attempt's first (§2.2's recorded half of the
+ * equality proof); step records wrap the kernel's transition record
+ * verbatim; absorption records adopt attributed external work
+ * (`adopted-from:<sourceAttemptId>`); resolution records close the
+ * blocked loop. */
+export type LedgerRecord =
+  | {
+      readonly kind: "plan";
+      readonly attemptId: string;
+      readonly planFingerprint: string;
+      readonly attribution: Attribution;
+      readonly recordedAt?: string;
+    }
+  | { readonly kind: "step"; readonly record: TransitionRecord }
+  | {
+      readonly kind: "absorption";
+      readonly attemptId: string;
+      readonly stepKey: StepKey;
+      /** The attempt whose recorded work is absorbed, verbatim. */
+      readonly adoptedFrom: string;
+      readonly evidence: EvidenceRef;
+      readonly attribution: Attribution;
+      readonly recordedAt?: string;
+    }
+  | {
+      readonly kind: "resolution";
+      readonly attemptId: string;
+      readonly stepKey: StepKey;
+      readonly resolution: BlockedResolution;
+      readonly attribution: Attribution;
+      readonly recordedAt?: string;
+    };
+
+/** The ledger port (§2.1): the durability seam Phases 6–9 bind. Write-ahead
+ * at step granularity — a step's start is durable before its effect may
+ * run. The persistence binding is the Phase 8 adapter's (fork 16 open). */
+export interface ExecutionLedger {
+  /** Appends the attempt's plan record (first call) and the step's
+   * `started` record — write-ahead (E-02, AR-05). Returns the started
+   * transition record. */
+  appendStart(
+    attempt: ReleaseAttempt,
+    stepKey: StepKey,
+    attribution: Attribution,
+    contentFingerprint?: string,
+  ): TransitionRecord;
+  /** The only other write: append, deep-freeze, keep order. */
+  append(record: LedgerRecord): LedgerRecord;
+  /** The attempt's records, append order. */
+  tail(attemptId: string): readonly LedgerRecord[];
+  /** The step's recorded state, `none` when nothing is recorded. */
+  step(attemptId: string, stepKey: StepKey): LedgerStepState;
+  /** The recorded plan fingerprint (§2.2), or null when the attempt has no
+   * plan record — a resume refuses without it. */
+  planFingerprint(attemptId: string): string | null;
+}
+
+/** `verifyEvidence`'s verdict (§2.6, E-03): pure over the recorded and
+ * observed fingerprints — both present and equal → verified; different or
+ * one-sided where the pair is required → conflict (fail-closed); absent on
+ * both sides → unverified. Adoption never runs on conflict or unverified. */
+export type EvidenceVerdict =
+  | { readonly kind: "verified" }
+  | { readonly kind: "conflict"; readonly detail: string }
+  | { readonly kind: "unverified" };
+
+/** An adoption decision (§2.5, E-06, AR-05): absorption appends the
+ * `adopted-from` record into the adopting ledger; escalation records the
+ * observation in the disposition registry and names why. Bare-existence
+ * adoption is contract-forbidden — evidence decides, never observation. */
+export type AdoptionOutcome =
+  | { readonly kind: "adopted"; readonly record: LedgerRecord }
+  | { readonly kind: "escalated"; readonly detail: string };
+
+/** A disposition-registry entry (§2.5, E-09): recorded, surfaced, never
+ * auto-resolved. What, where, the evidence, who observed; when-as-metadata. */
+export interface DispositionEntry {
+  /** What was observed — e.g. `orphan-tag`, `stale-draft` (AR-05, AR-06). */
+  readonly kind: string;
+  /** Where — the external coordinates, opaque and provider-neutral. */
+  readonly where: string;
+  readonly evidence: EvidenceRef;
+  readonly attribution: Attribution;
+  readonly recordedAt?: string;
+}
+
+/** `resume`'s outcome (§2.3, E-01, E-02, E-05): classification over the
+ * recorded tail, never recomputation. */
+export type ResumeOutcome =
+  | { readonly kind: "resume"; readonly from: StepKey }
+  | { readonly kind: "complete"; readonly outcome: "published" | "satisfied-externally" }
+  | { readonly kind: "stale"; readonly detail: string }
+  | { readonly kind: "escalate"; readonly detail: string };
+
+/** `classifyCrash`'s verdict (§2.4, E-01): the doctrine over the recorded
+ * tail plus caller-supplied external observations. The human decision
+ * (delete-tag vs repair) enters as a recorded value, never an inference. */
+export type CrashVerdict =
+  | { readonly kind: "complete-in-place"; readonly from: StepKey }
+  | { readonly kind: "resume"; readonly from: StepKey }
+  | { readonly kind: "void-and-skip" }
+  | { readonly kind: "escalate"; readonly detail: string };

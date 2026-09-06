@@ -16,6 +16,7 @@ export * from "./attempt.js";
 export * from "./claim-store-memory.js";
 export * from "./claim.js";
 export * from "./identity.js";
+export * from "./ledger.js";
 export * from "./outcome.js";
 export * from "./step.js";
 export * from "./transition.js";
