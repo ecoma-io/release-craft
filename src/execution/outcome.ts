@@ -32,7 +32,7 @@
  * timestamps and evidence arrive on the request (§2.10, §2.11).
  */
 import { InvalidExecutionTransitionError } from "./attempt.js";
-import { CANONICAL_STAGES, requiresHeldClaim, stageIndex, type StepKey } from "./step.js";
+import { CANONICAL_STAGES, requiresHeldClaim, stageIndex, type StageKey } from "./step.js";
 import {
   isTerminalAttempt,
   type ClaimToken,
@@ -85,7 +85,7 @@ const tagBoundaryStands = (attemptId: string, steps: StepRecordsView): boolean =
 /** The guard rows an advancing record carries (§2.6: "what was checked,
  * with results"). Optional details are omitted, never `undefined`-filled. */
 const guardList = (
-  stepKey: StepKey,
+  stepKey: StageKey,
   claimToken: ClaimToken | null,
   preconditions: readonly PreconditionObservation[],
   tagBoundary: boolean,

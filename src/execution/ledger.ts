@@ -9,6 +9,7 @@
  * kernel's own classification. Fork 16 stays open: durability across
  * process boundaries is the Phase 8 binding's problem.
  */
+import { InvalidExecutionTransitionError } from "./attempt.js";
 import {
   type Attribution,
   type ExternalSatisfaction,
@@ -38,7 +39,13 @@ export class MemoryLedger {
     stepKey: StepKey,
     attribution: Attribution,
     contentFingerprint?: string,
+    guard?: string,
   ): TransitionRecord {
+    if (guard !== undefined && guard.length === 0) {
+      throw new InvalidExecutionTransitionError(
+        "a recorded guard must be a non-empty value (contract §2.6)",
+      );
+    }
     if (this.planFingerprint(attempt.attemptId) === null) {
       this.append({
         kind: "plan",
@@ -52,7 +59,10 @@ export class MemoryLedger {
       stepKey,
       from: "pending",
       to: "started",
-      guards: [],
+      // The hook's declared guard name, verbatim, carrying the one
+      // aggregate check's result — the check ran before this write-ahead
+      // call (phase 6 contract §2.2; ADR-0007 decision 4).
+      guards: guard === undefined ? [] : [{ guard, passed: true }],
       attribution,
       ...(contentFingerprint === undefined ? {} : { contentFingerprint }),
     };

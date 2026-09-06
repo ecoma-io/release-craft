@@ -12,7 +12,7 @@ import {
   verifyEvidence,
   type Attribution,
   type ReleaseAttempt,
-  type StepKey,
+  type StageKey,
 } from "../../src/index.js";
 
 const attempt = (register: MemoryAttemptRegister): ReleaseAttempt =>
@@ -29,7 +29,7 @@ const actor = (attemptId: string, who: Attribution["actor"]): Attribution => ({
 const completeStep = (
   ledger: MemoryLedger,
   who: ReleaseAttempt,
-  stepKey: StepKey,
+  stepKey: StageKey,
   inputs: Record<string, string>,
 ): string => {
   const fingerprint = contentFingerprint(inputs);

@@ -13,7 +13,7 @@ import {
   transition,
   type ReleaseAttempt,
   type RequestStepOutcome,
-  type StepKey,
+  type StageKey,
 } from "../../src/index.js";
 
 const open = (): ReleaseAttempt =>
@@ -26,7 +26,7 @@ const open = (): ReleaseAttempt =>
 
 const run = (
   attempt: ReleaseAttempt,
-  stepKey: StepKey,
+  stepKey: StageKey,
   store: MemoryClaimStore,
   log: MemoryTransitionLog,
 ): RequestStepOutcome => {

@@ -43,6 +43,11 @@ export interface ReleaseAttempt {
   readonly state: AttemptState;
   readonly blockedCause?: string;
   readonly terminalReason?: string;
+  /** The declared hook steps (phase 6 contract §2.1): execution-side data
+   * read by the scheduler and the resume classification — never part of
+   * `attemptIdentity` (`attempt_sha256` over `{planId, ordinal}`) and
+   * never part of the plan fingerprint. Frozen with the attempt. */
+  readonly hooks?: readonly HookStep[];
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +187,19 @@ export const CANONICAL_STAGES: readonly [
   "verify",
 ] = ["plan", "claim", "prepare", "validate", "commit", "tag", "publish", "verify"];
 
-/** A step key in Phase 4 — one of the canonical eight (§2.5). */
-export type StepKey = (typeof CANONICAL_STAGES)[number];
+/** One of the canonical eight stages (§2.5) — the closed order's members.
+ * Every port that means "one of the canonical stages" names this type. */
+export type StageKey = (typeof CANONICAL_STAGES)[number];
+
+/** A hook step's ledger key space (phase 6 contract §2.1; ADR-0007
+ * decision 3): `hook:<id>`, unique per attempt, never colliding with a
+ * stage key. */
+export type HookStepKey = `hook:${string}`;
+
+/** A step key — a canonical stage or a hook step (ADR-0007 decision 3's
+ * named extension of the closed eight; phase 7's artifact steps extend the
+ * same seam through their own ADR). */
+export type StepKey = StageKey | HookStepKey;
 
 /** A step's state (§2.6) — E-02's ledger fields verbatim ("npm —
  * completed; GitHub Release — started; channels — pending"). */
@@ -239,6 +255,99 @@ export interface TransitionRecord {
 }
 
 // ---------------------------------------------------------------------------
+// §2.5b — hooks as steps (phase 6 contract §2; ADR-0007)
+// ---------------------------------------------------------------------------
+
+/** Where a hook sits relative to its anchored stage (§2.1). */
+export type HookAnchorPosition = "before" | "after";
+
+/** The proof kinds a hook's completion can be required to carry (§2.4). */
+export type PostconditionKind = "content-fingerprint-present" | "evidence-present";
+
+/** A declared hook step (§2.1): pure data — the engine never stores or
+ * invents the effect (ADR-0007 decision 2). The `guard` name is recorded
+ * verbatim; the postconditions name the recorded proofs the completion
+ * must carry before the hook counts as done. */
+export interface HookStep {
+  /** Non-empty, unique per attempt — the ledger key is `hook:<id>`. */
+  readonly id: string;
+  /** The anchor: exactly one canonical stage, before or after it. */
+  readonly anchor: {
+    readonly stage: StageKey;
+    readonly position: HookAnchorPosition;
+  };
+  /** The declared precondition guard name (ADR-0007 decision 4): the
+   * kernel's one aggregate held-and-verified check produces its
+   * `GuardResult`, recorded verbatim on the start record. */
+  readonly guard: string;
+  /** The recorded proofs the completion must carry (§2.4). */
+  readonly postconditions: readonly PostconditionKind[];
+}
+
+/** What a caller-injected effect observed at the seam (§2.3): attribution
+ * plus the recorded proofs. There is no plan-shaped field and no mutation
+ * port — the refusal is structural (ADR-0007 decision 7). */
+export interface HookObservation {
+  /** Who produced the observation (§2.6). */
+  readonly attribution: Attribution;
+  /** The evidence reference, required by an evidence-present postcondition. */
+  readonly evidence?: EvidenceRef;
+  /** The content fingerprint, required by a fingerprint postcondition. */
+  readonly contentFingerprint?: string;
+  /** Caller-supplied timestamp: metadata, never ordering (§2.10). */
+  readonly recordedAt?: string;
+}
+
+/** The seam input (§2.2): identity only — the effect never sees the plan,
+ * the attempt value, or the ledger (ADR-0007 decisions 2 and 7). */
+export interface HookEffectInput {
+  readonly attemptId: string;
+  readonly hookId: string;
+  /** The anchored stage the hook rides (§2.1). */
+  readonly stage: StageKey;
+}
+
+/** The caller-injected effect: synchronous, returned to the engine at the
+ * seam. The engine invokes it and records what it returns — nothing else
+ * (ADR-0007 decision 2). */
+export type HookEffect = (input: HookEffectInput) => HookObservation;
+
+/** One hook step's recorded outcome (§2.2): `completed` carries the
+ * completion record (the proof lives there); `refused` is the kernel's
+ * recorded precondition refusal — no record, exactly a mutating stage's
+ * shape; `failed` is the §2.5 escalation — the failed record appended, the
+ * attempt blocked. */
+export type HookOutcome =
+  | {
+      readonly kind: "completed";
+      readonly stepKey: HookStepKey;
+      readonly hookId: string;
+      readonly record: TransitionRecord;
+      readonly recordedAt?: string;
+    }
+  | {
+      readonly kind: "refused";
+      readonly stepKey: HookStepKey;
+      readonly hookId: string;
+      readonly detail: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly stepKey: HookStepKey;
+      readonly hookId: string;
+      readonly detail: string;
+      readonly record: TransitionRecord;
+    };
+
+/** `scheduleHooks`' result: the successor attempt (blocked after a §2.5
+ * escalation, otherwise the input) and the outcomes recorded so far — the
+ * walk stops at the first refusal or escalation. */
+export interface HooksRun {
+  readonly attempt: ReleaseAttempt;
+  readonly outcomes: readonly HookOutcome[];
+}
+
+// ---------------------------------------------------------------------------
 // §2.7 — the replay views and the seven outcomes (E-02, E-03, E-07)
 // ---------------------------------------------------------------------------
 
@@ -284,7 +393,7 @@ export interface PreconditionObservation {
  * guard inputs the door consumes. All fields are caller-supplied values —
  * no clock, no environment (§2.10). */
 export interface StepRequest {
-  readonly stepKey: StepKey;
+  readonly stepKey: StageKey;
   readonly attribution: Attribution;
   /** The input digest recorded at `started` (§2.7); Phase 5's ledger fills
    * the durable mechanics. Presence here drives `noop` vs `conflict`. */
@@ -422,6 +531,10 @@ export interface ExecutionLedger {
     stepKey: StepKey,
     attribution: Attribution,
     contentFingerprint?: string,
+    /** The hook's declared guard name (phase 6 contract §2.2): recorded
+     * verbatim as the one `GuardResult` the aggregate held-and-verified
+     * check produced — the check ran before this write-ahead call. */
+    guard?: string,
   ): TransitionRecord;
   /** The only other write: append, deep-freeze, keep order. */
   append(record: LedgerRecord): LedgerRecord;

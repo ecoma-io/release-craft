@@ -19,9 +19,13 @@
  */
 import { attemptIdentity } from "./identity.js";
 import {
+  CANONICAL_STAGES,
   isTerminalAttempt,
-  type Attribution,
   type AttemptState,
+  type Attribution,
+  type HookAnchorPosition,
+  type HookStep,
+  type PostconditionKind,
   type ReleaseAttempt,
   type StepRecordsView,
 } from "./types.js";
@@ -51,6 +55,12 @@ const EDGES: Readonly<Record<AttemptState, readonly AttemptState[]>> = {
   abandoned: [],
 };
 
+const ANCHOR_POSITIONS: readonly HookAnchorPosition[] = ["before", "after"];
+const POSTCONDITION_KINDS: readonly PostconditionKind[] = [
+  "content-fingerprint-present",
+  "evidence-present",
+];
+
 const nonEmpty = (value: string, what: string): string => {
   if (value.length === 0) {
     throw new InvalidExecutionTransitionError(`${what} must be a non-empty recorded value`);
@@ -66,18 +76,21 @@ const successor = (
   state: AttemptState,
   detail: { readonly blockedCause?: string; readonly terminalReason?: string },
 ): ReleaseAttempt => {
+  // The declared hooks ride every edge; the conditional fields do not
+  // survive past the state that carries them — destructured out first
+  // (a spread cannot un-copy a field), re-added only for their state,
+  // omitted never `undefined`-filled.
+  const { blockedCause, terminalReason, ...carried } = attempt;
   const base: ReleaseAttempt = {
-    attemptId: attempt.attemptId,
-    planId: attempt.planId,
-    planFingerprint: attempt.planFingerprint,
+    ...carried,
     state,
+    ...(state === "blocked" && (detail.blockedCause ?? blockedCause) !== undefined
+      ? { blockedCause: detail.blockedCause ?? blockedCause }
+      : {}),
+    ...(isTerminalAttempt(state) && (detail.terminalReason ?? terminalReason) !== undefined
+      ? { terminalReason: detail.terminalReason ?? terminalReason }
+      : {}),
   };
-  if (state === "blocked" && detail.blockedCause !== undefined) {
-    return { ...base, blockedCause: detail.blockedCause };
-  }
-  if (isTerminalAttempt(state) && detail.terminalReason !== undefined) {
-    return { ...base, terminalReason: detail.terminalReason };
-  }
   return base;
 };
 
@@ -218,13 +231,69 @@ export const supersedePlan = (input: {
   return { superseded, pastTag };
 };
 
+/** The declared hooks' protocol validation (phase 6 contract §2.1): ids
+ * non-empty and unique (the ledger key is `hook:<id>`), anchors on the
+ * canonical eight, postcondition kinds from the closed pair, guard names
+ * non-empty. Returns the list frozen to the attempt's depth — the attempt
+ * value never mutates, so neither may its declarations. */
+const validateHooks = (hooks: readonly HookStep[]): readonly HookStep[] => {
+  const seen = new Set<string>();
+  for (const hook of hooks) {
+    if (hook.id.length === 0) {
+      throw new InvalidExecutionTransitionError(
+        "a hook id must be a non-empty recorded value — the ledger key is hook:<id>",
+      );
+    }
+    if (seen.has(hook.id)) {
+      throw new InvalidExecutionTransitionError(
+        `duplicate hook id "${hook.id}" — hook ledger keys are unique per attempt (contract §2.1)`,
+      );
+    }
+    seen.add(hook.id);
+    if (!CANONICAL_STAGES.includes(hook.anchor.stage)) {
+      throw new InvalidExecutionTransitionError(
+        `hook "${hook.id}" anchors at "${hook.anchor.stage}", which is not one of the canonical eight (contract §2.1)`,
+      );
+    }
+    if (!ANCHOR_POSITIONS.includes(hook.anchor.position)) {
+      throw new InvalidExecutionTransitionError(
+        `hook "${hook.id}" anchors "${hook.anchor.position}"; the positions are before and after (contract §2.1)`,
+      );
+    }
+    if (hook.guard.length === 0) {
+      throw new InvalidExecutionTransitionError(
+        `hook "${hook.id}" declares a blank guard name (contract §2.2)`,
+      );
+    }
+    for (const postcondition of hook.postconditions) {
+      if (!POSTCONDITION_KINDS.includes(postcondition)) {
+        throw new InvalidExecutionTransitionError(
+          `hook "${hook.id}" declares the unknown postcondition "${postcondition}" (contract §2.4)`,
+        );
+      }
+    }
+  }
+  return Object.freeze(
+    hooks.map((hook) =>
+      Object.freeze({
+        ...hook,
+        anchor: Object.freeze({ ...hook.anchor }),
+        postconditions: Object.freeze([...hook.postconditions]),
+      }),
+    ),
+  );
+};
+
 /** Opens an attempt (§2.1): allocates the ordinal from the register,
  * derives the content-anchored id, and returns the frozen `planned` value.
  * The plan's fingerprint is carried, never recomputed (invariant 3's
- * execution mirror). */
+ * execution mirror). The declared hooks ride the attempt as execution-side
+ * data — excluded from `attemptIdentity` and the plan fingerprint (phase 6
+ * contract §2.1; ADR-0007 decision 3). */
 export const openAttempt = (
   register: { nextOrdinal(planId: string): number },
   plan: { readonly planId: string; readonly planFingerprint: string },
+  hooks?: readonly HookStep[],
 ): ReleaseAttempt => {
   const ordinal = register.nextOrdinal(plan.planId);
   return Object.freeze({
@@ -232,5 +301,6 @@ export const openAttempt = (
     planId: plan.planId,
     planFingerprint: plan.planFingerprint,
     state: "planned",
+    ...(hooks === undefined ? {} : { hooks: validateHooks(hooks) }),
   } satisfies ReleaseAttempt);
 };
