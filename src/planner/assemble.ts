@@ -339,6 +339,10 @@ export const plan: Plan = (raw) => {
     policyDigest: input.policy.digest,
     inputsFingerprint: inputsFingerprint(input),
     lines,
+    // D18: requested streams the lines' declared policies refused — the
+    // composition lands with the line-policy slice; the empty default is
+    // the fingerprinted record of "nothing was refused".
+    refusedIntents: [],
     explanation: {
       foreignTags: history.lines.flatMap((line) => line.foreign),
       conflicts: extraction.conflicts,

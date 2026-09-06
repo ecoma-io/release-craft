@@ -81,6 +81,37 @@ export interface LineConfig {
    * whose line admits every admissible tag. Admission is band equality; an
    * out-of-band tag is foreign, surfaced — never silently dropped (E-06). */
   readonly versionBand?: { readonly major: number; readonly minor?: number };
+  /** §2.8 (D18) — the line's declared stream policy, overriding the global
+   * admission posture per line. Absent = the defaults-as-data posture: every
+   * declared or ladder identifier is mintable (`allow: "all"`) and the
+   * global `policy.prereleaseSeed` governs. `allow: "none"` is M-08's
+   * stable-only knob: a `prerelease` intent naming the line is a recorded
+   * refusal on the plan (`refusedIntents`), never a fallback to stable. A
+   * listed identifier is a declaration — opaque identifiers are legal
+   * exactly so (§2.8's fork-4 resolution; the ladder itself stays global
+   * promotion-slice data, fork 3's fixed order). */
+  readonly streams?: {
+    readonly allow?: "all" | "none" | readonly string[];
+    readonly seed?: "0" | "1";
+  };
+  /** §2.9 (D18, PL-07) — the line's declared withhold rules: pending
+   * release-triggering changes whose scope matches a rule are deferred,
+   * never deleted. The release range pins below the earliest withheld
+   * commit so deferral stays recoverable after an unfreeze (PL-06's
+   * deferral rule), and the withheld set is enumerated in the plan's
+   * explanation — excluded is not invisible. */
+  readonly withhold?: readonly {
+    readonly scope: string;
+    readonly reason: string;
+  }[];
+  /** D18 — the declared component binding: which declared component this
+   * line's releases publish through the door (PL-01's seam). Absent keeps
+   * the D17(8) default posture (exactly one declared component meets
+   * exactly one releasing line); with more releasing lines than an
+   * undeclared mapping can carry, the binding is mandatory — an undeclared
+   * or ambiguous mapping is a caller contract violation naming the binding
+   * gap, never a fabricated release. */
+  readonly publishes?: string;
 }
 
 /** Package metadata for the component axis (§2.15, PR-4). Manifest versions
@@ -383,7 +414,12 @@ export type LineDecision =
     } & RecordBase)
   | ({
       readonly kind: "refused";
-      readonly cause: "attribution-ambiguity" | "operator-contradiction" | "kernel-rejection";
+      readonly cause:
+        | "attribution-ambiguity"
+        | "operator-contradiction"
+        | "kernel-rejection"
+        | "line-frozen"
+        | "line-retired";
     } & RecordBase)
   | ({
       readonly kind: "blocked";
@@ -577,20 +613,33 @@ export interface PlanLine {
  * digest, the observed refs/tags, the lines and components, bootstrap,
  * intents, and the policy-relevant extracted change set — policy-ignored
  * commits never invalidate a stored plan, PL-08) so a stored plan can be
- * re-judged against a changed world (E-04). `explanation` is the plan's
- * mandated explanation data (§2.11/§2.12/§2.13, E-06): everything the
- * pipeline kept out of the plan, surfaced — excluded is not invisible. */
+ * re-judged against a changed world (E-04). `refusedIntents` (D18) are the
+ * requested streams the lines' declared policies refused — recorded, never
+ * retried. `explanation` is the plan's mandated explanation data
+ * (§2.11/§2.12/§2.13, E-06): everything the pipeline kept out of the plan,
+ * surfaced — excluded is not invisible. */
 export interface ReleasePlan {
   readonly planId: string;
   readonly supersedes: string | null;
   readonly policyDigest: string;
   readonly inputsFingerprint: string;
+  readonly refusedIntents: readonly RefusedIntent[];
   readonly lines: readonly PlanLine[];
   readonly explanation: {
     readonly foreignTags: readonly ForeignTag[];
     readonly conflicts: readonly IdentityConflict[];
     readonly excluded: readonly ExcludedCommit[];
   };
+}
+
+/** A requested stream the line's declared policy refuses (§2.9, D18/M-08):
+ * recorded on the plan — never retried, never silently absorbed into a
+ * stable fallback. The rest of the plan is unaffected: M-08's stable-only
+ * line still releases its own change set in the same pass. */
+export interface RefusedIntent {
+  readonly intent: OperatorIntent;
+  readonly lineId: string;
+  readonly reason: string;
 }
 
 /** `identity.ts` — the canonical JSON of a plan-eligible value (§2.11):

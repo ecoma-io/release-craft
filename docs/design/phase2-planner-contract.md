@@ -150,6 +150,18 @@ stays verbatim: P-01/P-02/P-05/P-07 fixtures take the default; M-08/E-08
 fixtures declare the `.1` policy. Which seed a plan used is recorded in the
 plan's stream fields.
 
+**Per-line stream policy (D18, ADR-0004).** A declared line may override
+the admission posture and seed: `line.streams.allow` — `"all"` (the
+default-as-data posture: every declared or ladder identifier is mintable),
+`"none"` (the line is stable-only; a `prerelease` intent naming it becomes
+a recorded refusal on the plan's `refusedIntents`, never a fallback to
+stable — M-08's rejection half, and the rest of the plan is unaffected), or
+an explicit identifier list (an opaque identifier is legal exactly by
+declaration — fork 4's resolution; the ladder's fixed order stays global
+promotion-slice data, fork 3). `line.streams.seed` overrides
+`policy.prereleaseSeed` for the line's fresh keys. Which posture a plan
+used is visible in its `refusedIntents` and in the streams' recorded seeds.
+
 ### 2.9 No-op, withheld, refused, blocked (negative outcomes are records)
 
 - empty change set → `no-op` record: cause `no-release-worthy-changes`,
@@ -168,6 +180,18 @@ plan's stream fields.
 - kernel construction rejections (`InvalidChangeSetError` and kin) surface
   as records at the planning boundary too — the planner catches them and
   returns the corresponding `refused` record; they are never re-thrown.
+
+**Line lifecycle (D18, ADR-0004).** `lifecycle: "frozen" | "retired"`
+refuses release-shaped planning for the line as a `refused` record
+(`line-frozen` / `line-retired`): no targets, no streams, no release entry;
+the rest of the plan is unaffected. The states are the declared vocabulary;
+the refusal is the planning semantics. **Withhold rules (D18/PL-07,
+ADR-0004).** A declared `withhold: {scope, reason}` defers the matching
+release-triggering changes: the release range pins below the earliest
+withheld commit (the un-released span keeps them — deferral is recoverable,
+deletion is not), the withheld set is enumerated in the plan's explanation,
+and a line left with nothing release-worthy yields the `withheld` decision
+(`policy-filter`) instead of a mint.
 
 ### 2.10 Plan supersession
 

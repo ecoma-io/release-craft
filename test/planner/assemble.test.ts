@@ -233,15 +233,10 @@ describe("S-01 through the door — the chore-only runway", () => {
   it("fingerprints the closed tuple — planId over the plan sans planId (§2.11)", () => {
     const { plan: assembled } = plannedOf(plan(input()));
     expect(assembled.planId).toMatch(/^plan_sha256:[0-9a-f]{64}$/);
-    expect(assembled.planId).toBe(
-      planFingerprint({
-        supersedes: assembled.supersedes,
-        policyDigest: assembled.policyDigest,
-        inputsFingerprint: assembled.inputsFingerprint,
-        lines: assembled.lines,
-        explanation: assembled.explanation,
-      }),
-    );
+    // D18: the tuple is the assembled plan's own fields — a spread, so a
+    // future tuple field cannot drift out of this pin.
+    const { planId: _omit, ...tuple } = assembled;
+    expect(assembled.planId).toBe(planFingerprint(tuple));
     expect(assembled.inputsFingerprint).toBe(inputsFingerprint(input()));
   });
 });
@@ -861,16 +856,12 @@ describe("the explanation data through the door — excluded is not invisible", 
     // the plan's semantic fields. Two plans differing only in their
     // explanation data fingerprint differently: hashing the tuple with the
     // explanation emptied must not reproduce the planId.
-    const withExplanation = {
-      supersedes: assembled.supersedes,
-      policyDigest: assembled.policyDigest,
-      inputsFingerprint: assembled.inputsFingerprint,
-      lines: assembled.lines,
-      explanation: assembled.explanation,
-    };
-    expect(assembled.planId).toBe(planFingerprint(withExplanation));
+    // D18: the tuple is built from the assembled plan's own fields — a
+    // spread, so a future tuple field cannot drift out of this pin.
+    const { planId: _omit, ...tuple } = assembled;
+    expect(assembled.planId).toBe(planFingerprint(tuple));
     const stripped = {
-      ...withExplanation,
+      ...tuple,
       explanation: { foreignTags: [], conflicts: [], excluded: [] },
     };
     expect(assembled.planId).not.toBe(planFingerprint(stripped));

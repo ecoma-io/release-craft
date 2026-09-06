@@ -44,6 +44,7 @@ function plan(lines: readonly PlanLine[], supersedes: string | null): Omit<Relea
     supersedes,
     policyDigest: "test-policy-v1",
     inputsFingerprint: `inputs_sha256:${"0".repeat(64)}`,
+    refusedIntents: [],
     lines,
     explanation: { foreignTags: [], conflicts: [], excluded: [] },
   };
