@@ -505,7 +505,10 @@ first half-published release. The budget's rule for paying it: the tax lands in
 engine write volume, never in new user duties — the ledger stays append-only
 and derivable-where-possible, with tags as the authoritative record (P-01's
 state requirements; RECOMMENDATION: model-c question d). Where decision records
-and ledgers persist at all is open fork 16, outside `core/domain/` in any case.
+and ledgers persist is fixed by the git binding (fork 16's contract half,
+ADR-0009): git-native, forward-only, byte-exact on reload — outside
+`core/domain/` in any case; the reference mapping pins with the
+implementation PR.
 
 ## Unresolved questions
 
@@ -523,10 +526,19 @@ document: U4 by the kind column above, U6 by the boundary table below.)
    store port, with the store's atomic accept as the deterministic collision
    adjudication and bounded sequence retry; the physical primitive (the
    tag-push CAS) stays deliberately open for the Phase 8 adapter ADR.**
+   **Update (Phase 8 contract, [ADR-0009](../adr/0009-git-binding.md)):
+   the physical half is resolved — the tag-push CAS is git's ref creation
+   behind the claim store's atomic accept (ADR-0009 §2.3); fixtures pin
+   with the implementation PR.**
 2. **Ledger and decision-record storage; persistence versus recomputation**
    (fork 16). Resolved by: Phase 2's decision records needing a home — the
    constraint that it stays outside `core/domain/` (ADR-0001) is already
-   fixed.
+   fixed. **Update (Phase 8 contract, [ADR-0009](../adr/0009-git-binding.md)):
+   the contract half is resolved — persistence is the git binding
+   (ADR-0009 §2.2): canonical form, forward-only history, byte-exact
+   reload, one discipline for ledger, register, and decision records,
+   outside `core/domain/`; the reference mapping pins with the
+   implementation PR.**
 3. **Half-published recovery doctrine** (fork 5). Complete-in-place versus
    void-and-skip, and which failures force which. Resolved by: the execution
    phase against E-01, E-02, AR-05.
