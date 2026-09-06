@@ -383,10 +383,14 @@ execution is scheduled.
 10. **Promotion never fabricates content.** A promotion either re-points a
     channel or records a maturity reclassification with a `promoted-from` edge
     over unchanged content, and any rebuild is recorded as a new artifact
-    generation — promoting never publishes new bytes under an existing version
-    identity. _Stress: P-03, PR-01, PR-02, PR-03. First provable: later — the
-    digest records it compares are Phase 1 values, the promotion machinery is
-    execution._
+    generation — promoting never publishes _unrecorded_ new bytes under an
+    existing version identity (final clause tightened at the execution
+    contract, discharging D9's carried obligation —
+    [ADR-0005](../adr/0005-execution-kernel.md); PR-02's deliberate rebuild as
+    a new generation is the sanctioned escape). _Stress: P-03, PR-01, PR-02,
+    PR-03. First provable: Phase 4 locks the clause contract-side; the digest
+    records it compares are Phase 1 values, the promotion machinery is the
+    artifact phase (7)._
 11. **Claim before mutation.** Every mutating step of an attempt is preceded by
     an acquired claim scoped to the line (releases) or to (line, target,
     stream) (prerelease sequences), ownership is re-verified before each write,
@@ -515,7 +519,11 @@ document: U4 by the kind column above, U6 by the boundary table below.)
 1. **Claim mechanism parameters** (fork 13). Tag-push CAS, lease with fencing
    tokens, or a lock service — and what re-verifies ownership after steps a tag
    cannot see. Resolved by: the execution phase's claim design, replayed
-   against E-07/E-08.
+   against E-07/E-08. **Update (Phase 4, [ADR-0005](../adr/0005-execution-kernel.md)):
+   the domain half is resolved — the claim–verify–write protocol over a claim
+   store port, with the store's atomic accept as the deterministic collision
+   adjudication and bounded sequence retry; the physical primitive (the
+   tag-push CAS) stays deliberately open for the Phase 8 adapter ADR.**
 2. **Ledger and decision-record storage; persistence versus recomputation**
    (fork 16). Resolved by: Phase 2's decision records needing a home — the
    constraint that it stays outside `core/domain/` (ADR-0001) is already
