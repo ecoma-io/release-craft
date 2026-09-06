@@ -15,6 +15,9 @@ on:
   # — so the branch would merge having never been checked, and every required
   # check would sit pending forever on it.
   pull_request:
+  # The merge queue's group branches need the required checks; without this
+  # trigger a group waits for checks nothing can supply (issue #45).
+  merge_group:
   # `main` is the one development line; its pushes run the full suite so a red
   # push names its own commit.
   push:
