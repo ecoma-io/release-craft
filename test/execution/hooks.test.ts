@@ -5,6 +5,7 @@ import {
   MemoryLedger,
   classifyResume,
   isHookStepKey,
+  resume,
   effectiveSteps,
   hookStepKey,
   openAttempt,
@@ -348,6 +349,74 @@ describe("postcondition failure (§2.5): fail-closed, in the existing vocabulary
     expect(verdict.kind).toBe("resume");
     if (verdict.kind !== "resume") throw new Error("expected a resume verdict");
     expect(verdict.from).toBe("hook:scan");
+  });
+
+  it("keeps the append-only tail resumable after the resolution loop re-arms it (§2.5)", () => {
+    const attempt = executing([
+      hookDecl("scan", "publish", "before", ["content-fingerprint-present"]),
+    ]);
+    const ledger = new MemoryLedger();
+    for (const stage of ["plan", "claim", "prepare", "validate", "commit", "tag"] as const) {
+      completeStage(ledger, attempt, stage);
+    }
+    const failing = scheduleHooks(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["scan", recordingEffect()]]),
+    );
+    resolveBlocked(
+      failing.attempt,
+      "hook:scan",
+      { kind: "revalidation", planFingerprint: PLAN.planFingerprint },
+      ledger,
+      actor(failing.attempt, "human"),
+    );
+    const back = resume(failing.attempt, "revalidated: the stored plan still holds");
+    // The scheduler re-runs the hook — its completion lands AFTER the
+    // failed record the append-only tail can never drop.
+    const rerun = scheduleHooks(
+      back,
+      actor(back),
+      ledger,
+      heldClaim(back),
+      new Map([["scan", recordingEffect({ contentFingerprint: "content_sha256:late" })]]),
+    );
+    expect(rerun.attempt.state).toBe("executing");
+    expect(ledger.stepView().state(back.attemptId, "hook:scan")).toBe("completed");
+    // A later classification (the crash stopped past the hook) reads the
+    // resolved history as resumable — from the stage after the hook.
+    const verdict = classifyResume(back, ledger);
+    expect(verdict).toStrictEqual({ kind: "resume", from: "publish" });
+  });
+
+  it("escalates when the only resolution record answers a different key (§2.5)", () => {
+    const attempt = executing([hookDecl("scan", "publish", "before")]);
+    const ledger = new MemoryLedger();
+    ledger.appendStart(attempt, "hook:scan", actor(attempt), undefined, "release-line");
+    ledger.append({
+      kind: "step",
+      record: {
+        attemptId: attempt.attemptId,
+        stepKey: "hook:scan",
+        from: "started",
+        to: "failed",
+        guards: [{ guard: "release-line", passed: true }],
+        attribution: actor(attempt),
+      },
+    });
+    ledger.append({
+      kind: "resolution",
+      attemptId: attempt.attemptId,
+      stepKey: "plan",
+      resolution: { kind: "revalidation", planFingerprint: PLAN.planFingerprint },
+      attribution: actor(attempt, "human"),
+    });
+    const verdict = classifyResume(attempt, ledger);
+    expect(verdict.kind).toBe("escalate");
+    if (verdict.kind !== "escalate") throw new Error("expected an escalate verdict");
+    expect(verdict.detail).toContain("hook:scan");
   });
 
   it("escalates a failed hook record that no blocked attempt explains (§2.5)", () => {

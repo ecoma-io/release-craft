@@ -86,7 +86,8 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
   // demands a preceding `started` for the same stepKey, and a failed stage
   // hands the tail to crash classification (§2.4).
   const started = new Set<StepKey>();
-  for (const record of ledger.tail(attempt.attemptId)) {
+  const tail = ledger.tail(attempt.attemptId);
+  for (const [at, record] of tail.entries()) {
     if (record.kind !== "step") {
       continue;
     }
@@ -104,11 +105,22 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
       // answers it. The same record under a non-blocked attempt is a tail
       // contradiction — recorded state a human must judge.
       if (isHookStepKey(step.stepKey)) {
+        // A failed hook record is classified, not crashed (phase 6 contract
+        // §2.5; ADR-0007 decision 8). Blocked now: the §2.7 loop answers
+        // below. Re-armed already: the append-only failed record never
+        // leaves the tail, so its recovery is the later resolution record
+        // for the same key — anything else is a tail contradiction a human
+        // must judge.
         if (attempt.state !== "blocked") {
-          return {
-            kind: "escalate",
-            detail: `hook ${step.stepKey} recorded failed without a blocked attempt — the §2.5 escalation lives in the attempt's state, and this tail contradicts it (§2.3)`,
-          };
+          const resolved = tail
+            .slice(at + 1)
+            .some((later) => later.kind === "resolution" && later.stepKey === step.stepKey);
+          if (!resolved) {
+            return {
+              kind: "escalate",
+              detail: `hook ${step.stepKey} recorded failed without a blocked attempt or a closing resolution — the §2.5 escalation lives in the attempt's state, and this tail contradicts it (§2.3)`,
+            };
+          }
         }
         continue;
       }
