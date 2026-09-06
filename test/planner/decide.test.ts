@@ -15,6 +15,7 @@ import { decideLine, resolveBump } from "../../src/planner/decide.js";
 import { InvalidPlanningInputError } from "../../src/planner/input.js";
 import type {
   BootstrapDecision,
+  CommitObservation,
   LineAttribution,
   LineConfig,
   LineRange,
@@ -43,6 +44,7 @@ function policy(): PolicyInput {
 interface InputOptions {
   readonly intents?: readonly OperatorIntent[];
   readonly bootstrap?: BootstrapDecision;
+  readonly commits?: readonly CommitObservation[];
   readonly tags?: readonly TagObservation[];
   readonly lines?: readonly LineConfig[];
 }
@@ -50,7 +52,7 @@ interface InputOptions {
 function planInput(opts: InputOptions = {}): PlanningInput {
   return {
     policy: policy(),
-    repository: { commits: [], refs: [] },
+    repository: { commits: opts.commits ?? [], refs: [] },
     history: { tags: opts.tags ?? [] },
     lines: opts.lines ?? [],
     ...(opts.intents !== undefined ? { intents: opts.intents } : {}),
@@ -63,17 +65,59 @@ function parsed(
   sha: string,
   type: string,
   changeId: string,
-  opts: { readonly breaking?: boolean } = {},
+  opts: { readonly breaking?: boolean; readonly scope?: string } = {},
 ): ParsedCommit {
   return {
     sha,
     classification: "change",
     type,
+    ...(opts.scope !== undefined ? { scope: opts.scope } : {}),
     subject: `${type}: fixture subject`,
     breaking: opts.breaking ?? false,
     change: Change.of(changeId, { originCommit: sha }),
   };
 }
+
+/** One commit observation carrying the parent graph the range pin reads. */
+function observation(sha: string, parents: readonly string[]): CommitObservation {
+  return {
+    sha,
+    parents,
+    message: `${sha}: fixture subject`,
+    committedAt: COMMITTED_AT,
+    containingRefs: [],
+  };
+}
+
+/** The declared "main" line fixtures for the D18 lifecycle and withhold paths. */
+const activeLine: LineConfig = {
+  id: "main",
+  feedRef: "main",
+  lifecycle: "active",
+  declared: true,
+};
+
+const frozenLine: LineConfig = {
+  id: "main",
+  feedRef: "main",
+  lifecycle: "frozen",
+  declared: true,
+};
+
+const retiredLine: LineConfig = {
+  id: "main",
+  feedRef: "main",
+  lifecycle: "retired",
+  declared: true,
+};
+
+const withholdLine: LineConfig = {
+  id: "main",
+  feedRef: "main",
+  lifecycle: "active",
+  declared: true,
+  withhold: [{ scope: "app", reason: "app is under a change freeze" }],
+};
 
 function attribution(
   lineId: string,
@@ -410,6 +454,189 @@ describe("decideLine — D17(4)(5) intent routing", () => {
       throw new Error("expected a release record");
     }
     expect(decision.bump).toBeNull();
+  });
+});
+
+describe("decideLine — D18 line policy (lifecycle, withhold)", () => {
+  it("refuses a frozen line's release-shaped planning with cause line-frozen, regardless of pending release-worthy changes (D18 decision 2)", () => {
+    const pending = [parsed("sha-fix-1", "fix", "chg:f1"), parsed("sha-feat-1", "feat", "chg:f2")];
+    const evaluated = range();
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:released"]),
+      planInput({ lines: [frozenLine] }),
+      evaluated,
+    );
+
+    expect(decision.kind).toBe("refused");
+    if (decision.kind !== "refused") {
+      throw new Error("expected a refused record");
+    }
+    expect(decision.cause).toBe("line-frozen");
+    expect(decision.detail).toContain("frozen");
+    expect(decision.policyDigest).toBe(POLICY_DIGEST);
+    expect(decision.range).toBe(evaluated);
+  });
+
+  it("refuses a retired line with cause line-retired, naming the state in the detail (D18 decision 2)", () => {
+    const decision = decideLine(
+      attribution("main", [parsed("sha-fix-1", "fix", "chg:f1")], ["chg:released"]),
+      planInput({ lines: [retiredLine] }),
+      range(),
+    );
+
+    expect(decision.kind).toBe("refused");
+    if (decision.kind !== "refused") {
+      throw new Error("expected a refused record");
+    }
+    expect(decision.cause).toBe("line-retired");
+    expect(decision.detail).toContain("retired");
+  });
+
+  it("lands a frozen line's intents on the lifecycle refusal — promote and release-anyway never evaluate (D18 decision 2)", () => {
+    const decision = decideLine(
+      attribution("main", [parsed("sha-feat-1", "feat", "chg:f1")], ["chg:released"]),
+      planInput({
+        intents: [{ kind: "promote", lineId: "main" }, { kind: "release-anyway" }],
+        lines: [frozenLine],
+      }),
+      range(),
+    );
+
+    expect(decision.kind).toBe("refused");
+    if (decision.kind !== "refused") {
+      throw new Error("expected a refused record");
+    }
+    // The intent gates would refuse with operator-contradiction or route
+    // the promotion; the lifecycle refusal must precede them all.
+    expect(decision.cause).toBe("line-frozen");
+  });
+
+  it("keeps an explicitly active line's ordinary release posture — the lifecycle gate is inert (D18 decision 2)", () => {
+    const pending = [parsed("sha-fix-1", "fix", "chg:f1"), parsed("sha-feat-1", "feat", "chg:f2")];
+    const evaluated = range();
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:released"]),
+      planInput({ lines: [activeLine] }),
+      evaluated,
+    );
+
+    expect(decision.kind).toBe("release");
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    expect(decision.bump).toBe("minor");
+    expect(decision.changes).toHaveLength(2);
+    expect(decision.range).toBe(evaluated);
+  });
+
+  it("records a fully withheld runway as the withheld policy-filter record, enumerating every withheld commit (D18 decision 3, PL-07)", () => {
+    const pending = [
+      parsed("sha-fix-1", "fix", "chg:f1", { scope: "app" }),
+      parsed("sha-feat-1", "feat", "chg:f2", { scope: "app" }),
+    ];
+    const evaluated = range();
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:released"]),
+      planInput({ lines: [withholdLine] }),
+      evaluated,
+    );
+
+    expect(decision.kind).toBe("withheld");
+    if (decision.kind !== "withheld") {
+      throw new Error("expected a withheld record");
+    }
+    expect(decision.cause).toBe("policy-filter");
+    expect(decision.withheld.map((entry) => entry.sha)).toEqual(["sha-fix-1", "sha-feat-1"]);
+    expect(decision.detail).toContain("app is under a change freeze");
+    expect(decision.policyDigest).toBe(POLICY_DIGEST);
+    expect(decision.range).toBe(evaluated);
+  });
+
+  it("releases the surviving prefix when a withhold rule matches some changes — the range pins below the earliest withheld commit (D18 decision 3, PL-07)", () => {
+    const pending = [
+      parsed("sha-fix-1", "fix", "chg:f1", { scope: "deps" }),
+      parsed("sha-feat-w", "feat", "chg:w1", { scope: "app" }),
+      parsed("sha-fix-2", "fix", "chg:f2", { scope: "deps" }),
+    ];
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:released"]),
+      planInput({
+        commits: [
+          observation("sha-1-0-1", []),
+          observation("sha-fix-1", ["sha-1-0-1"]),
+          observation("sha-feat-w", ["sha-fix-1"]),
+          observation("sha-fix-2", ["sha-feat-w"]),
+        ],
+        lines: [withholdLine],
+      }),
+      range(),
+    );
+
+    expect(decision.kind).toBe("release");
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    // Only the prefix before the withheld commit releases: the withheld
+    // feat and the fix after it stay inside the un-released span.
+    expect(decision.changes.map((entry) => entry.sha)).toEqual(["sha-fix-1"]);
+    // The withheld feat's minor never leaks into the surviving bump.
+    expect(decision.bump).toBe("patch");
+    expect(decision.range.head).toBe("sha-fix-1");
+    expect(decision.range.releasedUpTo).toBe("sha-1-0-1");
+    expect(decision.detail).toContain("sha-feat-w");
+  });
+
+  it("defers the whole runway when the earliest withheld commit sits before every release-worthy change (D18 decision 3, PL-07)", () => {
+    const pending = [
+      parsed("sha-feat-w", "feat", "chg:w1", { scope: "app" }),
+      parsed("sha-fix-1", "fix", "chg:f1", { scope: "deps" }),
+    ];
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:released"]),
+      planInput({
+        commits: [
+          observation("sha-feat-w", ["sha-1-0-1"]),
+          observation("sha-fix-1", ["sha-feat-w"]),
+        ],
+        lines: [withholdLine],
+      }),
+      range(),
+    );
+
+    expect(decision.kind).toBe("withheld");
+    if (decision.kind !== "withheld") {
+      throw new Error("expected a withheld record");
+    }
+    // Pinning below the withheld commit would leave the release span empty,
+    // so nothing mints and the follower defers with the withheld commit.
+    expect(decision.withheld.map((entry) => entry.sha)).toEqual(["sha-feat-w"]);
+  });
+
+  it("lets changes whose scope matches no withhold rule pass through untouched — deferral never eats unrelated changes (D18 decision 3, PL-07)", () => {
+    const pending = [
+      parsed("sha-fix-1", "fix", "chg:f1", { scope: "deps" }),
+      parsed("sha-feat-1", "feat", "chg:f2", { scope: "cli" }),
+    ];
+    const evaluated = range();
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:released"]),
+      planInput({ lines: [withholdLine] }),
+      evaluated,
+    );
+
+    expect(decision.kind).toBe("release");
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    expect(decision.changes).toHaveLength(2);
+    expect(decision.bump).toBe("minor");
+    expect(decision.range).toBe(evaluated);
   });
 });
 

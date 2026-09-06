@@ -138,15 +138,25 @@ function validate(raw: PlanningInput, out: InputViolation[]): void {
   // field, and every lineId pointing into the empty universe is rejected).
   let declaredLines: ReadonlySet<string> = new Set<string>();
 
+  // The declared component-name universe is closed: a line's `publishes`
+  // binding may only name a component declared here (ADR-0004 Decision 4;
+  // mirrors the sha and line-id universes — built from every well-formed
+  // name wherever the components sit in the array, empty when the array is
+  // absent or malformed; that defect is reported on its own field, and
+  // every `publishes` pointing into the empty universe is rejected).
+  const components: unknown = raw.components;
+  const declaredComponents: ReadonlySet<string> = isArray(components)
+    ? declaredComponentNames(components)
+    : new Set<string>();
+
   const lines: unknown = raw.lines;
   if (isArray(lines)) {
     declaredLines = declaredLineIds(lines);
-    checkLines(lines, out);
+    checkLines(lines, declaredComponents, out);
   } else {
     out.push({ field: "lines", problem: "must be an array of line configurations" });
   }
 
-  const components: unknown = raw.components;
   if (components !== undefined) {
     if (isArray(components)) checkComponents(components, out);
     else out.push({ field: "components", problem: "must be an array of component metadata" });
@@ -417,8 +427,15 @@ function checkTags(
   }
 }
 
-/** Line validation (§2.6): at least one line, unique ids, closed schema. */
-function checkLines(lines: readonly unknown[], out: InputViolation[]): void {
+/** Line validation (§2.6): at least one line, unique ids, closed schema,
+ * and the declared line policy (ADR-0004): the stream policy inside its
+ * declared fork, withhold rules that can be explained, and a `publishes`
+ * binding naming a declared component. */
+function checkLines(
+  lines: readonly unknown[],
+  declaredComponents: ReadonlySet<string>,
+  out: InputViolation[],
+): void {
   if (lines.length === 0) {
     out.push({ field: "lines", problem: "must declare at least one release line" });
     return;
@@ -456,6 +473,32 @@ function checkLines(lines: readonly unknown[], out: InputViolation[]): void {
         problem: `must be one of "active", "frozen", "retired", not ${JSON.stringify(lifecycle)}`,
       });
     }
+    const streams: unknown = line.streams;
+    if (streams !== undefined) {
+      if (!isObject(streams)) {
+        out.push({
+          field: `lines[${String(i)}].streams`,
+          problem: "must be a stream policy object",
+        });
+      } else {
+        checkLineStreams(`lines[${String(i)}].streams`, streams, out);
+      }
+    }
+    const withhold: unknown = line.withhold;
+    if (withhold !== undefined) {
+      if (!isArray(withhold)) {
+        out.push({
+          field: `lines[${String(i)}].withhold`,
+          problem: "must be an array of withhold rules",
+        });
+      } else {
+        checkLineWithhold(`lines[${String(i)}].withhold`, withhold, out);
+      }
+    }
+    const publishes: unknown = line.publishes;
+    if (publishes !== undefined) {
+      checkLinePublishes(`lines[${String(i)}].publishes`, publishes, declaredComponents, out);
+    }
   }
 }
 
@@ -479,6 +522,98 @@ function checkComponents(components: readonly unknown[], out: InputViolation[]):
         problem: "must be a non-empty component name",
       });
     }
+  }
+}
+
+/** Stream-policy validation (§2.8, D18): `allow` is `"all"`, `"none"`, or a
+ * list of stream identifiers — an opaque identifier is legal by declaration
+ * (fork 4), the list names each identifier exactly once, and the empty list
+ * is valid data (the line mints no streams). `seed` overrides
+ * `policy.prereleaseSeed` per line and obeys the same declared fork. */
+function checkLineStreams(
+  field: string,
+  streams: Record<string, unknown>,
+  out: InputViolation[],
+): void {
+  const allow: unknown = streams.allow;
+  if (allow !== undefined && allow !== "all" && allow !== "none") {
+    if (!isArray(allow)) {
+      out.push({
+        field: `${field}.allow`,
+        problem: `must be "all", "none", or a list of stream identifiers, not ${JSON.stringify(allow)}`,
+      });
+    } else {
+      const seen = new Set<string>();
+      for (const [j, identifier] of allow.entries()) {
+        if (!nonEmpty(identifier)) {
+          out.push({
+            field: `${field}.allow[${String(j)}]`,
+            problem: "must be a non-empty stream identifier",
+          });
+        } else if (seen.has(identifier)) {
+          out.push({
+            field: `${field}.allow[${String(j)}]`,
+            problem: `duplicate stream identifier ${identifier} — the allow list must name each identifier exactly once`,
+          });
+        } else {
+          seen.add(identifier);
+        }
+      }
+    }
+  }
+
+  const seed: unknown = streams.seed;
+  if (seed !== undefined && seed !== "0" && seed !== "1") {
+    out.push({
+      field: `${field}.seed`,
+      problem: `must be "0" or "1" — the declared seed policy for fresh streams, not ${JSON.stringify(seed)}`,
+    });
+  }
+}
+
+/** Withhold-rule validation (§2.9, D18, PL-07): every rule names a
+ * non-empty scope and carries a non-empty reason — the reason rides the
+ * plan's explanation verbatim, so an empty one is a silent exclusion. */
+function checkLineWithhold(field: string, rules: readonly unknown[], out: InputViolation[]): void {
+  for (const [j, rule] of rules.entries()) {
+    if (!isObject(rule)) {
+      out.push({ field: `${field}[${String(j)}]`, problem: "must be a withhold rule" });
+      continue;
+    }
+    if (!nonEmpty(rule.scope)) {
+      out.push({
+        field: `${field}[${String(j)}].scope`,
+        problem: "must be a non-empty withhold scope",
+      });
+    }
+    if (!nonEmpty(rule.reason)) {
+      out.push({
+        field: `${field}[${String(j)}].reason`,
+        problem:
+          "must be a non-empty withhold reason — the reason rides the plan's explanation verbatim",
+      });
+    }
+  }
+}
+
+/** A `publishes` binding names the declared component the line's releases
+ * publish through the door (ADR-0004 Decision 4) — naming an undeclared
+ * component is D16's closed-universe rule on the line axis: the binding
+ * has a gap, and an unfilled gap is a caller contract violation here, not
+ * a fabricated release downstream. */
+function checkLinePublishes(
+  field: string,
+  publishes: unknown,
+  declaredComponents: ReadonlySet<string>,
+  out: InputViolation[],
+): void {
+  if (!nonEmpty(publishes)) {
+    out.push({ field, problem: "must be a non-empty component name" });
+  } else if (!declaredComponents.has(publishes)) {
+    out.push({
+      field,
+      problem: `names undeclared component ${JSON.stringify(publishes)} — the component binding has a gap: a line may only publish through a declared component (ADR-0004 Decision 4)`,
+    });
   }
 }
 
@@ -584,6 +719,18 @@ function declaredLineIds(lines: readonly unknown[]): Set<string> {
     if (nonEmpty(id)) ids.add(id);
   }
   return ids;
+}
+
+/** The declared component-name universe a line's `publishes` binding may
+ * target — from every well-formed name, wherever the components sit in
+ * the array. */
+function declaredComponentNames(components: readonly unknown[]): Set<string> {
+  const names = new Set<string>();
+  for (const component of components) {
+    const name: unknown = isObject(component) ? component.name : undefined;
+    if (nonEmpty(name)) names.add(name);
+  }
+  return names;
 }
 
 /** m-6b's exact identity: the kind plus every payload field, so only
