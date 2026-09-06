@@ -82,13 +82,58 @@ const nextStageIndex = (attemptId: string, steps: StepRecordsView): number => {
 const tagBoundaryStands = (attemptId: string, steps: StepRecordsView): boolean =>
   steps.completed(attemptId, "tag") !== null || steps.completed(attemptId, "publish") !== null;
 
+/** The publish gate's evidence (phase 7 contract §2.5; ADR-0008 decision
+ * 9): every declared artifact step's recorded completions stand as one
+ * generation — each completion carries the triple matching its
+ * declaration (kind, coordinates), and all of them agree on one digest
+ * (§2.3: a differing digest is a conflict, never a silent pass; a
+ * triple-less completion is no generation record at all). Read from the
+ * attempt value and the step records — never asserted by a caller. An
+ * attempt declaring no artifact steps is vacuously complete. Fail-closed:
+ * the gate demands positive agreement, never the absence of a finding. */
+const generationStands = (attempt: ReleaseAttempt, steps: StepRecordsView): boolean =>
+  (attempt.artifacts ?? []).every((declared) => {
+    const completions = steps
+      .records(attempt.attemptId)
+      .filter(
+        (record) => record.stepKey === `artifact:${declared.id}` && record.to === "completed",
+      );
+    const triples = completions.flatMap((record) =>
+      record.artifact === undefined ? [] : [record.artifact],
+    );
+    return (
+      completions.length > 0 &&
+      triples.length === completions.length &&
+      triples.every(
+        (triple) => triple.kind === declared.kind && triple.coordinates === declared.coordinates,
+      ) &&
+      new Set(triples.map((triple) => triple.digest)).size === 1
+    );
+  });
+
+/** The first declared artifact still missing its completion proof — the
+ * refusal detail names it, recorded state a human can act on. */
+const firstUnrecordedArtifact = (
+  attempt: ReleaseAttempt,
+  steps: StepRecordsView,
+): string | null => {
+  const missing = (attempt.artifacts ?? []).find(
+    (declared) => steps.completed(attempt.attemptId, `artifact:${declared.id}`) === null,
+  );
+  return missing === undefined ? null : missing.id;
+};
+
 /** The guard rows an advancing record carries (§2.6: "what was checked,
- * with results"). Optional details are omitted, never `undefined`-filled. */
+ * with results"). Optional details are omitted, never `undefined`-filled.
+ * The publish row appears only when the attempt declares artifact steps —
+ * an attempt with none carries no generation row, byte-identical to
+ * phase 6. */
 const guardList = (
   stepKey: StageKey,
   claimToken: ClaimToken | null,
   preconditions: readonly PreconditionObservation[],
   tagBoundary: boolean,
+  generation: boolean | undefined,
 ): readonly GuardResult[] => {
   const guards: GuardResult[] = [];
   if (stepKey === "claim") {
@@ -120,6 +165,13 @@ const guardList = (
       guard: "tag-boundary",
       passed: tagBoundary,
       detail: "re-proving external state demands the tag boundary behind it (§2.9)",
+    });
+  }
+  if (stepKey === "publish" && generation !== undefined) {
+    guards.push({
+      guard: "generation-complete",
+      passed: generation,
+      detail: "publish over the declared generation demands every artifact step's proof (§2.5)",
     });
   }
   return guards;
@@ -265,6 +317,21 @@ export const requestStep = (
   if (request.stepKey === "verify" && !tagBoundaryStands(attempt.attemptId, steps)) {
     return { kind: "refused", stepKey: request.stepKey, detail: "mutation-without-claim" };
   }
+  // The publish gate (phase 7 contract §2.5; ADR-0008 decision 9): a
+  // precondition of the existing publish step, checked in the same door
+  // every transition passes — publish over an incomplete generation is
+  // the recorded refusal, naming the artifact still missing its proof.
+  const generation = attempt.artifacts === undefined ? undefined : generationStands(attempt, steps);
+  const missing = generation === false ? firstUnrecordedArtifact(attempt, steps) : null;
+  if (request.stepKey === "publish" && generation === false) {
+    return {
+      kind: "refused",
+      stepKey: request.stepKey,
+      detail: `publish-gate-incomplete-generation: artifact "${
+        missing ?? "unknown"
+      }" has no completion proof in this generation (contract §2.5)`,
+    };
+  }
 
   // 7. Advance: the record to append — from the step's current recorded
   //    state to `completed`, guards listed, attribution carried.
@@ -277,6 +344,7 @@ export const requestStep = (
       token,
       request.preconditions ?? [],
       tagBoundaryStands(attempt.attemptId, steps),
+      generation,
     ),
     steps.state(attempt.attemptId, request.stepKey),
   );

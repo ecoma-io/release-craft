@@ -60,13 +60,17 @@ used verbatim and are not re-decided.
    once more to `StageKey | HookStepKey | ArtifactStepKey`, where
    `ArtifactStepKey` is `` `artifact:${string}` `` — an artifact step's
    ledger key is `artifact:<id>`, unique per attempt. The declaration
-   anchors at exactly one canonical stage, before or after it, declaration
-   order breaking ties at the same anchor; the effective step list is the
-   canonical sequence with hooks and artifact steps interleaved at their
-   anchors. The plan value, the plan fingerprint, and `attemptIdentity`
-   are untouched — the attempt gains an optional execution-side
-   `artifacts` field alongside `hooks`, excluded from identity exactly as
-   hooks are.
+   anchors at exactly one canonical stage, before or after it; within one
+   declaration list, declaration order breaks same-anchor ties. Because
+   hooks and artifact steps are two declaration lists, the cross-kind tie
+   rule is named (amended with the implementation PR, loud in both
+   documents): at the same anchor and position, hooks (in declaration
+   order) precede artifact steps (in declaration order) — the older
+   extension landed first. The effective step list is the canonical
+   sequence with hooks and artifact steps interleaved at their anchors.
+   The plan value, the plan fingerprint, and `attemptIdentity` are
+   untouched — the attempt gains an optional execution-side `artifacts`
+   field alongside `hooks`, excluded from identity exactly as hooks are.
 4. **Kinds and coordinates are declared labels, never references.** The
    declared (kind, coordinates) pair is recorded verbatim into the domain
    `Artifact` triple at the generation record; there is no operation that

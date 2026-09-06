@@ -21,6 +21,7 @@ import { attemptIdentity } from "./identity.js";
 import {
   CANONICAL_STAGES,
   isTerminalAttempt,
+  type ArtifactStep,
   type AttemptState,
   type Attribution,
   type HookAnchorPosition,
@@ -284,16 +285,133 @@ const validateHooks = (hooks: readonly HookStep[]): readonly HookStep[] => {
   );
 };
 
+/** The declared artifacts' protocol validation (phase 7 contract §2.1):
+ * the hook rules plus the artifact door's own — ids non-empty and unique
+ * (the ledger key is `artifact:<id>`), anchors on the canonical eight,
+ * postcondition kinds from the closed pair, guard names non-empty,
+ * `kind` and `coordinates` opaque non-empty unpadded (the domain artifact
+ * door's rule, quoted not imported), and the declared `dependsOn` a
+ * well-formed DAG: sibling ids only, no duplicates, acyclic — checked in
+ * declaration order's depth-first walk. Returns the list frozen to the
+ * attempt's depth. */
+const validateArtifacts = (artifacts: readonly ArtifactStep[]): readonly ArtifactStep[] => {
+  const seen = new Set<string>();
+  for (const artifact of artifacts) {
+    if (artifact.id.length === 0) {
+      throw new InvalidExecutionTransitionError(
+        "an artifact id must be a non-empty recorded value — the ledger key is artifact:<id>",
+      );
+    }
+    if (seen.has(artifact.id)) {
+      throw new InvalidExecutionTransitionError(
+        `duplicate artifact id "${artifact.id}" — artifact ledger keys are unique per attempt (contract §2.1)`,
+      );
+    }
+    seen.add(artifact.id);
+    for (const [label, value] of [
+      ["kind", artifact.kind],
+      ["coordinates", artifact.coordinates],
+    ] as const) {
+      if (value.length === 0 || value !== value.trim()) {
+        throw new InvalidExecutionTransitionError(
+          `artifact "${artifact.id}" declares a ${label} that is empty or padded — the domain artifact door's rule: opaque, non-empty, unpadded, validated never normalized (ADR-0008 decision 4)`,
+        );
+      }
+    }
+    if (!CANONICAL_STAGES.includes(artifact.anchor.stage)) {
+      throw new InvalidExecutionTransitionError(
+        `artifact "${artifact.id}" anchors at "${artifact.anchor.stage}", which is not one of the canonical eight (contract §2.1)`,
+      );
+    }
+    if (!ANCHOR_POSITIONS.includes(artifact.anchor.position)) {
+      throw new InvalidExecutionTransitionError(
+        `artifact "${artifact.id}" anchors "${artifact.anchor.position}"; the positions are before and after (contract §2.1)`,
+      );
+    }
+    if (artifact.guard.length === 0) {
+      throw new InvalidExecutionTransitionError(
+        `artifact "${artifact.id}" declares a blank guard name (contract §2.2)`,
+      );
+    }
+    for (const postcondition of artifact.postconditions) {
+      if (!POSTCONDITION_KINDS.includes(postcondition)) {
+        throw new InvalidExecutionTransitionError(
+          `artifact "${artifact.id}" declares the unknown postcondition "${postcondition}" (contract §2.4)`,
+        );
+      }
+    }
+  }
+  // The DAG (§2.1): closed input, validated, never inferred. Edges name
+  // declared sibling ids only, no duplicates, and the declaration-order
+  // depth-first walk reports a cycle instead of scheduling one.
+  const byId = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  const state = new Map<string, "visiting" | "done">();
+  const visit = (id: string, path: readonly string[]): void => {
+    const mark = state.get(id);
+    if (mark === "visiting") {
+      throw new InvalidExecutionTransitionError(
+        `artifact dependency cycle: ${[...path, id].join(" → ")} (contract §2.1)`,
+      );
+    }
+    if (mark === "done") {
+      return;
+    }
+    const declared = byId.get(id);
+    if (declared === undefined) {
+      throw new InvalidExecutionTransitionError(
+        `artifact "${path[path.length - 1] ?? id}" depends on "${id}", which is not a declared sibling (contract §2.1)`,
+      );
+    }
+    state.set(id, "visiting");
+    for (const dependency of declared.dependsOn) {
+      visit(dependency, [...path, id]);
+    }
+    state.set(id, "done");
+  };
+  for (const artifact of artifacts) {
+    for (const dependency of artifact.dependsOn) {
+      if (!byId.has(dependency)) {
+        throw new InvalidExecutionTransitionError(
+          `artifact "${artifact.id}" depends on "${dependency}", which is not a declared sibling (contract §2.1)`,
+        );
+      }
+    }
+  }
+  for (const artifact of artifacts) {
+    visit(artifact.id, []);
+  }
+  const duplicated = artifacts.find(
+    (artifact) => new Set(artifact.dependsOn).size !== artifact.dependsOn.length,
+  );
+  if (duplicated !== undefined) {
+    throw new InvalidExecutionTransitionError(
+      `artifact "${duplicated.id}" declares a duplicated dependsOn edge (contract §2.1)`,
+    );
+  }
+  return Object.freeze(
+    artifacts.map((artifact) =>
+      Object.freeze({
+        ...artifact,
+        anchor: Object.freeze({ ...artifact.anchor }),
+        dependsOn: Object.freeze([...artifact.dependsOn]),
+        postconditions: Object.freeze([...artifact.postconditions]),
+      }),
+    ),
+  );
+};
+
 /** Opens an attempt (§2.1): allocates the ordinal from the register,
  * derives the content-anchored id, and returns the frozen `planned` value.
  * The plan's fingerprint is carried, never recomputed (invariant 3's
- * execution mirror). The declared hooks ride the attempt as execution-side
- * data — excluded from `attemptIdentity` and the plan fingerprint (phase 6
- * contract §2.1; ADR-0007 decision 3). */
+ * execution mirror). The declared hooks and artifact steps ride the
+ * attempt as execution-side data — excluded from `attemptIdentity` and
+ * the plan fingerprint (phase 6 and phase 7 contracts §2.1; ADR-0007 and
+ * ADR-0008 decision 3). */
 export const openAttempt = (
   register: { nextOrdinal(planId: string): number },
   plan: { readonly planId: string; readonly planFingerprint: string },
   hooks?: readonly HookStep[],
+  artifacts?: readonly ArtifactStep[],
 ): ReleaseAttempt => {
   const ordinal = register.nextOrdinal(plan.planId);
   return Object.freeze({
@@ -302,5 +420,6 @@ export const openAttempt = (
     planFingerprint: plan.planFingerprint,
     state: "planned",
     ...(hooks === undefined ? {} : { hooks: validateHooks(hooks) }),
+    ...(artifacts === undefined ? {} : { artifacts: validateArtifacts(artifacts) }),
   } satisfies ReleaseAttempt);
 };

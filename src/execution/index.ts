@@ -12,6 +12,7 @@
  * gate allows this layer (§2.11, §2.12).
  */
 export * from "./adopt.js";
+export * from "./artifacts.js";
 export * from "./attempt-register-memory.js";
 export * from "./attempt.js";
 export * from "./claim-store-memory.js";
@@ -22,6 +23,7 @@ export * from "./ledger.js";
 export * from "./outcome.js";
 export * from "./resume.js";
 export * from "./revalidation.js";
+export * from "./step-keys.js";
 export * from "./step.js";
 export * from "./transition.js";
 export * from "./types.js";
