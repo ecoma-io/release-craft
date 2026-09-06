@@ -4,12 +4,15 @@
  * This module is NOT the release engine. It is the package's front door: the
  * toolchain canary (the typed surface the typecheck compiles, Vitest
  * executes, ESLint judges and the build emits) plus the layers that
- * actually ship — the domain the `core-domain` project exports and the
+ * actually ship — the domain the `core-domain` project exports, the
  * Phase 2 planner (src/planner/: the planning layer that turns observed
  * repository history into release decisions, version targets, propagation
- * plans and content fingerprints) — re-exported, never reimplemented
- * here. Release execution, lifecycle, adapter and publishing concerns
- * belong to a future change, never to this file.
+ * plans and content fingerprints) and the Phase 4 execution kernel
+ * (src/execution/: the attempt state machine, the claim store and its
+ * scopes, the guard table, `requestStep`'s seven outcomes — the execution
+ * vocabulary ADR-0005 and the Phase 4 contract lock) — re-exported, never
+ * reimplemented here. The release ledger, lifecycle hooks, artifact and
+ * provider adapters belong to their own later phases, never to this file.
  *
  * The surface carries no claim about the repository's stage of life. A stage
  * literal exported from here was a claim in code that no gate could read,
@@ -42,6 +45,12 @@ export * from "@ecoma-io/release-craft/domain";
 // wholesale (one declaration, no drift), and its isolation is enforced by
 // test/planner/isolation.test.ts.
 export * from "./planner/index.js";
+
+// The Phase 4 execution kernel's public contract (ADR-0005). Within this
+// package's own tree, so the relative specifier is the honest spelling;
+// the surface is the execution barrel's, wholesale (one declaration, no
+// drift), and its isolation is enforced by test/execution/isolation.test.ts.
+export * from "./execution/index.js";
 
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;

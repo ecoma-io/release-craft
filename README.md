@@ -4,40 +4,41 @@ The release engine for the ecoma-io organization: release planning, versioning,
 prerelease lines, lifecycle hooks, artifacts, and publishing — humans, AI agents
 and code all operating the same release machinery.
 
-**Status: foundation, the kernel's release values, the deterministic
-planner, and a decided release model.** The engineering substrate ships —
-toolchain, task graph, architecture governance, CI, analysis, executable
-policy — and the domain kernel carries its value population: the semantic
-[`Version`](docs/adr/0001-domain-kernel-and-semantic-version.md) plus the
-five release values Phase 0's vocabulary locked — `Change`, `ChangeSet`,
-`ReleaseLine`, `Channel`, `Artifact`
-([ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md)) — pure,
-frozen, and archkeep-enforced behind one barrel entrypoint. The planner
-ships: `src/planner/` is the deterministic, side-effect-free planning door
+**Status: foundation, the kernel's release values, the deterministic planner, and the
+execution kernel.** The engineering substrate ships — toolchain, task graph, architecture
+governance, CI, analysis, executable policy — and the domain kernel carries its value
+population: the semantic
+[`Version`](docs/adr/0001-domain-kernel-and-semantic-version.md) plus the five release
+values Phase 0's vocabulary locked — `Change`, `ChangeSet`, `ReleaseLine`, `Channel`,
+`Artifact` ([ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md)) — pure,
+frozen, and archkeep-enforced behind one barrel entrypoint. The planner ships:
+`src/planner/` is the deterministic, side-effect-free planning door
 ([ADR-0003](docs/adr/0003-deterministic-release-planner.md),
-[ADR-0004](docs/adr/0004-line-policy.md)), pinned by the 53-scenario suite.
-Execution is decided but not built: Phase 4's execution-kernel contract is
-locked ([#27](https://github.com/ecoma-io/release-craft/issues/27),
-[ADR-0005](docs/adr/0005-execution-kernel.md)) — no attempt, claim, ledger,
-publishing, or provider code exists yet. Phase 0's model — vocabulary,
+[ADR-0004](docs/adr/0004-line-policy.md)), pinned by the 53-scenario suite. The
+execution kernel ships: `src/execution/` is the pure decision machinery of Phase 4 —
+attempts, claims, transitions, step classification
+([#27](https://github.com/ecoma-io/release-craft/issues/27),
+[ADR-0005](docs/adr/0005-execution-kernel.md)) — frozen values in, classified outcomes
+out. Not built yet: the append-only ledger (Phase 5), lifecycle hooks, artifact
+realization, the Git provider, and the GitHub action. Phase 0's model — vocabulary,
 invariants, complexity budget, built on the
-[53-scenario matrix](docs/design/release-scenarios.md) and adversarially
-reviewed — is in [`release-model.md`](docs/design/release-model.md); older
-work in [#1](https://github.com/ecoma-io/release-craft/issues/1).
+[53-scenario matrix](docs/design/release-scenarios.md) and adversarially reviewed — is
+in [`release-model.md`](docs/design/release-model.md); older work in
+[#1](https://github.com/ecoma-io/release-craft/issues/1).
 
 ## What is in the tree today
 
-| Layer              | Where                                                                                        | What guarantees it                                                                                                                                                                                                     |
-| ------------------ | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Domain kernel      | `core/domain/` — `Version` + the five release values, one barrel entrypoint                  | `arch` (zero external imports), domain `typecheck`, `test` via the package surface — [ADR-0001](docs/adr/0001-domain-kernel-and-semantic-version.md), [ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md) |
-| Release model      | `docs/design/` — scenario matrix, model evaluations, synthesis, ADR-0002                     | [ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md) — vocabulary and invariants are contract for Phases 1–2                                                                                               |
-| Package            | `src/`, `test/` — `@ecoma-io/release-craft`, canary + the kernel re-export + the planner     | `test`, `build`                                                                                                                                                                                                        |
-| Planning engine    | `src/planner/` — the deterministic planning door (Phases 2–3)                                | the 53-scenario suite + `test/planner/isolation.test.ts` — [ADR-0003](docs/adr/0003-deterministic-release-planner.md), [ADR-0004](docs/adr/0004-line-policy.md)                                                        |
-| Execution contract | `docs/design/phase4-execution-contract.md` — the Phase 4 execution kernel, decided not built | [#27](https://github.com/ecoma-io/release-craft/issues/27), [ADR-0005](docs/adr/0005-execution-kernel.md)                                                                                                              |
-| Task graph         | `.moon/`, `moon.yml`, `scripts/moon.yml`                                                     | every task declares its `inputs`; `pnpm check` composes all gates                                                                                                                                                      |
-| Boundary law       | `module-boundaries.config.mjs`                                                               | `arch` (archkeep, pinned exact) — gates may never import the package; the kernel may import nothing                                                                                                                    |
-| Gate scripts       | `scripts/check-*.mjs` + tests                                                                | `policy` workflow, `pnpm check:*`                                                                                                                                                                                      |
-| Docs contract      | `README`, `CONTRIBUTING`, `AGENTS`, `docs/`                                                  | `check:docs` — links, anchors and commands resolve                                                                                                                                                                     |
+| Layer            | Where                                                                                                           | What guarantees it                                                                                                                                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Domain kernel    | `core/domain/` — `Version` + the five release values, one barrel entrypoint                                     | `arch` (zero external imports), domain `typecheck`, `test` via the package surface — [ADR-0001](docs/adr/0001-domain-kernel-and-semantic-version.md), [ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md) |
+| Release model    | `docs/design/` — scenario matrix, model evaluations, synthesis, ADR-0002                                        | [ADR-0002](docs/adr/0002-release-model-and-domain-vocabulary.md) — vocabulary and invariants are contract for Phases 1–2                                                                                               |
+| Package          | `src/`, `test/` — `@ecoma-io/release-craft`, canary + the kernel re-export + the planner + the execution kernel | `test`, `build`                                                                                                                                                                                                        |
+| Planning engine  | `src/planner/` — the deterministic planning door (Phases 2–3)                                                   | the 53-scenario suite + `test/planner/isolation.test.ts` — [ADR-0003](docs/adr/0003-deterministic-release-planner.md), [ADR-0004](docs/adr/0004-line-policy.md)                                                        |
+| Execution kernel | `src/execution/` — the pure attempt/claim/transition machinery (Phase 4)                                        | `test/execution/` — fixtures E-01…E-09 + `test/execution/isolation.test.ts` — [ADR-0005](docs/adr/0005-execution-kernel.md)                                                                                            |
+| Task graph       | `.moon/`, `moon.yml`, `scripts/moon.yml`                                                                        | every task declares its `inputs`; `pnpm check` composes all gates                                                                                                                                                      |
+| Boundary law     | `module-boundaries.config.mjs`                                                                                  | `arch` (archkeep, pinned exact) — gates may never import the package; the kernel may import nothing                                                                                                                    |
+| Gate scripts     | `scripts/check-*.mjs` + tests                                                                                   | `policy` workflow, `pnpm check:*`                                                                                                                                                                                      |
+| Docs contract    | `README`, `CONTRIBUTING`, `AGENTS`, `docs/`                                                                     | `check:docs` — links, anchors and commands resolve                                                                                                                                                                     |
 
 ## Quickstart
 
