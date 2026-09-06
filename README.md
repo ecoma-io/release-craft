@@ -1,8 +1,11 @@
 # release-craft
 
-The release engine for the ecoma-io organization: release planning, versioning,
-prerelease lines, lifecycle hooks, artifacts, and publishing — humans, AI agents
-and code all operating the same release machinery.
+A general-purpose, open-source release engine for any software project —
+release planning, versioning, prerelease lines, lifecycle hooks, artifacts,
+and publishing — humans, AI agents and code all operating the same release
+machinery. Built by ecoma-io; dogfooded by Ecoma, the fair-code labor OS —
+a consumer, not the domain. The product boundary is recorded in
+[`docs/design/product-boundary.md`](docs/design/product-boundary.md).
 
 **Status: foundation, the kernel's release values, the deterministic planner, and the
 execution kernel.** The engineering substrate ships — toolchain, task graph, architecture

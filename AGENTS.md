@@ -7,8 +7,9 @@ and are not duplicated here.
 
 ## What this repository is
 
-The release engine of ecoma-io. **It is in foundation phase, the kernel's
-value population, the deterministic planner, and the execution kernel**:
+A general-purpose, open-source release engine for software projects,
+developed and maintained by ecoma-io. **It is in foundation phase, the
+kernel's value population, the deterministic planner, and the execution kernel**:
 `src/` holds a toolchain canary, the planner (`src/planner/`, the
 deterministic planning door — ADR-0003, ADR-0004), and the execution kernel
 (`src/execution/`, the pure attempt/claim/transition machinery — issue #27,
@@ -24,6 +25,13 @@ release-please compatibility in a drive-by change — that work lands through
 its own issue and design, not inside unrelated fixes. Do not claim shipped
 capabilities in docs or code comments; the README's status section is the
 honest one.
+
+The product boundary is fixed: the engine serves any software project; Ecoma is
+the maintainer's first-party dogfood consumer, never a domain concept, and
+providers (GitHub, npm, …) bind at adapter tiers. Do not introduce
+Ecoma-specific assumptions into product architecture. The canonical statement
+lives in [docs/design/product-boundary.md](docs/design/product-boundary.md) —
+keep new documentation consistent with it.
 
 ## Commands
 
