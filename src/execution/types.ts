@@ -427,6 +427,9 @@ export interface ExecutionLedger {
   append(record: LedgerRecord): LedgerRecord;
   /** The attempt's records, append order. */
   tail(attemptId: string): readonly LedgerRecord[];
+  /** The step-record view the kernel's `requestStep` consumes — the
+   * replay projection (§2.3, §2.8). */
+  stepView(): StepRecordsView;
   /** The step's recorded state, `none` when nothing is recorded. */
   step(attemptId: string, stepKey: StepKey): LedgerStepState;
   /** The recorded plan fingerprint (§2.2), or null when the attempt has no

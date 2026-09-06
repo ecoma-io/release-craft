@@ -77,7 +77,10 @@ export class MemoryLedger {
     return this.#records.filter((record) => tailAttemptId(record) === attemptId);
   }
 
-  /** The step's recorded state, `none` when nothing is recorded (§2.1). */
+  /** The step's recorded state, `none` when nothing is recorded (§2.1). A
+   * `pending` `to` is not producible through any write door — appendStart
+   * writes `started` first — so §2.1's four-state vocabulary reports it as
+   * the not-yet-completed state it can only mean. */
   step(attemptId: string, stepKey: StepKey): LedgerStepState {
     const record = this.#stepRecords(attemptId)
       .filter((item) => item.stepKey === stepKey)
