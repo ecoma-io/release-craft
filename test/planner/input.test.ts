@@ -454,6 +454,11 @@ describe("normalize — the closed input boundary (§2.1)", () => {
       expect(fieldsOf(rejected)).toContain("intents[0].lineId");
     });
 
+    it("rejects a prerelease without a line — stream demand is always per line", () => {
+      const rejected = reject(withIntents([{ kind: "prerelease", stream: "rc" }]));
+      expect(fieldsOf(rejected)).toContain("intents[0].lineId");
+    });
+
     it("rejects a release-as version that does not parse as a Version, naming the indexed field", () => {
       const rejected = reject(withIntents([{ kind: "release-as", version: "1.2.x" }]));
       expect(fieldsOf(rejected)).toContain("intents[0].version");

@@ -263,10 +263,13 @@ export interface LineAttribution {
 }
 
 /** §2.4's fail-closed refusal (M-01, PL-05a): ambiguous attribution names
- * the ambiguous commits — never silence, never a guess. */
+ * the ambiguous commits — never silence, never a guess. The same shape
+ * carries the door's plan-level refusals: `version-collision` (M-11) is
+ * two lines minting the same tag in one pass — a self-conflicting plan,
+ * refused before assembly with both lines and both heads named. */
 export interface AttributionRefusal {
   readonly kind: "refused";
-  readonly cause: "ambiguous-attribution" | "malformed-self-reference-marker";
+  readonly cause: "ambiguous-attribution" | "malformed-self-reference-marker" | "version-collision";
   /** Commit shas the refusal is about. */
   readonly commits: readonly string[];
   readonly policyDigest: string;
