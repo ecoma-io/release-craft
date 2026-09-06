@@ -15,6 +15,13 @@ repositories — and every practice they carry was classified:
 Nothing was copied because the ecosystem has it. Where the two siblings
 disagree, the analysis says which way release-craft went and why.
 
+**Scope.** This is a record of Ecoma repository _engineering conventions_ —
+provenance, not product documentation. release-craft's product architecture
+lives in [`docs/design/`](../design/release-model.md) and the
+[ADRs](../adr/0001-domain-kernel-and-semantic-version.md); Ecoma's own use of
+the engine is _dogfooding_, a consumer relationship outside the product's
+domain ([product boundary](../design/product-boundary.md)).
+
 ## Method
 
 - Both repositories were inspected at their default branches: workflows, Moon
@@ -118,4 +125,4 @@ disagree, the analysis says which way release-craft went and why.
 | release-craft's own Semgrep rules + fixtures    | First time a registry pack reports a finding that deserves a house rule.                      |
 | CODEOWNERS                                      | A second maintainer.                                                                          |
 | `packages/` decomposition                       | A second shippable package.                                                                   |
-| Vendored/skill assets                           | First internal consumer of the release engine.                                                |
+| Vendored/skill assets                           | First consumer of the engine — Ecoma, dogfooding.                                             |

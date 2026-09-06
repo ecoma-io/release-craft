@@ -2,12 +2,11 @@
   "name": "@ecoma-io/release-craft",
   "version": "0.1.0",
   "private": true,
-  "description": "Release engineering for the Ecoma labor OS — release planning, versioning, prerelease and release lines as code.",
+  "description": "General-purpose, open-source release engine for software projects — release planning, versioning, prerelease and release lines as code. Built by ecoma-io.",
   "keywords": [
     "release-engineering",
     "versioning",
-    "release-automation",
-    "ecoma"
+    "release-automation"
   ],
   "homepage": "https://github.com/ecoma-io/release-craft#readme",
   "repository": {
