@@ -58,6 +58,13 @@ export interface RemoteSync {
   syncRemote(): SyncReport;
 }
 
+/** The reconciliation unit's surface (contract §2.2; the phase 9.4
+ *  increment): 9.5's `openGitHubAdapter` composes the units behind the
+ *  factory; this module's barrel export is interim until then. */
+export interface Reconciliation {
+  reconcile(): ReconciliationReport;
+}
+
 /** The release publication unit's surface (contract §2.2; the phase
  *  9.3 increment): 9.5's `openGitHubAdapter` composes the units behind
  *  the factory; this module's barrel export is interim until then. */
