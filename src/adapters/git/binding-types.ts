@@ -6,7 +6,8 @@
  * both are imported from the package barrel.
  */
 
-import type { ClaimScope, ClaimToken } from "../../index.js";
+import type { ClaimScope, ClaimToken, LedgerRecord } from "../../index.js";
+import type { ClaimRecord } from "./claim-store-git.js";
 
 /**
  * The declared tag naming (D14's per-package naming as declared
@@ -93,4 +94,30 @@ export interface RefRead {
    *  door's namespace rule) the repository holds, each with its peeled
    *  target. */
   tags(): readonly RecordedRef[];
+}
+
+/**
+ * The binding's content read seam (the Phase 9 contract §2.8; D27): the
+ * read-only surface the release projection reads to resolve a recorded
+ * tag's changelog — the minting claim, the naming's own derivation, the
+ * holding attempt's recorded stream, and one file out of the recorded
+ * tree a digest names. Reads only: the ledger's `append` is unreachable
+ * through it (structural, not by convention).
+ */
+export interface ContentRead {
+  /** The canonical claim record a claim ref pins, or null when the ref
+   *  holds no record. */
+  claim(ref: string): ClaimRecord | null;
+  /** The tag name the declared naming derives for a scope, or null when
+   *  the scope maps outside every declared namespace — the mint door's
+   *  own rule, exposed as a pure read. */
+  tagFor(scope: ClaimScope): string | null;
+  /** The attempt's recorded stream — the ledger tail, read-only. */
+  tail(attemptId: string): readonly LedgerRecord[];
+  /** One file's content out of the recorded tree the digest names, or
+   *  null when the tree holds no such path. The digest must be a
+   *  recorded tree digest (`git-tree:<oid>`); anything else is a caller
+   *  fault. Recorded objects only — never the working tree, never
+   *  `HEAD` (ADR-0009 decision 4). */
+  file(digest: string, path: string): string | null;
 }

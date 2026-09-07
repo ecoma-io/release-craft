@@ -7,6 +7,7 @@
 export * from "./binding-types.js";
 export * from "./binding.js";
 export * from "./claim-store-git.js";
+export * from "./content-read.js";
 export * from "./freeze.js";
 export * from "./git-refs.js";
 export * from "./git-run.js";
