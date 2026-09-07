@@ -9,6 +9,9 @@ const prerelease = (sequence: number, lineId = "line-main") =>
 const releaseLine = (lineId = "line-main") => ({ kind: "release-line", lineId }) as const;
 const asClaim = (outcome: Claim | ClaimDenied): Claim => {
   if (outcome.kind !== "claim") {
+    if (outcome.holder === undefined) {
+      throw new Error("expected a claim, got a denial without a holder");
+    }
     throw new Error(`expected a claim, got a denial by ${outcome.holder}`);
   }
   return outcome;

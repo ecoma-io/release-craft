@@ -27,6 +27,9 @@ const SCOPE = { kind: "stable-version", lineId: "line-main", version: "1.2.0" } 
 
 const asClaim = (outcome: Claim | ClaimDenied): Claim => {
   if (outcome.kind !== "claim") {
+    if (outcome.holder === undefined) {
+      throw new Error("expected a claim, got a denial without a holder");
+    }
     throw new Error(`expected a claim, got a denial by ${outcome.holder}`);
   }
   return outcome;
