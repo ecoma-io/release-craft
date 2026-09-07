@@ -230,8 +230,14 @@ describe("the assembled GitHub adapter (§2.6; #65)", () => {
           : listResponse([releaseRow("v9.9.9")]),
       );
       const report = fixture.adapter(transport).reconcile();
-      expect(report.verifiedTags).toEqual(["v1.2.3"]);
-      expect(report.divergences).toHaveLength(2);
+      if (report.tags.state !== "listed") {
+        throw new Error(`expected the tag listing to complete, got ${report.tags.state}`);
+      }
+      expect(report.tags.verifiedTags).toEqual(["v1.2.3"]);
+      expect(
+        report.tags.divergences.length +
+          (report.releases.state === "listed" ? report.releases.divergences.length : 0),
+      ).toBe(2);
       expect(calls.map((call) => call.path)).toEqual([
         "/repos/ecoma-io/release-craft/tags?per_page=100",
         "/repos/ecoma-io/release-craft/releases?per_page=100",
