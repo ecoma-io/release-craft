@@ -1,10 +1,11 @@
 /**
  * The reconciliation over a real repository and a test-owned transport
- * (the Phase 9 contract §4, scenarios 10–12; ADR-0010 decision 8): the
- * remote is compared against the binding's recorded state — a matching
- * tag is verified, an unrecorded tag or release is a reported
- * divergence, and nothing the remote holds is ever resolved into the
- * binding (the binding is the truth).
+ * (the Phase 9 contract §4, scenarios 10–16; ADR-0010 decision 8 as
+ * amended by issue #66 / D30): the remote is compared against the
+ * binding's recorded state — a matching tag is verified, an unrecorded
+ * tag or release is a reported divergence, a listing that never became
+ * usable claims nothing — and nothing the remote holds is ever resolved
+ * into the binding (the binding is the truth).
  */
 
 import { describe, expect, it } from "vitest";
@@ -77,6 +78,16 @@ const listResponse = (rows: readonly unknown[]): GitHubResponse => ({
   body: JSON.stringify(rows),
 });
 
+const rawResponse = (
+  status: number,
+  headers: Readonly<Record<string, string>>,
+  body: string,
+): GitHubResponse => ({
+  status,
+  headers,
+  body,
+});
+
 /** A fixture whose binding has minted `v1.2.3` at a deterministic
  *  commit; `tags` hands the recorded target for building remote
  *  listings that match or drift from it. */
@@ -127,7 +138,7 @@ const withReconcileRepo = (_name: string, fn: (fixture: ReconcileFixture) => voi
   }
 };
 
-describe("the release reconciliation (§4 scenarios 10–12; ADR-0010 decision 8)", () => {
+describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8, D30)", () => {
   it("R-10 — a remote that matches the binding's records shows no divergence", () => {
     withReconcileRepo("clean", (fixture) => {
       const { transport, calls } = fakeTransport((call) =>
@@ -136,8 +147,12 @@ describe("the release reconciliation (§4 scenarios 10–12; ADR-0010 decision 8
           : listResponse([releaseRow("v1.2.3")]),
       );
       const report = fixture.reconcile(transport);
-      expect(report.divergences).toEqual([]);
-      expect(report.verifiedTags).toEqual(["v1.2.3"]);
+      expect(report.tags).toEqual({
+        state: "listed",
+        divergences: [],
+        verifiedTags: ["v1.2.3"],
+      });
+      expect(report.releases).toEqual({ state: "listed", divergences: [] });
       expect(calls.map((call) => call.path)).toEqual([
         "/repos/ecoma-io/release-craft/tags?per_page=100",
         "/repos/ecoma-io/release-craft/releases?per_page=100",
@@ -156,14 +171,18 @@ describe("the release reconciliation (§4 scenarios 10–12; ADR-0010 decision 8
           : listResponse([]),
       );
       const report = fixture.reconcile(transport);
-      expect(report.verifiedTags).toEqual(["v1.2.3"]);
-      expect(report.divergences).toEqual([
-        {
-          kind: "unadopted-tag",
-          tag: "v9.9.9",
-          detail: expect.any(String) as string,
-        },
-      ]);
+      expect(report.tags).toEqual({
+        state: "listed",
+        verifiedTags: ["v1.2.3"],
+        divergences: [
+          {
+            kind: "unadopted-tag",
+            tag: "v9.9.9",
+            detail: expect.any(String) as string,
+          },
+        ],
+      });
+      expect(report.releases).toEqual({ state: "listed", divergences: [] });
     });
   });
 
@@ -175,14 +194,21 @@ describe("the release reconciliation (§4 scenarios 10–12; ADR-0010 decision 8
           : listResponse([releaseRow("v1.2.3"), releaseRow("v3.1.4")]),
       );
       const report = fixture.reconcile(transport);
-      expect(report.verifiedTags).toEqual(["v1.2.3"]);
-      expect(report.divergences).toEqual([
-        {
-          kind: "unadopted-release",
-          tag: "v3.1.4",
-          detail: expect.any(String) as string,
-        },
-      ]);
+      expect(report.tags).toEqual({
+        state: "listed",
+        divergences: [],
+        verifiedTags: ["v1.2.3"],
+      });
+      expect(report.releases).toEqual({
+        state: "listed",
+        divergences: [
+          {
+            kind: "unadopted-release",
+            tag: "v3.1.4",
+            detail: expect.any(String) as string,
+          },
+        ],
+      });
     });
   });
 
@@ -193,11 +219,14 @@ describe("the release reconciliation (§4 scenarios 10–12; ADR-0010 decision 8
         call.path.includes("/tags") ? listResponse([tagRow("v1.2.3", drifted)]) : listResponse([]),
       );
       const report = fixture.reconcile(transport);
-      expect(report.verifiedTags).toEqual([]);
-      expect(report.divergences).toHaveLength(1);
-      expect(report.divergences[0]?.kind).toBe("unadopted-tag");
-      expect(report.divergences[0]?.detail).toContain(drifted);
-      expect(report.divergences[0]?.detail).toContain(fixture.recordedTarget);
+      if (report.tags.state !== "listed") {
+        throw new Error(`expected the tag listing to complete, got ${report.tags.state}`);
+      }
+      expect(report.tags.verifiedTags).toEqual([]);
+      expect(report.tags.divergences).toHaveLength(1);
+      expect(report.tags.divergences[0]?.kind).toBe("unadopted-tag");
+      expect(report.tags.divergences[0]?.detail).toContain(drifted);
+      expect(report.tags.divergences[0]?.detail).toContain(fixture.recordedTarget);
     });
   });
 
@@ -213,8 +242,168 @@ describe("the release reconciliation (§4 scenarios 10–12; ADR-0010 decision 8
           : listResponse([releaseRow("v9.9.9")]),
       );
       const report = fixture.reconcile(transport);
-      expect(report.divergences).toHaveLength(2);
+      if (report.tags.state !== "listed" || report.releases.state !== "listed") {
+        throw new Error("expected both listings to complete");
+      }
+      expect(report.tags.divergences).toHaveLength(1);
+      expect(report.releases.divergences).toHaveLength(1);
       expect(fixture.recordedRefs()).toEqual(before);
+    });
+  });
+
+  it("R-15 — an unreachable remote (status 0) is a transport failure that claims no comparison", () => {
+    withReconcileRepo("unreachable", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags") ? rawResponse(0, {}, "") : listResponse([releaseRow("v9.9.9")]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      // The sibling's completed observation stands — one listing's
+      // failure never demotes the other's comparison.
+      expect(report.releases).toEqual({
+        state: "listed",
+        divergences: [
+          {
+            kind: "unadopted-release",
+            tag: "v9.9.9",
+            detail: expect.any(String) as string,
+          },
+        ],
+      });
+    });
+  });
+
+  it("R-15 — a status the read did not want is a transport failure, on either listing", () => {
+    withReconcileRepo("server-error", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([tagRow("v1.2.3", fixture.recordedTarget)])
+          : rawResponse(500, {}, "{}"),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({
+        state: "listed",
+        divergences: [],
+        verifiedTags: ["v1.2.3"],
+      });
+      expect(report.releases).toEqual({ state: "transport-failure" });
+    });
+  });
+
+  it("R-15 — a body that is not a list is an unexpected response, never an empty listing", () => {
+    withReconcileRepo("not-a-list", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? rawResponse(200, {}, '{"message":"moved"}')
+          : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+    });
+  });
+
+  it("R-15 — a body that is not JSON is an unexpected response", () => {
+    withReconcileRepo("not-json", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags") ? rawResponse(200, {}, "<html>oops</html>") : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+    });
+  });
+
+  it("R-15 — a lying row (a compared field that is not a string) unclaims the whole listing", () => {
+    withReconcileRepo("lying-row", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([
+              tagRow("v1.2.3", fixture.recordedTarget),
+              { name: 42, commit: { sha: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" } },
+            ])
+          : listResponse([{ tag_name: 7 }]),
+      );
+      const report = fixture.reconcile(transport);
+      // No partial comparison: the listing is unclaimed entire, so the
+      // matched first row claims no verification either.
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(report.releases).toEqual({ state: "transport-failure" });
+    });
+  });
+
+  it("R-15 — a row that is not an object is a transport failure, never a throw", () => {
+    withReconcileRepo("null-row", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([tagRow("v1.2.3", fixture.recordedTarget), null])
+          : listResponse([null, releaseRow("v9.9.9")]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(report.releases).toEqual({ state: "transport-failure" });
+    });
+  });
+
+  it("R-16 — a rate-limited listing is a refusal carrying the reset timestamp (decision 9)", () => {
+    withReconcileRepo("rate-limited", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? rawResponse(
+              429,
+              { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1700000000" },
+              "{}",
+            )
+          : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({
+        state: "refused",
+        reason: "rate-limited",
+        detail: expect.stringContaining("resets at 1700000000") as string,
+      });
+      expect(report.releases).toEqual({ state: "listed", divergences: [] });
+    });
+  });
+
+  it("R-16 — a 403 with the rate-limit budget spent is rate-limited, the same limit under the other status", () => {
+    withReconcileRepo("rate-limited-403", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([])
+          : rawResponse(403, { "x-ratelimit-remaining": " 0" }, "{}"),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "listed", divergences: [], verifiedTags: [] });
+      expect(report.releases).toEqual({
+        state: "refused",
+        reason: "rate-limited",
+        detail: "the API's rate limit is exhausted",
+      });
+    });
+  });
+
+  it("R-16 — a rejected credential is an auth-expired refusal on the listing", () => {
+    withReconcileRepo("auth-expired", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags") ? listResponse([]) : rawResponse(401, {}, "{}"),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "listed", divergences: [], verifiedTags: [] });
+      expect(report.releases).toEqual({
+        state: "refused",
+        reason: "auth-expired",
+        detail: expect.stringContaining("401") as string,
+      });
+    });
+  });
+
+  it("an empty listing is a determinate clean observation, not a failure (D28's listing twin)", () => {
+    withReconcileRepo("empty", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags") ? listResponse([]) : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "listed", divergences: [], verifiedTags: [] });
+      expect(report.releases).toEqual({ state: "listed", divergences: [] });
     });
   });
 });

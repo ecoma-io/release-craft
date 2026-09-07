@@ -31,6 +31,16 @@ export type RefusalReason =
   | "rate-limited"
   | "release-conflict";
 
+/**
+ * The refusal reasons a listing's observation can carry (issue #66;
+ * contract §2.3's read narrowing): the operator-intervention classes
+ * only. The write-conflict and projection reasons name writes and
+ * recorded-state decisions (`verifyRelease`'s `changelog-unrecorded` and
+ * `release-conflict` are comparison decisions, not provider refusals) —
+ * a listing never carries them.
+ */
+export type ReadRefusalReason = "auth-expired" | "rate-limited";
+
 /** One ref the sync considered (contract §2.2): pushed, skipped (already
  *  satisfied), or refused. */
 export interface SyncedRef {
@@ -58,13 +68,14 @@ export type ReleaseOutcome =
   | { readonly kind: "transport-failure" }
   | { readonly kind: "ambiguous" };
 
-/** The `verifyRelease()` outcome (contract §2.2). */
+/** The `verifyRelease()` outcome (contract §2.2). A read carries no
+ * `ambiguous` (issue #66): that class names a write whose landing is
+ * unknown, and verification is never a write. */
 export type VerificationOutcome =
   | { readonly kind: "verified" }
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
   | ReleaseAbsent
-  | { readonly kind: "transport-failure" }
-  | { readonly kind: "ambiguous" };
+  | { readonly kind: "transport-failure" };
 
 /** The `verifyRelease()` outcome for a release that does not exist for
  *  the recorded tag (issue #60; contract §2.2; D28): absence is a
@@ -83,11 +94,39 @@ export interface Divergence {
   readonly detail: string;
 }
 
-/** The `reconcile()` report (contract §2.2): the remote's state compared
- *  against the binding's recorded state. */
+/** The tag listing's observation outcome (issue #66; contract §2.2): the
+ *  comparison's premise — `listed` claims its divergences and its
+ *  verified tags, every unobserved state claims nothing. An empty
+ *  listing is `listed` with no divergences: a determinate clean
+ *  observation, the listing twin of `verifyRelease`'s `absent`. A
+ *  refusal is the provider declining the observation, with the refusal
+ *  detail (decision 9's rate-limit reset timestamp on `rate-limited`). */
+export type TagsListingOutcome =
+  | {
+      readonly state: "listed";
+      readonly divergences: readonly Divergence[];
+      readonly verifiedTags: readonly string[];
+    }
+  | { readonly state: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
+  | { readonly state: "transport-failure" };
+
+/** The release listing's observation outcome (issue #66; contract
+ *  §2.2): the same premise over the remote's releases — `listed` claims
+ *  the unadopted-release divergences, every unobserved state claims
+ *  nothing. */
+export type ReleasesListingOutcome =
+  | { readonly state: "listed"; readonly divergences: readonly Divergence[] }
+  | { readonly state: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
+  | { readonly state: "transport-failure" };
+
+/** The `reconcile()` report (contract §2.2): one observation outcome per
+ *  listing. Comparison results exist only on `listed` — over an
+ *  unobserved remote, a comparison that never ran is unrepresentable as
+ *  a passed one, and a report with an unobserved listing is
+ *  inconclusive, never clean. */
 export interface ReconciliationReport {
-  readonly divergences: readonly Divergence[];
-  readonly verifiedTags: readonly string[];
+  readonly tags: TagsListingOutcome;
+  readonly releases: ReleasesListingOutcome;
 }
 
 /**

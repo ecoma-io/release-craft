@@ -43,6 +43,7 @@ import type {
   ReleaseOutcome,
   VerificationOutcome,
 } from "./adapter-types.js";
+import { readFailure } from "./response.js";
 
 /** The step key the kernel records a changelog generation under (the
  *  artifact steps' `artifact:<id>` shape, ADR-0008 decision 5). The
@@ -61,69 +62,19 @@ type RecordedChangelog =
   | { readonly ok: false; readonly reason: RefusalReason; readonly detail: string };
 
 /** The response classes every release call shares once the caller has
- *  the recorded changelog in hand. */
+ *  the recorded changelog in hand. Reads carry no `ambiguous` (issue
+ *  #66; D30): only the post-write window can, so the tail the reads
+ *  share is the refused/transport pair, and the create maps its own
+ *  status 0 to `ambiguous` (§2.3) before classifying the rest. */
 type FailureTail =
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
-  | { readonly kind: "transport-failure" }
-  | { readonly kind: "ambiguous" };
+  | { readonly kind: "transport-failure" };
 
-const headerValue = (
-  headers: Readonly<Record<string, string>>,
-  name: string,
-): string | undefined => {
-  const direct = headers[name];
-  if (direct !== undefined) {
-    return direct;
-  }
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) {
-      return headers[key];
-    }
-  }
-  return undefined;
-};
-
-/** The rate-limit shape GitHub answers with: a 429, or a 403 whose
- *  rate-limit budget is spent (the same limit arriving under the other
- *  status). */
-const isRateLimited = (response: GitHubResponse): boolean => {
-  if (response.status === 429) {
-    return true;
-  }
-  if (response.status !== 403) {
-    return false;
-  }
-  const remaining = headerValue(response.headers, "x-ratelimit-remaining");
-  return remaining !== undefined && remaining.trim() === "0";
-};
-
-const failureTail = (response: GitHubResponse, wrote: boolean): FailureTail => {
-  if (isRateLimited(response)) {
-    const reset = headerValue(response.headers, "x-ratelimit-reset");
-    return {
-      kind: "refused",
-      reason: "rate-limited",
-      detail:
-        reset === undefined
-          ? "the API's rate limit is exhausted"
-          : `the API's rate limit is exhausted; it resets at ${reset}`,
-    };
-  }
-  if (response.status === 401 || response.status === 403) {
-    return {
-      kind: "refused",
-      reason: "auth-expired",
-      detail: `the credential was rejected with HTTP ${String(response.status)}`,
-    };
-  }
-  // Status 0 is the transport's "no determinate response": after a read
-  // nothing has landed, so it is an ordinary failure; after the create
-  // the write may have landed unseen (§2.3's ambiguous class).
-  if (response.status === 0) {
-    return wrote ? { kind: "ambiguous" } : { kind: "transport-failure" };
-  }
-  return { kind: "transport-failure" };
+const failureTail = (response: GitHubResponse): FailureTail => {
+  const failure = readFailure(response);
+  return failure.kind === "refused"
+    ? { kind: "refused", reason: failure.reason, detail: failure.detail }
+    : failure;
 };
 
 /** The release resource's browser URL, as the API reports it — the `ok`
@@ -250,10 +201,11 @@ export function GitReleasePublication(
             };
       }
       if (existing.status !== 404) {
-        return failureTail(existing, false);
+        return failureTail(existing);
       }
       // The create: the one write this unit performs. A lost response is
-      // ambiguous, never a silent success (§2.3).
+      // ambiguous, never a silent success (§2.3) — status 0 after the
+      // write is that class; every other failure is the read tail.
       const created = transport.request(
         `/repos/${credentials.owner}/${credentials.repo}/releases`,
         {
@@ -266,7 +218,10 @@ export function GitReleasePublication(
         const url = releaseUrl(created.body);
         return url === undefined ? { kind: "transport-failure" } : { kind: "ok", url };
       }
-      return failureTail(created, true);
+      if (created.status === 0) {
+        return { kind: "ambiguous" };
+      }
+      return failureTail(created);
     },
 
     verifyRelease(tag: string): VerificationOutcome {
@@ -281,7 +236,7 @@ export function GitReleasePublication(
         return { kind: "absent" };
       }
       if (existing.status !== 200) {
-        return failureTail(existing, false);
+        return failureTail(existing);
       }
       const remoteBody = releaseBody(existing.body);
       if (remoteBody === undefined) {
