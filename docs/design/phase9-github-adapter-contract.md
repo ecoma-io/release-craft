@@ -96,6 +96,12 @@ Phase 8 contract's "no network" rule is binding-local; the adapter
 deliberately reaches the network) but returns a value, never a promise
 or callback, consistent with the binding's synchronous discipline.
 
+`verifyRelease` reports a release that does not exist for the recorded
+tag as `absent` (issue #60): absence is a determinate read, never a
+`transport-failure` to retry and never a refusal of a write. The
+caller's action is the publication itself — `publishRelease`'s create
+path is idempotent (§2.4).
+
 ### 2.3 Failure classes
 
 Every remote operation returns one of:
