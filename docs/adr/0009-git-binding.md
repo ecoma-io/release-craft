@@ -89,6 +89,17 @@ job is to express that discipline over git, not to invent a second one.
    by the binding (no ambient `HEAD`), and creates if and only if the
    tag ref is absent. Force updates and re-creations under an existing
    ref are refused at both doors.
+   Amendment proposed in #49 (ADR-0011; the implementation PR follows):
+   the accept's atomic boundary moves from the scope's own ref to the
+   line's register ref — the binding holds one ref per release line
+   under the same claim namespace, its blob the line's claim set in
+   canonical form, and every mutation is a compare-and-set of the whole
+   set. The one-ref CAS is unchanged; what it arbitrates widens from
+   the same-scope race to the line's whole exclusion predicate, closing
+   #47's scan-then-CAS window (#47, #49). The claim namespace's blob
+   shape changes with it: a blob that is not a register refuses loudly,
+   and repositories written by the per-scope layout are not readable by
+   the register store (pre-adoption; no migration owed).
 5. **The namespace door runs at both doors, before any ref moves.** The
    binding refuses a claim whose derived tag name lies outside the
    namespace the plan declares, and refuses a mint whose tag lies

@@ -119,6 +119,24 @@ mint(tag, target) — the binding's tag door, not the port —
   authoritative record (P-01): the binding never substitutes a ledger
   row for the ref, and never records a completion the ref did not take.
 
+  Amendment proposed in #49 (ADR-0011; the implementation PR follows):
+  the store holds one register ref per release line under the claim
+  namespace — `refs/ecoma/claims/<sha256(lineId)>` — its blob the
+  line's claim set in canonical form (`{"claims":[…]}`, sorted by the
+  scope's canonical JSON), and every mutation is a compare-and-set of
+  the whole set against the observed tip. The exclusion predicate and
+  the accept are one atomic transition per line: the same CAS that
+  creates the claim checked the line's other claims, and the scan's
+  window (#47) does not exist. A lost CAS re-reads and re-evaluates —
+  it never adjudicates against stale state; releasing the last claim of
+  a line leaves the empty register in place (the ref is never deleted,
+  so the write path stays one primitive); and a claim-namespace blob
+  that is not a register refuses loudly — the layout is total, and the
+  per-scope layout's repositories fail on the first claim read rather
+  than silently read as unclaimed. The exclusion-path denial carries no
+  `holderSequence`; the same-scope adjudication denial carries the
+  winner's sequence (issue #69's parity pin, folded into the rewrite).
+
 ### 2.4 The ref-side namespace door (E-08, M-11)
 
 - The door runs at both doors, before any ref moves: a claim whose
