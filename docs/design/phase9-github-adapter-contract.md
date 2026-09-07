@@ -222,8 +222,9 @@ remote projection reads — proposed in #54, weighing three shapes:
   opened configuration's own repository path) and `GitBinding.refs:
 RefRead`, the recorded refs' read-only enumeration — `claims()`
   (every claim ref under the binding's claim-ref namespace, each with
-  the canonical record's blob oid — D24: a claim ref names a blob,
-  nothing to peel) and `tags()` (every tag within the configuration's
+  the register blob's oid — D24: a claim ref names a blob,
+  nothing to peel; the per-line claim register of ADR-0011) and
+  `tags()` (every tag within the configuration's
   declared namespaces — the mint door's namespace rule — each with its
   commit: the peeled commit for an annotated tag, the ref's own target
   for a lightweight one). Pure `for-each-ref` reads: no write, no `HEAD`
@@ -257,6 +258,11 @@ not a body door: the binding's public surface gains `GitBinding.content`
 - `content.claim(ref)` — a claim ref's canonical record (`ClaimRecord`:
   scope, token, holder), the D24 blob's content; enumerable through §2.7
   but not readable until now.
+  Amendment proposed in #49 (ADR-0011; the implementation PR follows):
+  a claim ref names a per-line register, so the read widens to the set
+  the register holds — `content.claims(ref): readonly ClaimRecord[]`
+  (an absent ref is the empty array), and the publication unit's
+  tag→claim derivation iterates it.
 - `content.tagFor(scope)` — the tag name the binding's own naming policy
   derives for a recorded scope: the mint door's derivation made a pure
   read.
@@ -278,7 +284,8 @@ half.
 
 The tag→attempt linkage is nowhere recorded; it is derived from two
 recorded facts — the claim records (`refs/ecoma/claims/*`, D24's
-canonical blobs, read through `content.claim`) and the mint door's own
+canonical blobs, read through `content.claims` — the per-line
+registers of ADR-0011) and the mint door's own
 naming derivation (the door mints at the name the claim's scope derives;
 `content.tagFor` makes that derivation a pure read). The tag namespace is
 global (invariant 6), so the derivation matches at most one claim.
