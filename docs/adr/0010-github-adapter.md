@@ -101,6 +101,18 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    existing release's body matches the recorded changelog and reports
    `verified` or `conflict`. Release creation is not a substitute for the
    binding's recorded state — it is a human-facing projection.
+   Amendment proposed in #57 (phase 9.3): the release body is resolved
+   from recorded state only, through the binding's changelog seam —
+   `GitBinding.content` (`ContentRead`: `claim(ref)`, `tagFor(scope)`,
+   `tail(attemptId)` read-only, `file(digest, path)`; the Phase 9
+   contract §2.8): tag → minting claim → holder attempt → the attempt's
+   recorded stream → the completed `artifact:changelog` generation record
+   → `contentFingerprint` → the recorded tree's `CHANGELOG.md`. The
+   adapter holds no writable port — the ledger's `append` never crosses
+   the seam. The attempt without a completed changelog record, or with
+   the file absent from the recorded tree, is `refused(reason:
+  "changelog-unrecorded")` — a release never publishes bytes the binding
+   did not record.
 
 7. **Failure classes are returned values, never exceptions.** Every remote
    operation returns a discriminated union:

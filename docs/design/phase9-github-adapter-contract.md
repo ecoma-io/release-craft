@@ -100,12 +100,12 @@ or callback, consistent with the binding's synchronous discipline.
 
 Every remote operation returns one of:
 
-| Outcome                                            | Meaning                                                       | Caller action                  |
-| -------------------------------------------------- | ------------------------------------------------------------- | ------------------------------ |
-| `ok`                                               | Remote state satisfies the write (created or already matched) | Proceed                        |
-| `refused(reason: "already-pushed-different-target" | "auth-expired"                                                | "rate-limited"                 | "release-conflict")` | Remote rejected the write with a named reason | Operator intervention for auth/rate-limit; conflict is a recorded decision |
-| `transport-failure`                                | Remote unreachable or unexpected response                     | Retry                          |
-| `ambiguous`                                        | Cannot determine whether write landed (timeout)               | Verify through a separate read |
+| Outcome                                                                                                                                  | Meaning                                                       | Caller action                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `ok`                                                                                                                                     | Remote state satisfies the write (created or already matched) | Proceed                                                                    |
+| `refused(reason: "already-pushed-different-target" \| "auth-expired" \| "rate-limited" \| "release-conflict" \| "changelog-unrecorded")` | Remote rejected the write with a named reason                 | Operator intervention for auth/rate-limit; conflict is a recorded decision |
+| `transport-failure`                                                                                                                      | Remote unreachable or unexpected response                     | Retry                                                                      |
+| `ambiguous`                                                                                                                              | Cannot determine whether write landed (timeout)               | Verify through a separate read                                             |
 
 Refusals and conflicts are recorded decisions — the adapter never swallows
 a failure and never retries silently past a refusal.
@@ -183,11 +183,58 @@ RefRead`, the recorded refs' read-only enumeration — `claims()`
   mismatched wiring pushes the binding's recorded ref names over
   another repository's objects.
 
-`repo` crosses to the adapter as read-only configuration data — no
-credential, no network, no environment enters the binding (ADR-0009
-decision 7 stands). The changelog/generation lookup that
-`publishRelease`/`verifyRelease` will need is NOT part of this seam; it
-gets its own decision when Phase 9.3 starts.
+§2.7's deferral is decided in §2.8: the changelog/generation lookup is its
+own read seam, landed with the Phase 9.3 decision (issue #57).
+
+### 2.8 The changelog seam (#57)
+
+`publishRelease` and `verifyRelease` need the recorded changelog the
+idempotency key is built from (§2.4; ADR-0010 decision 6: the attempt's
+generation record, ADR-0008's artifact graph). The generation record holds
+the artifact triple and `contentFingerprint` — not the bytes — and the
+bytes live in the recorded tree the fingerprint names. The seam is reads,
+not a body door: the binding's public surface gains `GitBinding.content`
+(`ContentRead`), a read-only archive of state it already records:
+
+- `content.claim(ref)` — a claim ref's canonical record (`ClaimRecord`:
+  scope, token, holder), the D24 blob's content; enumerable through §2.7
+  but not readable until now.
+- `content.tagFor(scope)` — the tag name the binding's own naming policy
+  derives for a recorded scope: the mint door's derivation made a pure
+  read.
+- `content.tail(attemptId)` — the attempt's recorded record stream,
+  read-only: the ledger's own read path re-exposed without its `append`.
+  The adapter holds no writable port.
+- `content.file(digest, path)` — one file out of the recorded tree the
+  digest names (`git-tree:<oid>` is the binding's own scheme; the binding
+  interprets it). Recorded content only — never the working tree, never
+  `HEAD`.
+
+The adapter derives the projection — it owns the GitHub semantics, the
+binding stays generic: the tag → its minting claim (the recorded claim
+whose `tagFor(scope)` is the tag) → the holder attempt →
+`content.tail(attemptId)` → the completed `artifact:changelog` generation
+record → its `contentFingerprint` → `content.file(fingerprint,
+"CHANGELOG.md")` as the release body, the fingerprint as §2.4's digest
+half.
+
+The tag→attempt linkage is nowhere recorded; it is derived from two
+recorded facts — the claim records (`refs/ecoma/claims/*`, D24's
+canonical blobs, read through `content.claim`) and the mint door's own
+naming derivation (the door mints at the name the claim's scope derives;
+`content.tagFor` makes that derivation a pure read). The tag namespace is
+global (invariant 6), so the derivation matches at most one claim.
+
+- **Rejected — a caller-supplied body:** the idempotency key becomes
+  caller-owned and the adapter can no longer verify what it published
+  (§3's law and #57's silent failure).
+- **Rejected — a fat changelog door on the binding:** the binding would
+  own the adapter's artifact conventions; the derivation stays on the
+  adapter.
+- The attempt without a completed `artifact:changelog` record, or with
+  the file absent from the recorded tree, is `refused(reason:
+"changelog-unrecorded")` (§2.3 gains the reason): a release never
+  publishes bytes the binding did not record.
 
 ## 3. Laws
 
