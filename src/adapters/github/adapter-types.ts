@@ -25,7 +25,11 @@ export interface GitHubCredentials {
  * `already-pushed-different-target` and `release-conflict`.
  */
 export type RefusalReason =
-  "already-pushed-different-target" | "auth-expired" | "rate-limited" | "release-conflict";
+  | "already-pushed-different-target"
+  | "changelog-unrecorded"
+  | "auth-expired"
+  | "rate-limited"
+  | "release-conflict";
 
 /** One ref the sync considered (contract §2.2): pushed, skipped (already
  *  satisfied), or refused. */
@@ -54,6 +58,14 @@ export interface RemoteSync {
   syncRemote(): SyncReport;
 }
 
+/** The release publication unit's surface (contract §2.2; the phase
+ *  9.3 increment): 9.5's `openGitHubAdapter` composes the units behind
+ *  the factory; this module's barrel export is interim until then. */
+export interface Publication {
+  publishRelease(tag: string): ReleaseOutcome;
+  verifyRelease(tag: string): VerificationOutcome;
+}
+
 /** The `publishRelease()` outcome (contract §2.2). */
 export type ReleaseOutcome =
   | { readonly kind: "ok"; readonly url: string }
@@ -65,8 +77,18 @@ export type ReleaseOutcome =
 export type VerificationOutcome =
   | { readonly kind: "verified" }
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
+  | ReleaseAbsent
   | { readonly kind: "transport-failure" }
   | { readonly kind: "ambiguous" };
+
+/** The `verifyRelease()` outcome for a release that does not exist for
+ *  the recorded tag (issue #60; contract §2.2; D28): absence is a
+ *  determinate read — never a retryable transport failure and never a
+ *  refusal of a write. The caller's action is the publication itself
+ *  (the create path is idempotent, §2.4). */
+export interface ReleaseAbsent {
+  readonly kind: "absent";
+}
 
 /** One divergence the reconciliation found (contract §2.2; ADR-0010
  *  decision 8): reported, never silently resolved. */

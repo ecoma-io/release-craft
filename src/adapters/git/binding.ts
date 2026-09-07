@@ -18,8 +18,9 @@ import type {
   ExecutionLedger,
 } from "../../index.js";
 
-import type { BindingConfig, RefRead } from "./binding-types.js";
+import type { BindingConfig, ContentRead, RefRead } from "./binding-types.js";
 import { GitClaimStore } from "./claim-store-git.js";
+import { GitContentRead } from "./content-read.js";
 import { GitLedger } from "./ledger-git.js";
 import { GitArtifactProducer } from "./producer-git.js";
 import { GitAttemptRegister } from "./register-git.js";
@@ -55,6 +56,12 @@ export interface GitBinding {
    *  with the object it names — the claim record's blob, the tag's
    *  peeled commit. */
   readonly refs: RefRead;
+  /** The content read seam (the Phase 9 contract §2.8; D27): the
+   *  release projection's read-only half — the minting claim, the
+   *  naming's derivation, the attempt's recorded stream, and one file
+   *  out of a recorded tree. Reads only: no write is reachable
+   *  through it. */
+  readonly content: ContentRead;
 }
 
 /**
@@ -81,13 +88,15 @@ export function openGitBinding(config: BindingConfig): GitBinding {
       store.release(token);
     },
   };
+  const ledger = new GitLedger(git);
   return {
-    ledger: new GitLedger(git),
+    ledger,
     register: new GitAttemptRegister(git),
     claims,
     mintTag: GitTagDoor(git, config.tagNaming),
     producer: GitArtifactProducer(config.repo),
     repo: config.repo,
     refs: GitRefRead(git, config.tagNaming.namespaces),
+    content: GitContentRead(git, config.tagNaming, ledger),
   };
 }

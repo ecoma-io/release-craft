@@ -39,6 +39,12 @@ export default defineConfig({
     // A glob that stops matching anything is a suite nobody ran. Without this,
     // vitest reports green for zero tests.
     passWithNoTests: false,
+    // The contract fixtures execute real git on real disk (temp repos),
+    // and Moon runs this suite beside lint, format, typecheck, build and
+    // arch — CPU contention can push one long fixture past the 5s
+    // default even though nothing hangs. Give the real-disk suites room
+    // instead of making a hang the only failure mode they can express.
+    testTimeout: 20_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
