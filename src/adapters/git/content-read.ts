@@ -1,7 +1,8 @@
 /**
  * The binding's content read seam (the Phase 9 contract §2.8; D27): the
  * release projection's read half. Every answer resolves from recorded
- * state only — the canonical claim record a ref pins, the declared
+ * state only — the claim records a register ref holds (the per-line
+ * register of ADR-0011; an absent ref is the empty set), the declared
  * naming's own derivation, the ledger's recorded stream, and one file
  * out of the recorded tree a digest names — through the same hermetic
  * runner the binding's other doors run on. No write exists here: the
@@ -12,7 +13,7 @@
 
 import type { ExecutionLedger } from "../../index.js";
 import type { ContentRead, GitTagNaming } from "./binding-types.js";
-import { readClaimRecord } from "./claim-store-git.js";
+import { readRegister } from "./claim-store-git.js";
 import { GitFaultError, type GitRun } from "./git-run.js";
 
 /** The digest prefix the artifact producer records (§2.5): the recorded
@@ -31,7 +32,7 @@ export function GitContentRead(
   ledger: ExecutionLedger,
 ): ContentRead {
   return {
-    claim: (ref) => readClaimRecord(git, ref),
+    claims: (ref) => readRegister(git, ref) ?? [],
     tagFor: (scope) => naming.tagFor(scope),
     tail: (attemptId) => ledger.tail(attemptId),
     file(digest, path) {

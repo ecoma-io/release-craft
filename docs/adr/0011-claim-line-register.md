@@ -46,7 +46,11 @@ nothing less.
    only release signature — first resolves the token through the
    all-register walk decision 3 names, then computes the next set.
    Both land with the existing
-   one-ref CAS (`casAppendCommit` against the observed tip); a lost CAS
+   one-ref CAS (`casAppendCommit` against the observed tip — the observed
+   tip is the same read's: a mutation reads the register once, content and
+   base together, because a base read separately would let a concurrent
+   writer land strictly between the two reads and the old-value check
+   would pass over a set the mutation never saw); a lost CAS
    re-reads and re-evaluates, it never adjudicates against stale state —
    and a release's re-read re-checks the record's presence and removes
    **by token, never by scope**: a release racing the same scope's
@@ -95,7 +99,11 @@ nothing less.
    claim namespace's blob shape is part of the mapping the binding
    owns; a blob without the register envelope is corrupted recorded
    state or a foreign layout, and reading it is a thrown fault, never
-   a silent empty set. This decides the layout change's stance: the
+   a silent empty set. The canonical form is the envelope's own
+   contract: an unsorted or duplicate-scope set, or an element outside
+   the record's fields, refuses with the same voice — the writer sorts
+   before every land, so a set no writer could have produced is
+   corruption, not a value. This decides the layout change's stance: the
    mapping is total — **repositories written by the per-scope layout
    are not readable by the register store and fail loudly on the first
    claim read.** The project is pre-adoption; no migration path is
@@ -114,7 +122,10 @@ nothing less.
    CAS moved nothing; a crash after it left a recorded claim, released
    by token or superseded through the recorded path (E-05/E-09)
    exactly as Phase 4 already provides. Recovery is the next compare-
-   and-set.
+   and-set. Neither mutation bounds that loop: `release` re-reads and
+   re-evaluates exactly as `acquire` does, so the port's release — like
+   the in-memory store's — cannot surface a lost race as an error;
+   sustained same-line contention costs retries, not failures.
 
 7. **Denials match the in-memory store exactly (issue #69, folded
    here).** An exclusion-path denial carries no `holderSequence` — the
@@ -176,15 +187,17 @@ nothing less.
   run over both stores — new suite work, not a re-pin of an existing
   one. The deterministic concurrency suite drives two writers
   one move at a time through a hostile `GitRun` that diverges the
-  register between a loser's read and its CAS: the loser re-evaluates
-  against the diverged tip and lands or denies — never both-accept,
+  register between a loser's read and its CAS — at the CAS itself, and
+  at the read the CAS bases on (the window whose closure pins the
+  single-read base): the loser re-evaluates against the diverged tip
+  and lands or denies — never both-accept,
   never a stale adjudication. The release pins hold the removal key:
   a release racing the same scope's re-acquisition deletes the old
   holder's record, never the new holder's. The crash windows pin the
   register at a
   consistent tip on either side of every CAS. The #69 pins hold the
-  denial shapes. The empty-register and foreign-blob pins hold
-  decision 4 and 5's postures.
+  denial shapes. The empty-register, foreign-blob, and non-canonical-form
+  pins hold decision 4 and 5's postures.
 - **Recorded state grows with claim churn.** A register mutation
   appends one full-set commit, so every accept and release on a line
   adds a commit where the per-scope lease's release deleted its ref —
