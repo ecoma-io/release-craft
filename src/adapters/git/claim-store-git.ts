@@ -5,11 +5,12 @@
  * lineId's UTF-8 bytes>` — whose tip commit holds the line's claim set in
  * canonical form: `{"claims":[<claim record>…]}`, the records sorted by
  * their scope's canonical JSON. Every mutation is a compare-and-set of the
- * whole set against the observed tip, so the exclusion predicate and the
- * accept are one atomic transition per line: the same CAS that creates the
- * claim checked the line's other claims, and the scan-then-CAS window of
- * the per-scope mapping (#47) does not exist. A lost CAS re-reads and
- * re-evaluates — it never adjudicates against stale state. A
+ * whole set against the tip of the same read the set came from — content
+ * and base in one read — so the exclusion predicate and the accept are one
+ * atomic transition per line: the same CAS that creates the claim checked
+ * the line's other claims, and the scan-then-CAS window of the per-scope
+ * mapping (#47) does not exist. A lost CAS re-reads and re-evaluates — it
+ * never adjudicates against stale state. A
  * claim-namespace blob that is not a register refuses loudly: corrupted
  * recorded state or a foreign layout is a thrown fault, never a silent
  * empty set (repositories written by the per-scope layout fail on the
@@ -37,9 +38,9 @@ export const CLAIM_REF_NAMESPACE = "refs/ecoma/claims/";
 
 /**
  * The claim record a register holds: the held claim's own values — the
- * canonical serialized form, no envelope of the binding's own. The record's
- * `kind` discriminant is its presence in the register, so the stored form is
- * the claim minus `kind`.
+ * canonical serialized form, no envelope of the binding's own. The stored
+ * element carries the claim's `kind: "claim"` discriminant (see
+ * `recordElement`); every record in a register is a claim.
  */
 export interface ClaimRecord {
   readonly scope: ClaimScope;
@@ -53,20 +54,20 @@ export interface ClaimRecord {
 const recordElement = (record: ClaimRecord): string =>
   canonicalJson({ kind: "claim", scope: record.scope, token: record.token, holder: record.holder });
 
+/** The record order the canonical form promises: lexicographic over the
+ *  scopes' canonical JSON — a total order, and scopes are unique within a
+ *  register (same scope is the same key). */
+const compareByScopeJson = (left: ClaimRecord, right: ClaimRecord): number =>
+  canonicalJson(left.scope) < canonicalJson(right.scope)
+    ? -1
+    : canonicalJson(left.scope) > canonicalJson(right.scope)
+      ? 1
+      : 0;
+
 /** The register envelope's canonical form: the line's claim set, the
- *  records sorted by their scope's canonical JSON — a total order, and
- *  scopes are unique within a register (same scope is the same key). */
+ *  records in `compareByScopeJson` order. */
 const canonicalRegister = (claims: readonly ClaimRecord[]): string =>
-  `{"claims":[${[...claims]
-    .sort((left, right) =>
-      canonicalJson(left.scope) < canonicalJson(right.scope)
-        ? -1
-        : canonicalJson(left.scope) > canonicalJson(right.scope)
-          ? 1
-          : 0,
-    )
-    .map(recordElement)
-    .join(",")}]}`;
+  `{"claims":[${[...claims].sort(compareByScopeJson).map(recordElement).join(",")}]}`;
 
 /** The line's register ref: the sha256 over the lineId's UTF-8 bytes. */
 export function claimRegisterRefFor(lineId: string): string {
@@ -75,12 +76,15 @@ export function claimRegisterRefFor(lineId: string): string {
 }
 
 /** One record's shape check — the fields the store computes over must be
- *  what the canonical form promises; anything else is corrupted recorded
- *  state and refuses loudly (ADR-0011 decision 5). */
+ *  what the canonical form promises, exactly: `kind: "claim"`, the record's
+ *  four fields, no others; anything else is corrupted recorded state and
+ *  refuses loudly (ADR-0011 decision 5). */
 const asRecord = (value: unknown): ClaimRecord => {
   if (
     value !== null &&
     typeof value === "object" &&
+    "kind" in value &&
+    value.kind === "claim" &&
     "scope" in value &&
     value.scope !== null &&
     typeof value.scope === "object" &&
@@ -91,23 +95,64 @@ const asRecord = (value: unknown): ClaimRecord => {
     "token" in value &&
     typeof value.token === "string" &&
     "holder" in value &&
-    typeof value.holder === "string"
+    typeof value.holder === "string" &&
+    recordKeys(value)
   ) {
     return value as ClaimRecord;
   }
   throw new TypeError(
-    "a register holds claim records; an element lacks the record's fields — a scope with a string lineId and kind, a string token, a string holder",
+    "a register holds claim records in their canonical form — kind claim, a scope with a string lineId and kind, a string token, a string holder, and no other fields",
   );
 };
 
+/** The element carries exactly the record's four fields — an extra field is
+ *  as foreign as a missing one (the canonical form is the whole shape). */
+const recordKeys = (value: object): boolean => {
+  const keys = Object.keys(value).sort();
+  return (
+    keys.length === 4 &&
+    keys[0] === "holder" &&
+    keys[1] === "kind" &&
+    keys[2] === "scope" &&
+    keys[3] === "token"
+  );
+};
+
+/** The set-level canonical check: the records must already sit in
+ *  `compareByScopeJson` order with no scope repeated. The writer sorts
+ *  before every land; a read that accepted less would compute over a
+ *  register no writer could have produced (ADR-0011 decision 5). */
+const asRegister = (records: readonly ClaimRecord[], ref: string): readonly ClaimRecord[] => {
+  let previous: ClaimRecord | undefined;
+  for (const record of records) {
+    if (previous !== undefined && compareByScopeJson(previous, record) >= 0) {
+      throw new TypeError(
+        `a register's records are sorted by their scope's canonical JSON and scopes are unique; ${ref} is not`,
+      );
+    }
+    previous = record;
+  }
+  return records;
+};
+
 /**
- * The line's claim set, read from the register ref — or null when the
- * register ref is absent (an unclaimed line, the twin of an empty one).
- * A blob that is not a register — corrupted recorded state, or the
- * per-scope layout's records — throws: reading it as an empty set would
- * read a foreign layout as an unclaimed line.
+ * The register's content and the base of its next compare-and-set, from
+ * one read: `tip` is the ref value `claims` was read through. The pair is
+ * a mutation's whole opening state — a base read separately from the
+ * content would let a concurrent writer land strictly between the two
+ * reads, and the CAS's old-value check would then pass over a set the
+ * mutation never saw (the lost update the deterministic concurrency suite
+ * pins). Null when the register ref is absent (an unclaimed line, the twin
+ * of an empty one). A blob that is not a register — corrupted recorded
+ * state, or the per-scope layout's records — throws: reading it as an
+ * empty set would read a foreign layout as an unclaimed line.
  */
-export function readRegister(git: GitRun, ref: string): readonly ClaimRecord[] | null {
+export interface RegisterRead {
+  readonly tip: string;
+  readonly claims: readonly ClaimRecord[];
+}
+
+export function readRegisterAt(git: GitRun, ref: string): RegisterRead | null {
   const tip = readRef(git, ref);
   if (tip === null) {
     return null;
@@ -123,7 +168,14 @@ export function readRegister(git: GitRun, ref: string): readonly ClaimRecord[] |
       `the claim namespace pins register envelopes ({"claims":[…]}); ${ref} does not`,
     );
   }
-  return envelope.claims.map(asRecord);
+  return { tip, claims: asRegister(envelope.claims.map(asRecord), ref) };
+}
+
+/** The set, read from the register ref — or null when the ref is absent.
+ *  Verification and the all-register walk read the set alone; only a
+ *  mutation needs the tip beside it. */
+export function readRegister(git: GitRun, ref: string): readonly ClaimRecord[] | null {
+  return readRegisterAt(git, ref)?.claims ?? null;
 }
 
 /** Every claim record the repository holds — the all-register walk the
@@ -162,7 +214,9 @@ export class GitClaimStore implements ClaimStore {
     // a lost CAS re-reads and re-evaluates from the new tip, never
     // adjudicating against stale state (ADR-0011 decision 2).
     for (;;) {
-      const claims = readRegister(this.#git, ref) ?? [];
+      // One read: the set and the base of this iteration's CAS together.
+      const read = readRegisterAt(this.#git, ref);
+      const claims = read?.claims ?? [];
       // Same scope, same holder: idempotent re-acquisition — no CAS, the
       // register already holds the record.
       const existing = claims.find(
@@ -185,8 +239,12 @@ export class GitClaimStore implements ClaimStore {
         token: randomBytes(32).toString("hex"),
         holder: attemptId,
       };
-      const tip = readRef(this.#git, ref);
-      const commit = casAppendCommit(this.#git, ref, canonicalRegister([...claims, record]), tip);
+      const commit = casAppendCommit(
+        this.#git,
+        ref,
+        canonicalRegister([...claims, record]),
+        read?.tip ?? null,
+      );
       if (commit !== null) {
         return deepFreeze({
           kind: "claim",
@@ -237,17 +295,17 @@ export class GitClaimStore implements ClaimStore {
     // deleted (ADR-0011 decision 4), so the write path stays one
     // primitive.
     for (;;) {
-      const claims = readRegister(this.#git, ref);
-      if (claims === null || !claims.some((entry) => entry.token === token)) {
+      // One read: the set and the base of this iteration's CAS together.
+      const read = readRegisterAt(this.#git, ref);
+      if (read === null || !read.claims.some((entry) => entry.token === token)) {
         return;
       }
-      const tip = readRef(this.#git, ref);
       if (
         casAppendCommit(
           this.#git,
           ref,
-          canonicalRegister(claims.filter((entry) => entry.token !== token)),
-          tip,
+          canonicalRegister(read.claims.filter((entry) => entry.token !== token)),
+          read.tip,
         ) !== null
       ) {
         return;

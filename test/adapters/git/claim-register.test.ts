@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -16,9 +16,10 @@ import {
 import {
   type Claim,
   type ClaimDenied,
-  canonicalJson,
   type ClaimScope,
   type ClaimStore,
+  type ClaimVerification,
+  canonicalJson,
   MemoryClaimStore,
 } from "../../../src/index.js";
 import { withTempRepo } from "./temp-repo.js";
@@ -27,11 +28,12 @@ import { withTempRepo } from "./temp-repo.js";
  * The per-line claim register (ADR-0011) — the pins its Consequences name:
  * the deterministic concurrency suite (two writers one move at a time,
  * through a hostile `git` on PATH that diverges the register between a
- * loser's evaluation and its CAS — the loser re-evaluates against the
- * diverged tip and lands or denies, never both-accept, never a stale
- * adjudication), the release-by-token pin, the crash window, the
- * loud foreign-blob refusals, the #69 denial parity, and the dual-backend
- * scenario list run over both stores.
+ * loser's evaluation and its CAS — at the CAS itself, and at the read the
+ * CAS bases on, pinning the single-read base — so the loser re-evaluates
+ * against the diverged tip and lands or denies, never both-accept, never a
+ * stale adjudication), the release-by-token pin, the crash window, the
+ * loud foreign-blob and non-canonical refusals, the #69 denial parity, and
+ * the dual-backend scenario list run over both stores.
  */
 
 const stableVersion = (version: string, lineId = "line-main"): ClaimScope => ({
@@ -84,17 +86,26 @@ const outcome = (settled: Claim | ClaimDenied | undefined): Claim | ClaimDenied 
 };
 
 /**
- * The hostile `git`: a PATH shim that intercepts the store's first
- * compare-and-set on the register ref and, before delegating, makes one
- * divergent move of its own — the concurrent writer's landing — or dies
- * mid-write (the crash window). The real CAS then fails on git's own
- * old-value check, exactly as a concurrent writer's ref move fails it.
+ * The hostile `git`: a PATH shim that intercepts one step of the store's
+ * claim cycle and, before delegating, makes one divergent move of its own
+ * — the concurrent writer's landing — or dies mid-write (the crash
+ * window). Two interception points, the two windows the store's discipline
+ * must close: the compare-and-set itself (`update-ref` on the register
+ * ref — the window git's own old-value check arbitrates; the loser loses
+ * the CAS and re-evaluates), and the Nth post-arm read of the register ref
+ * (`fireOnRead`) — the read-to-CAS window, where a writer's landing must
+ * be either seen by the mutation's read or caught by the old-value check,
+ * never passed over.
  */
 interface Shim {
   readonly dir: string;
-  /** Arms the trap: the next compare-and-set on the register ref is
-   *  intercepted. Setup moves before `arm()` pass through untouched. */
+  /** Arms the trap: the intercepted step is watched from here on. Setup
+   *  moves before `arm()` pass through untouched. */
   arm(): void;
+  /** Whether the trap fired — the divergent move landed (or the crash
+   *  happened). False means the intercepted condition never occurred,
+   *  which is itself an observation: the watched window does not exist. */
+  fired(): boolean;
   cleanup(): void;
 }
 
@@ -103,6 +114,9 @@ const buildShim = (spec: {
   /** The register blob the concurrent writer lands, when diverging. */
   readonly payload?: string;
   readonly mode: "diverge" | "crash";
+  /** Fire on the Nth post-arm `rev-parse` of the register ref instead of
+   *  the compare-and-set. */
+  readonly fireOnRead?: number;
 }): Shim => {
   const dir = mkdtempSync(join(tmpdir(), "release-craft-git-hostile-"));
   const found = spawnSync("which", ["git"], { encoding: "utf8" });
@@ -113,6 +127,7 @@ const buildShim = (spec: {
   }
   const armed = join(dir, "armed");
   const flag = join(dir, "fired");
+  const counter = join(dir, "reads");
   const payload = join(dir, "payload.json");
   if (spec.payload !== undefined) {
     writeFileSync(payload, spec.payload);
@@ -126,15 +141,33 @@ const buildShim = (spec: {
           `"${real}" update-ref "${spec.registerRef}" "$COMMIT" || exit 1`,
         ].join("\n")
       : "kill -9 $$";
-  const script = [
-    "#!/bin/sh",
-    `if [ "$1" = "update-ref" ] && [ "$2" = "${spec.registerRef}" ] && [ -e "${armed}" ] && [ ! -e "${flag}" ]; then`,
-    `  touch "${flag}"`,
-    diverge,
-    "fi",
-    `exec "${real}" "$@"`,
-    "",
-  ].join("\n");
+  // The `rev-parse` argv is `rev-parse --verify --quiet <ref>`: the ref is
+  // `$4`. Each watched read counts; the Nth fires. The delegation keeps
+  // the original arguments, so the read returns whatever the ref now
+  // holds — the diverged tip when the move landed first.
+  const intercept =
+    spec.fireOnRead === undefined
+      ? [
+          `if [ "$1" = "update-ref" ] && [ "$2" = "${spec.registerRef}" ] && [ -e "${armed}" ] && [ ! -e "${flag}" ]; then`,
+          `  touch "${flag}"`,
+          diverge,
+          "fi",
+        ]
+      : [
+          `if [ "$1" = "rev-parse" ] && [ "$4" = "${spec.registerRef}" ] && [ -e "${armed}" ] && [ ! -e "${flag}" ]; then`,
+          `  N=$(cat "${counter}" 2>/dev/null || echo 0)`,
+          `  N=$((N+1))`,
+          `  echo "$N" > "${counter}"`,
+          `  if [ "$N" -ge ${String(spec.fireOnRead)} ]; then`,
+          `    touch "${flag}"`,
+          diverge
+            .split("\n")
+            .map((line) => `  ${line}`)
+            .join("\n"),
+          "  fi",
+          "fi",
+        ];
+  const script = ["#!/bin/sh", ...intercept, `exec "${real}" "$@"`, ""].join("\n");
   const shim = join(dir, "git");
   writeFileSync(shim, script);
   chmodSync(shim, 0o755);
@@ -143,6 +176,7 @@ const buildShim = (spec: {
     arm: () => {
       writeFileSync(armed, "");
     },
+    fired: () => existsSync(flag),
     cleanup: () => {
       rmSync(dir, { recursive: true, force: true });
     },
@@ -229,6 +263,118 @@ describe("the per-line claim register (ADR-0011)", () => {
             holder: "attempt_b",
           });
           expect(registerBlob(git, "line-main")).toBe(envelope([writerB]));
+        } finally {
+          shim.cleanup();
+        }
+      });
+    });
+
+    it("the register's content and its CAS base come from one read — a writer landing inside the window is never passed over", () => {
+      withTempRepo("register-single-read", (repo, git) => {
+        // Writer B (release-line on the shared line) lands at the second
+        // read of the register — strictly inside the read-to-CAS window.
+        // A base read separately from the content would take B's landing
+        // as its own base and pass the old-value check over a register A
+        // never saw: B destroyed, both acquires answered (the lost update).
+        const writerB: ClaimRecord = {
+          scope: releaseLine(),
+          token: "b".repeat(64),
+          holder: "attempt_b",
+        };
+        const shim = buildShim({
+          registerRef: claimRegisterRefFor("line-main"),
+          payload: envelope([writerB]),
+          mode: "diverge",
+          fireOnRead: 2,
+        });
+        try {
+          let settledMaybe: Claim | ClaimDenied | undefined;
+          withHostilePath(shim.dir, () => {
+            shim.arm();
+            settledMaybe = new GitClaimStore(repo).acquire(stableVersion("1.2.3"), "attempt_a");
+          });
+          const settled = outcome(settledMaybe);
+          // The two worlds the window admits, decided by whether the trap
+          // fired. Fired — B's landing was intercepted inside it and must
+          // have been caught by the old-value check: the loop re-read, the
+          // exclusion law denied, and B's record is the register's whole
+          // content. Not fired — the CAS based itself on a read the trap
+          // never saw (one taken before the arm), B never landed, and A's
+          // accept is the plain first write.
+          const expectedOutcome: Claim | ClaimDenied = shim.fired()
+            ? { kind: "denied", scope: stableVersion("1.2.3"), holder: "attempt_b" }
+            : {
+                kind: "claim",
+                scope: stableVersion("1.2.3"),
+                token: settled.kind === "claim" ? settled.token : "",
+                holder: "attempt_a",
+              };
+          const expectedRecords: readonly ClaimRecord[] =
+            settled.kind === "claim"
+              ? [{ scope: settled.scope, token: settled.token, holder: settled.holder }]
+              : [writerB];
+          expect(settled).toEqual(expectedOutcome);
+          expect(registerBlob(git, "line-main")).toBe(envelope(expectedRecords));
+        } finally {
+          shim.cleanup();
+        }
+      });
+    });
+
+    it("a release's stale read never clobbers a claim that landed inside its window", () => {
+      withTempRepo("register-release-single-read", (repo, git) => {
+        const scope = prerelease(7);
+        // The late arrival: a coexisting claim that lands inside A's
+        // release window. The release's stale set — read before it — does
+        // not hold it, so a CAS based on a separate later read would wipe
+        // it: a record removed that the release never observed.
+        const lateArrival: ClaimRecord = {
+          scope: stableVersion("1.2.3"),
+          token: "c".repeat(64),
+          holder: "attempt_c",
+        };
+        const shim = buildShim({
+          registerRef: claimRegisterRefFor("line-main"),
+          payload: envelope([lateArrival]),
+          mode: "diverge",
+          fireOnRead: 3,
+        });
+        try {
+          let staleToken = "";
+          withHostilePath(shim.dir, () => {
+            // Setup runs disarmed: A's lease lands untouched. The release
+            // then walks the registers (read 1), reads the line's register
+            // (read 2), and bases its CAS on a further read (read 3) —
+            // when the base is that third read, the window exists.
+            const store = new GitClaimStore(repo);
+            staleToken = asClaim(store.acquire(scope, "attempt_a")).token;
+            shim.arm();
+            store.release(staleToken);
+          });
+          const witness = new GitClaimStore(repo);
+          // The two worlds the window admits. Fired — the arrival landed
+          // inside it: the old-value check refused the stale CAS, the loop
+          // re-read, and the removal landed on top of the arrival, by
+          // token — the arrival still held. Not fired — the CAS based
+          // itself on a read the trap never saw, the arrival never landed,
+          // and the removal is the plain one: the register empties.
+          const expectedArrival: ClaimVerification = shim.fired()
+            ? {
+                kind: "held",
+                claim: {
+                  kind: "claim",
+                  scope: lateArrival.scope,
+                  token: lateArrival.token,
+                  holder: lateArrival.holder,
+                },
+              }
+            : { kind: "lost" };
+          expect(witness.verify(lateArrival.token)).toEqual(expectedArrival);
+          // The stale lease is gone in either world — removed by token.
+          expect(witness.verify(staleToken)).toEqual({ kind: "lost" });
+          expect(registerBlob(git, "line-main")).toBe(
+            shim.fired() ? envelope([lateArrival]) : '{"claims":[]}',
+          );
         } finally {
           shim.cleanup();
         }
@@ -357,6 +503,36 @@ describe("the per-line claim register (ADR-0011)", () => {
         // A record without the fields the store computes over is as
         // foreign as a whole non-register blob.
         land('{"claims":[{"scope":{},"token":"t","holder":"h"}]}');
+        expect(() => store.verify("any-token")).toThrow(TypeError);
+      });
+    });
+
+    it("a register outside the canonical form refuses loudly", () => {
+      withTempRepo("register-non-canonical", (repo, git) => {
+        const land = (content: string): void => {
+          const blob = git(["hash-object", "-w", "--stdin"], content).trim();
+          const tree = git(["mktree"], `100644 blob ${blob}\trecord\n`).trim();
+          const commit = git(["commit-tree", tree, "-m", "ecoma: append"]).trim();
+          git(["update-ref", claimRegisterRefFor("line-main"), commit]);
+        };
+        const record = (scope: ClaimScope, token: string): string =>
+          recordJson({ scope, token, holder: "attempt_x" });
+        const store = new GitClaimStore(repo);
+        // The writer sorts before every land; a set the writer could not
+        // have produced is corrupted recorded state, with the same voice
+        // as a foreign layout (ADR-0011 decision 5).
+        land(
+          `{"claims":[${record(stableVersion("1.3.0"), "c".repeat(64))},${record(stableVersion("1.2.3"), "b".repeat(64))}]}`,
+        );
+        expect(() => store.verify("any-token")).toThrow(TypeError);
+        land(
+          `{"claims":[${record(stableVersion("1.2.3"), "b".repeat(64))},${record(stableVersion("1.2.3"), "c".repeat(64))}]}`,
+        );
+        expect(() => store.verify("any-token")).toThrow(TypeError);
+        // An extra field is as foreign as a missing one.
+        land(
+          '{"claims":[{"kind":"claim","scope":{"kind":"release-line","lineId":"line-main"},"token":"t","holder":"h","extra":1}]}',
+        );
         expect(() => store.verify("any-token")).toThrow(TypeError);
       });
     });

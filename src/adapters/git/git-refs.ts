@@ -113,18 +113,6 @@ export function readBlob(git: GitRun, oid: string): string {
   return git(["cat-file", "blob", oid]);
 }
 
-/**
- * Deletes the ref only from the expected value — the lease release's
- * check-and-set (ADR-0009 decision 4). False means nothing was deleted.
- */
-export function casDeleteRef(git: GitRun, ref: string, expected: string): boolean {
-  if (readRef(git, ref) !== expected) {
-    return false;
-  }
-  git(["update-ref", "-d", ref, expected]);
-  return true;
-}
-
 /** Writes a blob and returns its oid. */
 export function writeBlob(git: GitRun, content: string): string {
   return git(["hash-object", "-w", "--stdin"], content).trim();

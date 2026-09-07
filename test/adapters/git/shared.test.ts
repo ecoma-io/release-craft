@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import {
   casAppendCommit,
   casCreateRef,
-  casDeleteRef,
   commitRecord,
   firstParentHistory,
   frozenParse,
@@ -115,26 +114,6 @@ describe("the git binding's shared surface", () => {
       const second = asOid(casAppendCommit(git, ref, '{"n":2}', first));
       const third = asOid(casAppendCommit(git, ref, '{"n":3}', second));
       expect(firstParentHistory(git, ref)).toStrictEqual([first, second, third]);
-    });
-  });
-
-  it("deletes a ref only from the expected value", () => {
-    withRepo((git) => {
-      const head = readRef(git, "HEAD");
-      if (head === null) {
-        throw new Error("the fixture's root commit is missing");
-      }
-      const ref = "refs/heads/lease";
-      casCreateRef(git, ref, head);
-
-      // A wrong expectation deletes nothing and is not a fault.
-      expect(casDeleteRef(git, ref, ZEROS)).toBe(false);
-      expect(refExists(git, ref)).toBe(true);
-
-      // The expected value deletes, and a second release reads lost.
-      expect(casDeleteRef(git, ref, head)).toBe(true);
-      expect(refExists(git, ref)).toBe(false);
-      expect(casDeleteRef(git, ref, head)).toBe(false);
     });
   });
 
