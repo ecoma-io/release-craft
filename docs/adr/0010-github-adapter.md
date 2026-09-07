@@ -120,7 +120,7 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
      satisfied).
    - `refused` — the remote refused the write with a reason
      (`already-pushed-different-target`, `auth-expired`, `rate-limited`,
-     `release-conflict`).
+     `release-conflict`, `changelog-unrecorded`).
    - `transport-failure` — the remote was unreachable or returned an
      unexpected response; the caller may retry.
    - `ambiguous` — the adapter cannot determine whether the write landed
