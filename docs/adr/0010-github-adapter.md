@@ -143,15 +143,19 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    - `ambiguous` — the adapter cannot determine whether the write landed
      (e.g., timeout with no response); the caller must verify through a
      separate read.
-     Amendment (issue #66, D30): reads return narrowed versions of the
-     same classes. A read never returns `ambiguous` — that class names a
-     write whose landing is unknown, and a read cannot have landed unseen
-     — and a read's `refused` carries only `auth-expired` or
-     `rate-limited`, the operator-intervention reasons. A read observation
-     that never became usable (unreachable, unexpected status, a body that
-     is not a list, a compared field that is not a string) is
-     `transport-failure` — never a thrown exception and never an empty
-     listing, which would read as a clean observation.
+     Amendment proposed in #66 (the implementation PR follows): the
+     observation channel returns narrowed versions of the same classes.
+     An observation never returns `ambiguous` — that class names a write
+     whose landing is unknown, and a read cannot have landed unseen —
+     and a listing's `refused` carries only `auth-expired` or
+     `rate-limited`, the operator-intervention reasons (`verifyRelease`'s
+     `changelog-unrecorded` and `release-conflict` refusals are
+     comparison decisions over recorded state, not provider refusals; a
+     listing never carries them). An observation that never became
+     usable (unreachable, unexpected status, a body that is not a list,
+     a compared field that is not a string) is `transport-failure` —
+     never a thrown exception and never an empty listing, which would
+     read as a clean observation.
 
 8. **Pre-existing remote state is discovered at open time and reconciled
    with the binding's recorded state.** On `openGitHubAdapter`, the adapter
@@ -167,12 +171,16 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
      Divergence is reported, never silently resolved. The adapter never
      writes to the binding based on remote discovery — the binding is the
      truth, the remote is checked against it.
-     Amendment (issue #66, D30): the report claims its comparison only
-     over the listings that completed — each listing carries its own
-     observation outcome (`listed`, `refused`, `transport-failure`), and
-     divergences and verified tags exist only on `listed`. A report over
-     an unobserved listing is inconclusive, never clean: a falsely clean
-     comparison is unrepresentable in the shape.
+     Amendment proposed in #66 (the implementation PR follows): the
+     report claims its comparison only over the listings that are
+     `listed` — each listing carries its own observation outcome
+     (`listed`, `refused` with the operator-intervention reason and the
+     refusal detail, `transport-failure`), and divergences and verified
+     tags exist only on `listed`. Both listings are always requested; a
+     failed listing never preempts its sibling. A report over an
+     unobserved listing is inconclusive, never clean: over an unobserved
+     remote, a comparison that never ran is unrepresentable as a passed
+     one.
 
 9. **Rate-limit and provider-failure semantics are documented, not
    silently swallowed.** If a GitHub API call returns a rate-limit

@@ -154,8 +154,8 @@ inventory; the class `adapter` is the Phase 9 layer's own. The 53-row
 census and the gap ledger above are unchanged. The 9.5 assembly (#65,
 D29) composed the three units behind the §2.6 barrel: R-14's adapter
 half is pinned by `test/adapters/github/adapter.test.ts` (the barrel's
-runtime surface is the factory), and the classifier pins behind §2.3
-rows 8–9 moved to the white-box suite the contract §4 names as its one
+runtime surface is the factory), and the classifier pins behind §4
+scenarios 8–9 moved to the white-box suite the contract §4 names as its one
 exception. R-15/R-16 (issue #66, D30) pin the reconciliation's
 listing-failure outcomes — their fixtures land with the shape-change PR
 that re-pins scenarios 10–12 on the amended report.

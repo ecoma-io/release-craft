@@ -87,8 +87,8 @@ interface GitHubAdapter {
 
   /** Discover pre-existing remote state (tags, releases) and compare
    *  against the binding's recorded state. Each listing carries its own
-   *  observation outcome; divergence is claimed only over the listings
-   *  that completed (issue #66). */
+   *  observation outcome; comparison results are claimed only by the
+   *  listings that are `listed` (issue #66). */
   reconcile(): ReconciliationReport;
 }
 ```
@@ -105,31 +105,37 @@ caller's action is the publication itself — `publishRelease`'s create
 path is idempotent (§2.4).
 
 `reconcile`'s report claims its comparison only over the listings that
-completed (issue #66): each of the two observations — the tag listing,
-the release listing — carries its own outcome on the report, and the
-comparison's results live only on the `listed` outcome.
+are `listed` (issue #66): each of the two observations — the tag
+listing, the release listing — carries its own outcome on the report,
+and the comparison's results live only on the `listed` outcome. Both
+listings are always requested; one listing's failure never preempts
+the other's, and each outcome describes the request the adapter made.
 
 - `listed` — the observation is determinate: the comparison over that
   resource ran, and its divergences (and, for tags, its verified tags)
   are claimed. An empty listing is a determinate clean observation —
   absence, not failure (the listing shape's twin of `verifyRelease`'s
   `absent`).
-- `refused` — the provider declined the read. A read is refused only
-  for `auth-expired` or `rate-limited` — the operator-intervention
-  classes; the write-conflict reasons name writes and a read never
-  carries them.
+- `refused` — the provider declined the observation, with the reason
+  and the refusal detail (decision 9's rate-limit reset timestamp on
+  `rate-limited`). A listing's refusal carries only `auth-expired` or
+  `rate-limited` — the operator-intervention classes; the write-conflict
+  and projection reasons (`release-conflict`, `changelog-unrecorded`,
+  `already-pushed-different-target`) name writes and recorded-state
+  decisions, and a listing never carries them.
 - `transport-failure` — the listing never became a usable observation:
   the remote was unreachable, answered with any other status, returned
   a body that is not a list, or returned a row whose compared field is
   not a string (§2.3's "unexpected response" — a lying listing is
   unobserved, never partially compared).
 
-The shape makes a falsely clean report unrepresentable: an unobserved
-listing carries no divergences and no verified tags. The caller's
-obligation is symmetric — a report over an unobserved listing is
-inconclusive, not clean, and state advancement never reads it as a
-passed comparison. Reads never return `ambiguous`: that class names a
-write whose landing is unknown, and a read cannot have landed unseen.
+The shape makes an unobserved listing unrepresentable as a passed
+comparison: an unobserved listing carries no divergences and no
+verified tags. The caller's obligation is symmetric — a report over an
+unobserved listing is inconclusive, not clean, and no caller may read
+it as a passed comparison. A listing never returns `ambiguous`: that
+class names a write whose landing is unknown, and an observation cannot
+have landed unseen.
 
 ### 2.3 Failure classes
 
@@ -145,13 +151,20 @@ Every remote operation returns one of:
 Refusals and conflicts are recorded decisions — the adapter never swallows
 a failure and never retries silently past a refusal.
 
-The classes were minted for the write units and reads reuse them
-narrowed (issue #66): a read never returns `ambiguous`, and a read's
-`refused` carries only `auth-expired` and `rate-limited` — the
-operator-intervention reasons. The classification itself is one table
-shared by every unit that reads the API transport (rate-limit on 429 or
-a 403 with the budget spent; auth on 401 or any other 403; status 0 and
-everything else non-200 on a read → `transport-failure`).
+The classes were minted for the write units and the observation channel
+reuses them narrowed (issue #66): an observation never returns
+`ambiguous`, and a listing's `refused` carries only `auth-expired` and
+`rate-limited` — the operator-intervention reasons. (`verifyRelease`
+additionally refuses over recorded state — `changelog-unrecorded`,
+`release-conflict`; those are comparison decisions, not provider
+refusals, and a listing never carries them.) On the report, a listing's
+`listed` is the read's `ok` — the comparison's rows; `absent` and
+`verified` are the release read's determinate satisfactory outcomes.
+The classification itself is one table shared by every unit that reads
+the API transport (rate-limit on 429 or a 403 with the budget spent;
+auth on 401 or any other 403; status 0 and every other non-200 status
+the unit has not pinned a determinate read for — the release read's
+404 is `absent` — → `transport-failure`).
 
 ### 2.4 Idempotency identity
 
@@ -309,13 +322,14 @@ All adapter tests import through `src/adapters/github/index.js` only
 (barrel-only). The git binding's tests remain the binding's own. Engine
 tests never import the adapter. The one deliberate exception, landed in
 the 9.5 assembly (#65): the failure classifier's stderr-to-refusal pins
-(§2.3 rows 8–9, the git-transport half) live in a white-box suite that
+(§4 scenarios 8–9, the git-transport half) live in a white-box suite that
 imports `classifyGitFailure` directly — no public outcome can reach the
 rate-limit or auth-expired phrases hermetically, since they arrive in
 GitHub's own sideband or through a credential negotiation a local server
 cannot reproduce determinately; the hermetically reachable public paths
-(row 7's transport failure through `syncRemote()`, row 13's ambiguous
-through `publishRelease()`) stay pinned through the public doors. The
+(§4 scenario 7's transport failure through `syncRemote()`, §4 scenario
+13's ambiguous through `publishRelease()`) stay pinned through the
+public doors. The
 suite declares the exception in its header.
 
 The phase's named scenarios:
@@ -359,6 +373,7 @@ The phase's named scenarios:
     verified tag.
 16. **Reconciliation — refused listing** (issue #66) — a rate-limit or
     auth failure on a listing; the report carries `refused` with the
-    reason for that listing and claims no comparison over it. A listing
-    the sibling of an observed one never demotes the observed
-    comparison: each listing's outcome stands on its own.
+    reason and the refusal detail for that listing (decision 9's reset
+    timestamp on `rate-limited`) and claims no comparison over it. Both
+    listings are always requested: a refused or failed listing never
+    preempts its sibling, and each outcome stands on its own.
