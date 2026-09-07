@@ -47,6 +47,13 @@ export interface SyncReport {
   readonly refs: readonly SyncedRef[];
 }
 
+/** The remote synchronization unit's surface (contract §2.2; the phase
+ *  9.2 increment): the one operation this PR ships. 9.5's
+ *  `openGitHubAdapter` composes the units behind the factory. */
+export interface RemoteSync {
+  syncRemote(): SyncReport;
+}
+
 /** The `publishRelease()` outcome (contract §2.2). */
 export type ReleaseOutcome =
   | { readonly kind: "ok"; readonly url: string }
