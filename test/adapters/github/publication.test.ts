@@ -13,12 +13,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  GitReleasePublication,
+  openGitHubAdapter,
+  type GitHubAdapter,
   type GitHubCredentials,
   type GitHubRequestInit,
   type GitHubResponse,
   type GitHubTransport,
-  type Publication,
   type ReleaseOutcome,
   type VerificationOutcome,
 } from "../../../src/adapters/github/index.js";
@@ -110,7 +110,7 @@ interface PublicationRepo {
   readonly repo: string;
   readonly git: GitRun;
   binding(): GitBinding;
-  publication(transport: GitHubTransport): Publication;
+  adapter(transport: GitHubTransport): GitHubAdapter;
 }
 
 const withPublicationRepo = (_name: string, fn: (fixture: PublicationRepo) => void): void => {
@@ -124,8 +124,8 @@ const withPublicationRepo = (_name: string, fn: (fixture: PublicationRepo) => vo
         opened ??= openGitBinding({ repo: temp.repo, tagNaming: naming });
         return opened;
       },
-      publication(transport: GitHubTransport): Publication {
-        return GitReleasePublication(this.binding(), credentials, transport);
+      adapter(transport: GitHubTransport): GitHubAdapter {
+        return openGitHubAdapter(this.binding(), credentials, transport);
       },
     });
   } finally {
@@ -211,7 +211,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport, calls } = fakeTransport((call) =>
         call.init?.method === "POST" ? createdResponse() : notFoundResponse(),
       );
-      const outcome: ReleaseOutcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome: ReleaseOutcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "ok", url: RELEASE_URL });
       const posts = calls.filter((call) => call.init?.method === "POST");
       expect(posts).toHaveLength(1);
@@ -228,7 +228,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("retry", (fixture) => {
       seed(fixture);
       const { transport, calls } = fakeTransport(() => okResponse(CHANGELOG_BODY));
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "ok", url: RELEASE_URL });
       expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
     });
@@ -240,7 +240,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport, calls } = fakeTransport(() =>
         okResponse("# v1.2.3\n\n- someone else's body\n"),
       );
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
         kind: "refused",
         reason: "release-conflict",
@@ -256,7 +256,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport, calls } = fakeTransport(() => {
         throw new Error("the transport must not be reached");
       });
-      const outcome = fixture.publication(transport).publishRelease("v9.9.9");
+      const outcome = fixture.adapter(transport).publishRelease("v9.9.9");
       expect(outcome).toEqual({
         kind: "refused",
         reason: "changelog-unrecorded",
@@ -272,7 +272,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport, calls } = fakeTransport(() => {
         throw new Error("the transport must not be reached");
       });
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
         kind: "refused",
         reason: "changelog-unrecorded",
@@ -288,7 +288,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport, calls } = fakeTransport(() => {
         throw new Error("the transport must not be reached");
       });
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
         kind: "refused",
         reason: "changelog-unrecorded",
@@ -306,7 +306,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
         headers: { "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1757200000" },
         body: "",
       }));
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
         kind: "refused",
         reason: "rate-limited",
@@ -319,7 +319,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("auth", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport(() => ({ status: 401, headers: {}, body: "" }));
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
         kind: "refused",
         reason: "auth-expired",
@@ -332,7 +332,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("read-failure", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport(() => ({ status: 0, headers: {}, body: "" }));
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "transport-failure" });
     });
   });
@@ -343,7 +343,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport } = fakeTransport((call) =>
         call.init?.method === "POST" ? { status: 0, headers: {}, body: "" } : notFoundResponse(),
       );
-      const outcome = fixture.publication(transport).publishRelease(TAG);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "ambiguous" });
     });
   });
@@ -352,7 +352,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("verify-ok", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport(() => okResponse(CHANGELOG_BODY));
-      const outcome: VerificationOutcome = fixture.publication(transport).verifyRelease(TAG);
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({ kind: "verified" });
     });
   });
@@ -361,7 +361,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("verify-conflict", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport(() => okResponse("# diverged\n"));
-      const outcome = fixture.publication(transport).verifyRelease(TAG);
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({
         kind: "refused",
         reason: "release-conflict",
@@ -374,7 +374,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("verify-absent", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport(() => notFoundResponse());
-      const outcome = fixture.publication(transport).verifyRelease(TAG);
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({ kind: "absent" });
     });
   });
@@ -383,7 +383,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("verify-failure", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport(() => ({ status: 0, headers: {}, body: "" }));
-      const outcome = fixture.publication(transport).verifyRelease(TAG);
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({ kind: "transport-failure" });
     });
   });

@@ -149,7 +149,12 @@ correctly asserts nothing (verified in "Execution-only cleanliness");
 The 14 Remote (R) scenarios above are the Phase 9 adapter's coverage,
 added after the 53-scenario sweep. They are not part of the original
 inventory; the class `adapter` is the Phase 9 layer's own. The 53-row
-census and the gap ledger above are unchanged.
+census and the gap ledger above are unchanged. The 9.5 assembly (#65,
+D29) composed the three units behind the §2.6 barrel: R-14's adapter
+half is pinned by `test/adapters/github/adapter.test.ts` (the barrel's
+runtime surface is the factory), and the classifier pins behind §2.3
+rows 8–9 moved to the white-box suite the contract §4 names as its one
+exception.
 
 ## Gap ledger and resolution
 

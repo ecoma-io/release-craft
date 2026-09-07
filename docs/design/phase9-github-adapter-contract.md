@@ -52,19 +52,19 @@ src/adapters/github/          // the new layer; consumes, never re-owns
   <implementation modules>    // the mapping the adapter owns
 ```
 
-- The layer opens on an already-opened `GitBinding` (ADR-0009's
-  `openGitBinding`) and a credential value, never on an ambient token
-  (ADR-0010 decision 2). It takes no repository path from its caller
-  either: the repository it transports against is the binding's own,
-  read through the binding's seam (§2.7) — the adapter layers over the
-  binding's repository, never one chosen independently. (#54 proposes
-  this amendment: the bullet first barred the repository path outright,
-  which left ADR-0010 decision 10's read unimplementable through the
-  barrel-only rule.)
+- The layer opens on an already-opened `GitBinding` and credentials —
+  plus the caller-injected `GitHubTransport` (ADR-0010 decision 2 as
+  amended by #65) — never on an ambient token. It takes no repository
+  path from its caller: the repository it transports against is the
+  binding's own, read through the binding's seam (§2.7) — the adapter
+  layers over the binding's repository, never one chosen independently.
+  The transport is injected at open because Node has no synchronous
+  HTTPS client and every in-factory improvisation would put the token
+  into argv or a temp file; the mechanics are the assembly PR's, under
+  the same no-runtime-dependency rule.
 - Layering: nothing under `core/domain/` reaches the layer (structural,
   ADR-0001); `src/execution/` does not import it; the package gains no
-  runtime dependency (the house rule — how the adapter calls the GitHub
-  API is the implementation PR's choice under that rule).
+  runtime dependency (the house rule).
 - The isolation gate extends to the layer: the engine's suite runs green
   with the adapter absent, and no engine module names a GitHub concept.
 
@@ -150,10 +150,11 @@ adapter does not refresh tokens.
 ```text
 src/adapters/github/index.ts   // barrel; the tests' only entry
   export * from "./adapter-types.js";
-  export * from "./adapter.js";
+  export * from "./adapter.js";   // openGitHubAdapter(binding, credentials, transport)
 ```
 
-The barrel re-exports the adapter factory, the surface types (`GitHubAdapter`,
+The barrel exports the factory — `openGitHubAdapter(binding,
+credentials, transport)` per #65 — and the surface types (`GitHubAdapter`,
 `GitHubCredentials`, `SyncReport`, `ReleaseOutcome`, `VerificationOutcome`,
 `ReconciliationReport`), and nothing else. Tests import through the barrel
 only (ADR-0001 decision 9's shape, extended).
@@ -268,7 +269,16 @@ global (invariant 6), so the derivation matches at most one claim.
 
 All adapter tests import through `src/adapters/github/index.js` only
 (barrel-only). The git binding's tests remain the binding's own. Engine
-tests never import the adapter.
+tests never import the adapter. The one deliberate exception, landed in
+the 9.5 assembly (#65): the failure classifier's stderr-to-refusal pins
+(§2.3 rows 8–9, the git-transport half) live in a white-box suite that
+imports `classifyGitFailure` directly — no public outcome can reach the
+rate-limit or auth-expired phrases hermetically, since they arrive in
+GitHub's own sideband or through a credential negotiation a local server
+cannot reproduce determinately; the hermetically reachable public paths
+(row 7's transport failure through `syncRemote()`, row 13's ambiguous
+through `publishRelease()`) stay pinned through the public doors. The
+suite declares the exception in its header.
 
 The phase's named scenarios:
 
