@@ -86,7 +86,9 @@ interface GitHubAdapter {
   verifyRelease(tag: string): VerificationOutcome;
 
   /** Discover pre-existing remote state (tags, releases) and compare
-   *  against the binding's recorded state. Returns any divergence. */
+   *  against the binding's recorded state. Each listing carries its own
+   *  observation outcome; divergence is claimed only over the listings
+   *  that completed (issue #66). */
   reconcile(): ReconciliationReport;
 }
 ```
@@ -102,6 +104,33 @@ tag as `absent` (issue #60): absence is a determinate read, never a
 caller's action is the publication itself — `publishRelease`'s create
 path is idempotent (§2.4).
 
+`reconcile`'s report claims its comparison only over the listings that
+completed (issue #66): each of the two observations — the tag listing,
+the release listing — carries its own outcome on the report, and the
+comparison's results live only on the `listed` outcome.
+
+- `listed` — the observation is determinate: the comparison over that
+  resource ran, and its divergences (and, for tags, its verified tags)
+  are claimed. An empty listing is a determinate clean observation —
+  absence, not failure (the listing shape's twin of `verifyRelease`'s
+  `absent`).
+- `refused` — the provider declined the read. A read is refused only
+  for `auth-expired` or `rate-limited` — the operator-intervention
+  classes; the write-conflict reasons name writes and a read never
+  carries them.
+- `transport-failure` — the listing never became a usable observation:
+  the remote was unreachable, answered with any other status, returned
+  a body that is not a list, or returned a row whose compared field is
+  not a string (§2.3's "unexpected response" — a lying listing is
+  unobserved, never partially compared).
+
+The shape makes a falsely clean report unrepresentable: an unobserved
+listing carries no divergences and no verified tags. The caller's
+obligation is symmetric — a report over an unobserved listing is
+inconclusive, not clean, and state advancement never reads it as a
+passed comparison. Reads never return `ambiguous`: that class names a
+write whose landing is unknown, and a read cannot have landed unseen.
+
 ### 2.3 Failure classes
 
 Every remote operation returns one of:
@@ -115,6 +144,14 @@ Every remote operation returns one of:
 
 Refusals and conflicts are recorded decisions — the adapter never swallows
 a failure and never retries silently past a refusal.
+
+The classes were minted for the write units and reads reuse them
+narrowed (issue #66): a read never returns `ambiguous`, and a read's
+`refused` carries only `auth-expired` and `rate-limited` — the
+operator-intervention reasons. The classification itself is one table
+shared by every unit that reads the API transport (rate-limit on 429 or
+a 403 with the budget spent; auth on 401 or any other 403; status 0 and
+everything else non-200 on a read → `transport-failure`).
 
 ### 2.4 Idempotency identity
 
@@ -156,7 +193,8 @@ src/adapters/github/index.ts   // barrel; the tests' only entry
 The barrel exports the factory — `openGitHubAdapter(binding,
 credentials, transport)` per #65 — and the surface types (`GitHubAdapter`,
 `GitHubCredentials`, `SyncReport`, `ReleaseOutcome`, `VerificationOutcome`,
-`ReconciliationReport`), and nothing else. Tests import through the barrel
+`ReconciliationReport` with its per-listing outcome types — issue #66),
+and nothing else. Tests import through the barrel
 only (ADR-0001 decision 9's shape, extended).
 
 ### 2.7 The binding's read seam (#54)
@@ -313,3 +351,14 @@ The phase's named scenarios:
 14. **Isolation** — the engine suite runs green with the adapter absent;
     no engine module imports the adapter (the isolation gate's new layer);
     the adapter suite never imports engine internals beyond the barrel.
+15. **Reconciliation — unobserved listing** (issue #66) — a listing that
+    never became a usable observation (unreachable remote, any other
+    non-200 status, a body that is not a list, a row whose compared
+    field is not a string); the report carries `transport-failure` for
+    that listing and claims no comparison over it — no divergence, no
+    verified tag.
+16. **Reconciliation — refused listing** (issue #66) — a rate-limit or
+    auth failure on a listing; the report carries `refused` with the
+    reason for that listing and claims no comparison over it. A listing
+    the sibling of an observed one never demotes the observed
+    comparison: each listing's outcome stands on its own.
