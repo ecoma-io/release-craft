@@ -58,7 +58,9 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    Amendment proposed in #54 (phase 9.2): the binding's public surface
    gains the read-only remote-projection seam — `GitBinding.repo` (its
    own opened path) and `GitBinding.refs` (`RefRead`, the recorded
-   claims and declared-namespace tags with peeled targets; the Phase 9
+   claims and declared-namespace tags with the objects they name — the
+   claims' canonical-record blobs, the tags' commits (peeled for
+   annotated tags); the Phase 9
    contract §2.7). The law is unchanged: the factory still opens on a
    binding and a credential — the repository the adapter transports
    against is the binding's own, never a caller-supplied path or an

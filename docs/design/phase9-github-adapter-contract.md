@@ -164,9 +164,11 @@ remote projection reads — proposed in #54, weighing three shapes:
   opened configuration's own repository path) and `GitBinding.refs:
 RefRead`, the recorded refs' read-only enumeration — `claims()`
   (every claim ref under the binding's claim-ref namespace, each with
-  its peeled target) and `tags()` (every tag within the configuration's
+  the canonical record's blob oid — D24: a claim ref names a blob,
+  nothing to peel) and `tags()` (every tag within the configuration's
   declared namespaces — the mint door's namespace rule — each with its
-  peeled target). Pure `for-each-ref` reads: no write, no `HEAD`
+  commit: the peeled commit for an annotated tag, the ref's own target
+  for a lightweight one). Pure `for-each-ref` reads: no write, no `HEAD`
   resolution, no working-tree state (the mint door's discipline, read
   side). The adapter's transport-level git (`ls-remote`, `push`) runs
   against exactly this repository — structural, not conventional.
