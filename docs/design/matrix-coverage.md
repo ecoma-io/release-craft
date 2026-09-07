@@ -123,8 +123,33 @@ correctly asserts nothing (verified in "Execution-only cleanliness");
 | ------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PR-01..PR-05 | execution-only | execution-only — Table 1 rows 491–495 assign the promotion axis no planner fragment (D19(7): no channels amendment; the gate stays with the execution phase); Phase 4 locks the promotion-adjacent state shapes (`blocked(validation)`, attribution, evidence refs), the artifact phase (7) implements the generation semantics (ADR-0008, D23 — contract landed; fixture pin with the implementation PR) |
 
-Class census: 29 full, 8 partial (P-03, M-10, AR-02, AR-04, AR-06, E-05,
-E-10, E-11), 16 execution-only — 53 total.
+### Remote (R)
+
+| ID                                                                       | Class   | Status          | Owner / resolution                                                                                                                                                                                              |
+| ------------------------------------------------------------------------ | ------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R-01                                                                     | adapter | owned (phase 9) | Remote ref push — the adapter pushes the binding's minted tag and claim refs; the remote has the expected refs at expected targets; retry returns ok (ADR-0010 decisions 4–5; phase9 contract §4, scenario 1–2) |
+| R-02                                                                     | adapter | owned (phase 9) | Idempotent retry — after a successful push, the same push retries and returns ok without a remote call (ADR-0010 decision 4; phase9 contract §4, scenario 2)                                                    |
+| R-03                                                                     | adapter | owned (phase 9) | Remote already has tag at different target — the adapter refuses (ADR-0010 decision 5; phase9 contract §4, scenario 3)                                                                                          |
+| R-04                                                                     | adapter | owned (phase 9) | GitHub Release creation — release for a pushed tag, body matches recorded changelog (ADR-0010 decision 6; phase9 contract §4, scenario 4)                                                                       |
+| R-05                                                                     | adapter | owned (phase 9) | Idempotent release creation — retry returns ok, verifies match (ADR-0010 decision 6; phase9 contract §4, scenario 5)                                                                                            |
+| R-06                                                                     | adapter | owned (phase 9) | Release conflict — remote release with different body; adapter refuses (ADR-0010 decision 7; phase9 contract §4, scenario 6)                                                                                    |
+| R-07                                                                     | adapter | owned (phase 9) | Transport failure — remote unreachable; adapter returns transport-failure (ADR-0010 decision 7; phase9 contract §4, scenario 7)                                                                                 |
+| R-08                                                                     | adapter | owned (phase 9) | Rate-limit refusal — GitHub API rate-limit response; adapter returns refused(rate-limited) (ADR-0010 decision 9; phase9 contract §4, scenario 8)                                                                |
+| R-09                                                                     | adapter | owned (phase 9) | Auth expiry — invalid or expired credential; adapter returns refused(auth-expired) (ADR-0010 decision 2; phase9 contract §4, scenario 9)                                                                        |
+| R-10                                                                     | adapter | owned (phase 9) | Reconciliation — clean: remote matches binding's recorded state, no divergence (ADR-0010 decision 8; phase9 contract §4, scenario 10)                                                                           |
+| R-11                                                                     | adapter | owned (phase 9) | Reconciliation — unadopted remote tag: remote has a tag the binding has no record of (ADR-0010 decision 8; phase9 contract §4, scenario 11)                                                                     |
+| R-12                                                                     | adapter | owned (phase 9) | Reconciliation — unadopted remote release: remote release for tag binding has no record of (ADR-0010 decision 8; phase9 contract §4, scenario 12)                                                               |
+| R-13                                                                     | adapter | owned (phase 9) | Ambiguous outcome — timeout returns ambiguous; caller must verify (ADR-0010 decision 7; phase9 contract §4, scenario 13)                                                                                        |
+| R-14                                                                     | adapter | owned (phase 9) | Isolation — engine suite green without adapter; no engine module imports it (phase9 contract §4, scenario 14)                                                                                                   |
+| Class census: 29 full, 8 partial (P-03, M-10, AR-02, AR-04, AR-06, E-05, |
+| E-10, E-11), 16 execution-only — 53 total.                               |
+
+### Phase 9 extension — 14 adapter scenarios
+
+The 14 Remote (R) scenarios above are the Phase 9 adapter's coverage,
+added after the 53-scenario sweep. They are not part of the original
+inventory; the class `adapter` is the Phase 9 layer's own. The 53-row
+census and the gap ledger above are unchanged.
 
 ## Gap ledger and resolution
 
