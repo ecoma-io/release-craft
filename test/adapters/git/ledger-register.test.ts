@@ -18,8 +18,7 @@ import {
   readRef,
   type GitRun,
 } from "../../../src/adapters/git/index.js";
-import { GitLedger, ledgerRef } from "../../../src/adapters/git/ledger-git.js";
-import { GitAttemptRegister } from "../../../src/adapters/git/register-git.js";
+import { GitAttemptRegister, GitLedger, ledgerRef } from "../../../src/adapters/git/index.js";
 import { withTempRepo } from "./temp-repo.js";
 
 /**

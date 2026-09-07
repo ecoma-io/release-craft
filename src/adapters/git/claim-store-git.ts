@@ -32,18 +32,23 @@ export const CLAIM_REF_NAMESPACE = "refs/ecoma/claims/";
 const RELEASE_RETRIES = 3;
 
 /**
- * The claim record a scope's ref pins: the held claim's values plus the
- * acquiring attempt, persisted exactly as the store reads them back — the
- * canonical serialized form, no envelope of the binding's own.
+ * The claim record a scope's ref pins: the held claim's own values — the
+ * canonical serialized form, no envelope of the binding's own (§2.3: the
+ * blob is the claim's canonical JSON record; the holder's attempt id is
+ * `holder`, and nothing else travels). The record's `kind` discriminant
+ * is the ref's existence, so the stored form is the claim minus `kind`.
  */
 export interface ClaimRecord {
   readonly scope: ClaimScope;
   readonly token: ClaimToken;
   /** The holding attempt's id — the name a denial carries to the loser. */
   readonly holder: string;
-  /** The attempt that acquired the claim. */
-  readonly attemptId: string;
 }
+
+/** The canonical serialized form a scope's ref pins: the claim value's
+ * own JSON — `kind` inclusive, no added field (contract §2.3). */
+const canonicalRecord = (record: ClaimRecord): string =>
+  canonicalJson({ kind: "claim", scope: record.scope, token: record.token, holder: record.holder });
 
 /** The scope's claim ref: the sha256 of the scope's canonical JSON. */
 export function claimRefFor(scope: ClaimScope): string {
@@ -92,7 +97,13 @@ export class GitClaimStore implements ClaimStore {
     }
     // The exclusion law (§2.3): a held release-line excludes every other
     // claim on its line, and a release-line request yields to any held
-    // claim on it. Narrower scopes on disjoint keys coexist.
+    // claim on it. Narrower scopes on disjoint keys coexist. The check is
+    // serial: it scans the claim refs that exist, then the one-ref accept
+    // below creates this scope's own ref — two distinct scopes hash to two
+    // distinct refs, so the CAS arbitrates same-scope races only. A
+    // concurrent acquire of a different scope on the same line can
+    // interleave between this scan and the create: the known window of the
+    // one-ref mapping, filed as the contract-level issue #47.
     for (const record of listClaimRecords(this.#git)) {
       if (GitClaimStore.#excludedBy(scope, record.scope)) {
         return GitClaimStore.#denial(scope, record.holder);
@@ -102,12 +113,11 @@ export class GitClaimStore implements ClaimStore {
       scope,
       token: randomBytes(32).toString("hex"),
       holder: attemptId,
-      attemptId,
     };
     // The one-CAS accept: append the record commit only from an absent ref
     // (base null) — the ref's creation is the accept, and null here is the
     // loser side, never a fault.
-    const commit = casAppendCommit(this.#git, ref, canonicalJson(record), null);
+    const commit = casAppendCommit(this.#git, ref, canonicalRecord(record), null);
     if (commit !== null) {
       return deepFreeze({
         kind: "claim",

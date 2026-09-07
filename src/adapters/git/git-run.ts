@@ -84,6 +84,8 @@ const LEAKED_GIT_CONTEXT: ReadonlySet<string> = new Set([
   "GIT_INTERNAL_SUPER_PREFIX",
   "GIT_CONFIG_PARAMETERS",
   "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG",
 ]);
 
 /**
@@ -100,6 +102,11 @@ export function hermeticGitEnv(): NodeJS.ProcessEnv {
   return {
     ...env,
     GIT_CONFIG_NOSYSTEM: "1",
+    // The user gitconfig is as ambient as the system one for the binding's
+    // law (ADR-0009 decision 7: nothing beyond the repository) — GIT_CONFIG_
+    // NOSYSTEM covers only /etc/gitconfig, so the global file is pointed at
+    // the empty device and a leaked GIT_CONFIG_GLOBAL is stripped above.
+    GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_TERMINAL_PROMPT: "0",
     ...COMMIT_ENV,
   };

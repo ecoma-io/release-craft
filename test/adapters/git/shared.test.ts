@@ -1,3 +1,6 @@
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -144,16 +147,30 @@ describe("the git binding's shared surface", () => {
     process.env.GIT_DIR = "/nonexistent/leaked-git-dir";
     process.env.GIT_INDEX_FILE = "/nonexistent/leaked-git-index";
     process.env.GIT_COMMON_DIR = "/nonexistent/leaked-git-common";
+    // A leaked global gitconfig is as ambient as a leaked repository
+    // context: the hermetic floor points GIT_CONFIG_GLOBAL at the empty
+    // device, so a hostile core.hooksPath (the exact ambient execution the
+    // class of leaks enables) never reaches a binding spawn.
+    const poisonedConfig = join(tmpdir(), `hermetic-poison-${String(process.pid)}.gitconfig`);
+    writeFileSync(poisonedConfig, "[core]\n\thooksPath = /nonexistent/hostile-hooks\n");
+    process.env.GIT_CONFIG_GLOBAL = poisonedConfig;
     try {
       withRepo((git) => {
         expect(git(["rev-parse", "--git-dir"]).trim()).toBe(".git");
         expect(git(["rev-parse", "--git-path", "HEAD"]).trim()).toBe(".git/HEAD");
         expect(refExists(git, "HEAD")).toBe(true);
+        // The poisoned global file is unread through the floor: the
+        // global config reads empty — no hostile hooksPath ever reached a
+        // spawn (an unset key would fault `config --global`, so the list
+        // form is the assertion).
+        expect(git(["config", "--global", "--list"]).trim()).toBe("");
       });
     } finally {
+      rmSync(poisonedConfig, { force: true });
       delete process.env.GIT_DIR;
       delete process.env.GIT_INDEX_FILE;
       delete process.env.GIT_COMMON_DIR;
+      delete process.env.GIT_CONFIG_GLOBAL;
     }
   });
 

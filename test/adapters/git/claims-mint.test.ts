@@ -6,8 +6,12 @@ import {
   type GitRun,
   type GitTagNaming,
 } from "../../../src/adapters/git/index.js";
-import { GitClaimStore } from "../../../src/adapters/git/claim-store-git.js";
-import { GitTagDoor, type TagMint } from "../../../src/adapters/git/tag-door.js";
+import {
+  GitClaimStore,
+  GitTagDoor,
+  openGitBinding,
+  type TagMint,
+} from "../../../src/adapters/git/index.js";
 import {
   canonicalJson,
   type Claim,
@@ -152,10 +156,10 @@ describe("the git-backed claim store (fixture 3)", () => {
       const tip = asTip(readRef(git, firstRef(refs)));
       expect(commitRecord(git, tip)).toBe(
         canonicalJson({
+          kind: "claim",
           scope: stableVersion("1.2.3"),
           token: winner.token,
           holder: "attempt_winner",
-          attemptId: "attempt_winner",
         }),
       );
     });
@@ -318,6 +322,84 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
     });
   });
 
+  it("refuses an out-of-namespace tag before any claim is read (§2.4)", () => {
+    withStore((store, mint, git) => {
+      const claim = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
+      const refused = asRefused(
+        mint({
+          attemptId: "attempt_a",
+          token: claim.token,
+          tag: "release-1.2.3",
+          target: rootCommit(git),
+        }),
+      );
+      // An in-namespace held claim deriving v1.2.3 cannot make an
+      // out-of-namespace mint `unclaimed`: the class is the tag's, not the
+      // claim state's.
+      expect(refused.reason).toBe("namespace");
+      expect(refused.detail).toContain("release-1.2.3");
+      expect(refused.detail).toContain("v");
+      expect(refNames(git, "refs/tags/")).toHaveLength(0);
+    });
+  });
+
+  it("reports unclaimed for an in-namespace tag no held claim derives (§2.6)", () => {
+    withStore((store, mint, git) => {
+      asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
+      const refused = asRefused(
+        mint({
+          attemptId: "attempt_a",
+          token: "claim:none",
+          tag: "v9.9.9",
+          target: rootCommit(git),
+        }),
+      );
+      expect(refused.reason).toBe("unclaimed");
+      expect(refused.detail).toContain("v9.9.9");
+      expect(refNames(git, "refs/tags/")).toHaveLength(0);
+    });
+  });
+
+  it("denies the acquisition of a scope the naming maps to no tag — before git sees it (§2.4)", () => {
+    withTempRepo("claims-acquire-door", (repo, git) => {
+      const binding = openGitBinding({ repo, tagNaming: naming });
+      const denied = asDenied(binding.claims.acquire(prerelease(7), "attempt_a"));
+      expect(denied.kind).toBe("denied");
+      expect(denied.refusal).toBe("namespace");
+      expect(denied.holder).toBeUndefined();
+      // The claim state never moved: no claim ref was written.
+      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(0);
+      // And the binding's own naming still admits the scopes it maps.
+      const held = binding.claims.acquire(stableVersion("1.2.3"), "attempt_a");
+      expect(held.kind).toBe("claim");
+    });
+  });
+
+  it("mints a non-canonical target spelling at its resolved commit, never a false conflict", () => {
+    withStore((store, mint, git) => {
+      const claim = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
+      const base = rootCommit(git);
+      const short = base.slice(0, 7);
+      const minted = mint({
+        attemptId: "attempt_a",
+        token: claim.token,
+        tag: "v1.2.3",
+        target: short,
+      });
+      expect(minted).toStrictEqual({ kind: "minted", tag: "v1.2.3", target: base });
+      expect(readRef(git, "refs/tags/v1.2.3")).toBe(base);
+      // The idempotent re-mint through a different spelling of the same
+      // commit is still the same outcome.
+      const again = mint({
+        attemptId: "attempt_a",
+        token: claim.token,
+        tag: "v1.2.3",
+        target: base,
+      });
+      expect(again).toStrictEqual({ kind: "minted", tag: "v1.2.3", target: base });
+    });
+  });
+
   it("refuses a mint under no held claim or an unmatched tag, fail-closed (fixture 3)", () => {
     withStore((store, mint, git) => {
       const ghost = asRefused(
@@ -348,14 +430,16 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
     withStore((store, mint, git) => {
       const claim = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       const base = rootCommit(git);
+      // Both spellings lie outside the fixture's declared root ("v") —
+      // the namespace door refuses them before any claim is read (§2.4).
       const atHead = asRefused(
         mint({ attemptId: "attempt_a", token: claim.token, tag: "HEAD", target: base }),
       );
-      expect(atHead.reason).toBe("unclaimed");
+      expect(atHead.reason).toBe("namespace");
       const atBranch = asRefused(
         mint({ attemptId: "attempt_a", token: claim.token, tag: "refs/heads/main", target: base }),
       );
-      expect(atBranch.reason).toBe("unclaimed");
+      expect(atBranch.reason).toBe("namespace");
 
       // The repository holds exactly what it held before the hostile
       // mints: the fixture's root branch and the one claim ref — no tag

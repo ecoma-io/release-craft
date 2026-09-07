@@ -31,9 +31,9 @@ export interface GitBinding {
   readonly ledger: ExecutionLedger;
   /** The git-backed attempt register. */
   readonly register: AttemptRegister;
-  /** The git-backed claim store — acquire creates the claim ref; a
-   * namespace refusal arrives through the mint door, not the store (the
-   * store has no naming input, PR #41's one reviewed widening). */
+  /** The git-backed claim store — acquire creates the claim ref, and a
+   * scope the declared naming maps to no tag is denied before git sees it
+   * (§2.4's namespace door at the acquisition, `holder` absent). */
   readonly claims: ClaimStore;
   /** The binding's own door — the tag mint (§2.6): refused (`namespace`,
    * `unclaimed`, `foreign-token`) and conflict outcomes are returned
@@ -53,10 +53,25 @@ export interface GitBinding {
  */
 export function openGitBinding(config: BindingConfig): GitBinding {
   const git: GitRun = openGitRun(config.repo);
+  const store = new GitClaimStore(config.repo);
+  // The namespace door runs at both doors, before any ref moves (§2.4): a
+  // scope the declared naming maps to no tag is denied at acquire — holder
+  // absent, no claim ref written — and a mint outside it is refused at the
+  // mint door (§2.6's `namespace` refusal class).
+  const claims: ClaimStore = {
+    acquire: (scope, attemptId) =>
+      config.tagNaming.tagFor(scope) === null
+        ? { kind: "denied", scope, refusal: "namespace" }
+        : store.acquire(scope, attemptId),
+    verify: (token) => store.verify(token),
+    release: (token) => {
+      store.release(token);
+    },
+  };
   return {
     ledger: new GitLedger(git),
     register: new GitAttemptRegister(git),
-    claims: new GitClaimStore(config.repo),
+    claims,
     mintTag: GitTagDoor(git, config.tagNaming),
     producer: GitArtifactProducer(config.repo),
   };

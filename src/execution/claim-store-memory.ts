@@ -82,8 +82,12 @@ export class MemoryClaimStore implements ClaimStore {
   }
 
   release(token: ClaimToken): void {
+    // A stable-version claim is a record, not a lease (P-01, the Phase 8
+    // contract §2.3's rule for the port): releasing its token is a no-op
+    // and a later verify still reads held — the release record stands. The
+    // non-tag claims are leases: the held value leaves.
     for (const [key, claim] of this.#held) {
-      if (claim.token === token) {
+      if (claim.token === token && claim.scope.kind !== "stable-version") {
         this.#held.delete(key);
       }
     }
