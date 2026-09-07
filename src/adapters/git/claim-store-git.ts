@@ -1,12 +1,19 @@
 /**
- * The git-backed claim store (contract §2.3's tag-push CAS, the physical
- * half of E-07; ADR-0009 decision 4). One ref per scope under the binding's
- * claim namespace — `refs/ecoma/claims/<sha256 of the scope's canonical
- * JSON>` — whose tip commit holds the claim record as its blob in canonical
- * form. The accept's atomic boundary is exactly one ref: creating the ref if
- * and only if it is absent is the check-and-set, git's per-ref lockfile makes
- * it atomic, and the loser's denial names the holder read back from the
- * winner's record — a returned value, never a thrown surprise.
+ * The git-backed claim store — the per-line register (ADR-0011; contract
+ * §2.3 as amended, the physical half of E-07). One ref per release line
+ * under the binding's claim namespace — `refs/ecoma/claims/<sha256 of the
+ * lineId's UTF-8 bytes>` — whose tip commit holds the line's claim set in
+ * canonical form: `{"claims":[<claim record>…]}`, the records sorted by
+ * their scope's canonical JSON. Every mutation is a compare-and-set of the
+ * whole set against the observed tip, so the exclusion predicate and the
+ * accept are one atomic transition per line: the same CAS that creates the
+ * claim checked the line's other claims, and the scan-then-CAS window of
+ * the per-scope mapping (#47) does not exist. A lost CAS re-reads and
+ * re-evaluates — it never adjudicates against stale state. A
+ * claim-namespace blob that is not a register refuses loudly: corrupted
+ * recorded state or a foreign layout is a thrown fault, never a silent
+ * empty set (repositories written by the per-scope layout fail on the
+ * first claim read — pre-adoption, no migration owed).
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -22,21 +29,17 @@ import type {
 import { canonicalJson } from "../../planner/index.js";
 
 import { deepFreeze, frozenParse } from "./freeze.js";
-import { casAppendCommit, casDeleteRef, commitRecord, readRef } from "./git-refs.js";
-import { GitFaultError, openGitRun, type GitRun } from "./git-run.js";
+import { casAppendCommit, commitRecord, readRef } from "./git-refs.js";
+import { openGitRun, type GitRun } from "./git-run.js";
 
-/** The binding's claim-ref namespace: one ref per scope beneath it. */
+/** The binding's claim-ref namespace: one register ref per release line. */
 export const CLAIM_REF_NAMESPACE = "refs/ecoma/claims/";
 
-/** The first delete plus this many retries before a release fails closed. */
-const RELEASE_RETRIES = 3;
-
 /**
- * The claim record a scope's ref pins: the held claim's own values — the
- * canonical serialized form, no envelope of the binding's own (§2.3: the
- * blob is the claim's canonical JSON record; the holder's attempt id is
- * `holder`, and nothing else travels). The record's `kind` discriminant
- * is the ref's existence, so the stored form is the claim minus `kind`.
+ * The claim record a register holds: the held claim's own values — the
+ * canonical serialized form, no envelope of the binding's own. The record's
+ * `kind` discriminant is its presence in the register, so the stored form is
+ * the claim minus `kind`.
  */
 export interface ClaimRecord {
   readonly scope: ClaimScope;
@@ -45,42 +48,105 @@ export interface ClaimRecord {
   readonly holder: string;
 }
 
-/** The canonical serialized form a scope's ref pins: the claim value's
- * own JSON — `kind` inclusive, no added field (contract §2.3). */
-const canonicalRecord = (record: ClaimRecord): string =>
+/** The register's record element as stored: the claim value's own JSON —
+ *  `kind` inclusive, no added field (contract §2.3). */
+const recordElement = (record: ClaimRecord): string =>
   canonicalJson({ kind: "claim", scope: record.scope, token: record.token, holder: record.holder });
 
-/** The scope's claim ref: the sha256 of the scope's canonical JSON. */
-export function claimRefFor(scope: ClaimScope): string {
-  const digest = createHash("sha256").update(canonicalJson(scope)).digest("hex");
+/** The register envelope's canonical form: the line's claim set, the
+ *  records sorted by their scope's canonical JSON — a total order, and
+ *  scopes are unique within a register (same scope is the same key). */
+const canonicalRegister = (claims: readonly ClaimRecord[]): string =>
+  `{"claims":[${[...claims]
+    .sort((left, right) =>
+      canonicalJson(left.scope) < canonicalJson(right.scope)
+        ? -1
+        : canonicalJson(left.scope) > canonicalJson(right.scope)
+          ? 1
+          : 0,
+    )
+    .map(recordElement)
+    .join(",")}]}`;
+
+/** The line's register ref: the sha256 over the lineId's UTF-8 bytes. */
+export function claimRegisterRefFor(lineId: string): string {
+  const digest = createHash("sha256").update(lineId, "utf8").digest("hex");
   return `${CLAIM_REF_NAMESPACE}${digest}`;
 }
 
-/** The record a scope's ref pins, or null when the scope is unclaimed. */
-export function readClaimRecord(git: GitRun, ref: string): ClaimRecord | null {
+/** One record's shape check — the fields the store computes over must be
+ *  what the canonical form promises; anything else is corrupted recorded
+ *  state and refuses loudly (ADR-0011 decision 5). */
+const asRecord = (value: unknown): ClaimRecord => {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    "scope" in value &&
+    value.scope !== null &&
+    typeof value.scope === "object" &&
+    "lineId" in value.scope &&
+    typeof value.scope.lineId === "string" &&
+    "kind" in value.scope &&
+    typeof value.scope.kind === "string" &&
+    "token" in value &&
+    typeof value.token === "string" &&
+    "holder" in value &&
+    typeof value.holder === "string"
+  ) {
+    return value as ClaimRecord;
+  }
+  throw new TypeError(
+    "a register holds claim records; an element lacks the record's fields — a scope with a string lineId and kind, a string token, a string holder",
+  );
+};
+
+/**
+ * The line's claim set, read from the register ref — or null when the
+ * register ref is absent (an unclaimed line, the twin of an empty one).
+ * A blob that is not a register — corrupted recorded state, or the
+ * per-scope layout's records — throws: reading it as an empty set would
+ * read a foreign layout as an unclaimed line.
+ */
+export function readRegister(git: GitRun, ref: string): readonly ClaimRecord[] | null {
   const tip = readRef(git, ref);
   if (tip === null) {
     return null;
   }
-  return frozenParse(commitRecord(git, tip)) as ClaimRecord;
+  const envelope: unknown = frozenParse(commitRecord(git, tip));
+  if (
+    envelope === null ||
+    typeof envelope !== "object" ||
+    !("claims" in envelope) ||
+    !Array.isArray(envelope.claims)
+  ) {
+    throw new TypeError(
+      `the claim namespace pins register envelopes ({"claims":[…]}); ${ref} does not`,
+    );
+  }
+  return envelope.claims.map(asRecord);
 }
 
-/** Every claim record the repository holds, one per existing claim ref. */
-export function listClaimRecords(git: GitRun): readonly ClaimRecord[] {
+/** Every claim record the repository holds — the all-register walk the
+ *  token-keyed reads resolve through (verify, release, the tag door's
+ *  held-claim lookup; ADR-0011 decision 3's named exceptions). */
+export function allClaimRecords(git: GitRun): readonly ClaimRecord[] {
   return git(["for-each-ref", "--format=%(refname)", CLAIM_REF_NAMESPACE])
     .split("\n")
     .filter((line) => line.length > 0)
-    .map((ref) => readClaimRecord(git, ref))
-    .filter((record): record is ClaimRecord => record !== null);
+    .flatMap((ref) => readRegister(git, ref) ?? []);
 }
 
 /**
  * Opens the git-backed claim store on `repo`. The port's physical half: the
- * accept is the one-ref CAS, the denial names the winner's recorded holder,
- * verification reads the ref and compares tokens, and a lease's release is a
- * check-and-set delete. A stable-version claim is a record, not a lease —
- * releasing its token is a no-op and a later verify still reads held, the
- * release record stands (P-01); the other scopes are leases.
+ * accept and the exclusion check are one whole-set CAS on the line's
+ * register, verification and token resolution walk every register, and a
+ * lease's release removes its record by token — never by scope, so a
+ * release racing the same scope's re-acquisition by a new holder deletes
+ * the old holder's record only. A stable-version claim is a record, not a
+ * lease — releasing its token is a no-op and a later verify still reads
+ * held, the release record stands (P-01); the other scopes are leases.
+ * An empty register persists: the ref is never deleted, so the write path
+ * stays one primitive (ADR-0011 decision 4).
  */
 export class GitClaimStore implements ClaimStore {
   readonly #git: GitRun;
@@ -90,55 +156,52 @@ export class GitClaimStore implements ClaimStore {
   }
 
   acquire(scope: ClaimScope, attemptId: string): Claim | ClaimDenied {
-    const ref = claimRefFor(scope);
-    const existing = readClaimRecord(this.#git, ref);
-    if (existing !== null) {
-      return GitClaimStore.#adjudicate(existing, scope, attemptId);
-    }
-    // The exclusion law (§2.3): a held release-line excludes every other
-    // claim on its line, and a release-line request yields to any held
-    // claim on it. Narrower scopes on disjoint keys coexist. The check is
-    // serial: it scans the claim refs that exist, then the one-ref accept
-    // below creates this scope's own ref — two distinct scopes hash to two
-    // distinct refs, so the CAS arbitrates same-scope races only. A
-    // concurrent acquire of a different scope on the same line can
-    // interleave between this scan and the create: the known window of the
-    // one-ref mapping, filed as the contract-level issue #47.
-    for (const record of listClaimRecords(this.#git)) {
-      if (GitClaimStore.#excludedBy(scope, record.scope)) {
-        return GitClaimStore.#denial(scope, record.holder);
-      }
-    }
-    const record: ClaimRecord = {
-      scope,
-      token: randomBytes(32).toString("hex"),
-      holder: attemptId,
-    };
-    // The one-CAS accept: append the record commit only from an absent ref
-    // (base null) — the ref's creation is the accept, and null here is the
-    // loser side, never a fault.
-    const commit = casAppendCommit(this.#git, ref, canonicalRecord(record), null);
-    if (commit !== null) {
-      return deepFreeze({
-        kind: "claim",
-        scope: record.scope,
-        token: record.token,
-        holder: record.holder,
-      }) as Claim;
-    }
-    const winner = readClaimRecord(this.#git, ref);
-    if (winner === null) {
-      throw new GitFaultError(
-        ["update-ref", ref],
-        null,
-        "the claim ref vanished between a lost accept and the loser's read",
+    const ref = claimRegisterRefFor(scope.lineId);
+    // The claim–verify–write cycle: read the line's register, evaluate the
+    // exclusion law over it, land the whole next set through the CAS — and
+    // a lost CAS re-reads and re-evaluates from the new tip, never
+    // adjudicating against stale state (ADR-0011 decision 2).
+    for (;;) {
+      const claims = readRegister(this.#git, ref) ?? [];
+      // Same scope, same holder: idempotent re-acquisition — no CAS, the
+      // register already holds the record.
+      const existing = claims.find(
+        (record) => canonicalJson(record.scope) === canonicalJson(scope),
       );
+      if (existing !== undefined) {
+        return GitClaimStore.#adjudicate(existing, scope, attemptId);
+      }
+      // The exclusion law (§2.3): a held release-line excludes every other
+      // claim on its line, and a release-line request yields to any held
+      // claim on it. Narrower scopes on disjoint keys coexist. The check
+      // and the accept are the same CAS: the scan-then-create window of
+      // the per-scope mapping (#47) does not exist here.
+      const held = claims.find((record) => GitClaimStore.#excludedBy(scope, record.scope));
+      if (held !== undefined) {
+        return GitClaimStore.#denial(scope, held.holder);
+      }
+      const record: ClaimRecord = {
+        scope,
+        token: randomBytes(32).toString("hex"),
+        holder: attemptId,
+      };
+      const tip = readRef(this.#git, ref);
+      const commit = casAppendCommit(this.#git, ref, canonicalRegister([...claims, record]), tip);
+      if (commit !== null) {
+        return deepFreeze({
+          kind: "claim",
+          scope: record.scope,
+          token: record.token,
+          holder: record.holder,
+        }) as Claim;
+      }
+      // The register moved under the evaluation — a concurrent winner on
+      // the same line. Loop: re-read, re-evaluate, land or deny.
     }
-    return GitClaimStore.#adjudicate(winner, scope, attemptId);
   }
 
   verify(token: ClaimToken): ClaimVerification {
-    const record = listClaimRecords(this.#git).find((entry) => entry.token === token);
+    const record = allClaimRecords(this.#git).find((entry) => entry.token === token);
     if (record === undefined) {
       return { kind: "lost" };
     }
@@ -154,7 +217,9 @@ export class GitClaimStore implements ClaimStore {
   }
 
   release(token: ClaimToken): void {
-    const record = listClaimRecords(this.#git).find((entry) => entry.token === token);
+    // The token resolves through the all-register walk (the port's only
+    // release signature names no line): one walk, then the register CAS.
+    const record = allClaimRecords(this.#git).find((entry) => entry.token === token);
     if (record === undefined) {
       return;
     }
@@ -163,29 +228,31 @@ export class GitClaimStore implements ClaimStore {
     if (record.scope.kind === "stable-version") {
       return;
     }
-    const ref = claimRefFor(record.scope);
-    // The lease release is a check-and-set delete; a lost race retries, and
-    // a scope that stays contested after the bound fails closed.
-    for (let attempt = 0; attempt <= RELEASE_RETRIES; attempt += 1) {
-      const tip = readRef(this.#git, ref);
-      if (tip === null) {
+    const ref = claimRegisterRefFor(record.scope.lineId);
+    // The whole-set CAS loop: read, remove this token's record — never the
+    // scope's (a release racing the same scope's re-acquisition by a new
+    // holder deletes the old holder's record only) — and land. A lost CAS
+    // re-reads; a re-read without the token means a concurrent release
+    // already removed it. The empty set persists: the ref is never
+    // deleted (ADR-0011 decision 4), so the write path stays one
+    // primitive.
+    for (;;) {
+      const claims = readRegister(this.#git, ref);
+      if (claims === null || !claims.some((entry) => entry.token === token)) {
         return;
       }
-      try {
-        if (casDeleteRef(this.#git, ref, tip)) {
-          return;
-        }
-      } catch (error) {
-        if (!(error instanceof GitFaultError)) {
-          throw error;
-        }
+      const tip = readRef(this.#git, ref);
+      if (
+        casAppendCommit(
+          this.#git,
+          ref,
+          canonicalRegister(claims.filter((entry) => entry.token !== token)),
+          tip,
+        ) !== null
+      ) {
+        return;
       }
     }
-    throw new GitFaultError(
-      ["update-ref", "-d", ref],
-      null,
-      "the claim ref moved under every release attempt",
-    );
   }
 
   /** Same holder: idempotent re-acquisition; a different one: the winner
@@ -204,14 +271,18 @@ export class GitClaimStore implements ClaimStore {
         holder: winner.holder,
       }) as Claim;
     }
-    return GitClaimStore.#denial(scope, winner.holder);
+    const denial: ClaimDenied = { kind: "denied", holder: winner.holder, scope };
+    return winner.scope.kind === "prerelease-sequence"
+      ? { ...denial, holderSequence: winner.scope.sequence }
+      : denial;
   }
 
+  /** The exclusion-path denial names the holder and nothing else: the held
+   * scope there is a line-level exclusion, and the requester's own
+   * sequence is not a retry base — the reference store's shape, issue
+   * #69's parity pin (ADR-0011 decision 7). */
   static #denial(scope: ClaimScope, holder: string): ClaimDenied {
-    const denial: ClaimDenied = { kind: "denied", holder, scope };
-    return scope.kind === "prerelease-sequence"
-      ? { ...denial, holderSequence: scope.sequence }
-      : denial;
+    return { kind: "denied", holder, scope };
   }
 
   /** The exclusion law (§2.3): a release-line claim excludes every other

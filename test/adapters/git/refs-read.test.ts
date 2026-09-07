@@ -88,8 +88,9 @@ describe("the binding's read seam — recorded refs, read-only (§2.7)", () => {
       expect(claims).toHaveLength(1);
       const claimRef = claims[0]?.ref ?? "";
       expect(claimRef.startsWith("refs/ecoma/claims/")).toBe(true);
-      // A claim ref names its canonical record's blob (D24) — the
-      // enumeration reports the object git holds, not a commit.
+      // A claim ref names the register blob (the per-line claim register
+      // of ADR-0011) — the enumeration reports the object git holds, not
+      // a commit.
       expect(claims[0]).toEqual({
         ref: claimRef,
         target: refObject(git, claimRef),

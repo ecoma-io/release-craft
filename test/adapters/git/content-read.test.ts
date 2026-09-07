@@ -1,6 +1,6 @@
 /**
  * The content read seam over a real repository (the Phase 9 contract
- * §2.8; D27): the canonical claim record a ref pins, the declared
+ * §2.8; D27): the claim records a register ref holds, the declared
  * naming's derivation, the attempt's recorded stream, and one file out
  * of the recorded tree a digest names — each resolved from recorded
  * state only, and each absent path a null rather than a fault.
@@ -49,19 +49,20 @@ const asClaim = (outcome: Claim | ClaimDenied): Claim => {
 const bindingOn = (repo: string): GitBinding => openGitBinding({ repo, tagNaming: naming });
 
 describe("the content read seam (§2.8; D27)", () => {
-  it("reads the canonical claim record a ref pins, null when unrecorded", () => {
-    withTempRepo("claim", (_repo, _git) => {
-      const binding = bindingOn(_repo);
+  it("reads the claim records a register ref holds, the empty set when unrecorded", () => {
+    withTempRepo("claim", (repo, _git) => {
+      const binding = bindingOn(repo);
       const claim = asClaim(binding.claims.acquire(scope("1.2.3"), ATTEMPT));
       const row = binding.refs.claims()[0];
       if (row === undefined) {
         throw new Error("expected the claim ref to be recorded");
       }
-      const record = binding.content.claim(row.ref);
-      expect(record?.scope).toEqual(claim.scope);
-      expect(record?.token).toBe(claim.token);
-      expect(record?.holder).toBe(ATTEMPT);
-      expect(binding.content.claim("refs/ecoma/claims/unrecorded")).toBeNull();
+      const records = binding.content.claims(row.ref);
+      expect(records).toHaveLength(1);
+      expect(records[0]?.scope).toEqual(claim.scope);
+      expect(records[0]?.token).toBe(claim.token);
+      expect(records[0]?.holder).toBe(ATTEMPT);
+      expect(binding.content.claims("refs/ecoma/claims/unrecorded")).toEqual([]);
     });
   });
 

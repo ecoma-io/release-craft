@@ -63,10 +63,10 @@ export interface BindingConfig {
  * One recorded ref the remote projection reads (the Phase 9 contract
  * §2.7; D26): the binding's own recorded state — a claim ref under its
  * namespace or a tag within the declared namespaces — with the object it
- * names. For a claim ref that object is the canonical record's blob
- * (D24); for a tag it is the commit — the tag object itself for a
- * lightweight tag (the mint door's shape), the peeled commit for an
- * annotated one.
+ * names. For a claim ref that object is the register blob (the per-line
+ * claim register of ADR-0011); for a tag it is the commit — the tag
+ * object itself for a lightweight tag (the mint door's shape), the
+ * peeled commit for an annotated one.
  */
 export interface RecordedRef {
   /** The full ref name — `refs/ecoma/claims/<record>` or
@@ -88,7 +88,8 @@ export interface RecordedRef {
  */
 export interface RefRead {
   /** Every claim ref under the binding's claim-ref namespace, each with
-   *  the canonical record's blob oid as its target. */
+   *  the register blob's oid as its target (the per-line claim register
+   *  of ADR-0011). */
   claims(): readonly RecordedRef[];
   /** Every tag within the configuration's declared namespaces (the mint
    *  door's namespace rule) the repository holds, each with its peeled
@@ -105,9 +106,10 @@ export interface RefRead {
  * through it (structural, not by convention).
  */
 export interface ContentRead {
-  /** The canonical claim record a claim ref pins, or null when the ref
-   *  holds no record. */
-  claim(ref: string): ClaimRecord | null;
+  /** The claim records a claim ref holds — the per-line register of
+   *  ADR-0011 — or the empty set when the ref is absent. A blob that is
+   *  not a register throws (the layout is total; ADR-0011 decision 5). */
+  claims(ref: string): readonly ClaimRecord[];
   /** The tag name the declared naming derives for a scope, or null when
    *  the scope maps outside every declared namespace — the mint door's
    *  own rule, exposed as a pure read. */

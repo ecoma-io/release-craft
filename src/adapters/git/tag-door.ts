@@ -14,7 +14,7 @@
  */
 
 import type { GitTagNaming, TagMintInput, TagMintResult } from "./binding-types.js";
-import { listClaimRecords, type ClaimRecord } from "./claim-store-git.js";
+import { allClaimRecords, type ClaimRecord } from "./claim-store-git.js";
 import { readRef } from "./git-refs.js";
 import { GitFaultError, type GitRun } from "./git-run.js";
 
@@ -45,8 +45,10 @@ export function GitTagDoor(git: GitRun, naming: GitTagNaming): TagMint {
       };
     }
     // Fail closed: a mint is admitted only under a claim the calling
-    // attempt holds, read back from the claim refs.
-    const held = listClaimRecords(git).filter((record) => record.holder === input.attemptId);
+    // attempt holds, walked from the claim registers — the door's
+    // held-claim lookup is one of ADR-0011 decision 3's named exceptions
+    // to the read narrowing (same filter, register source).
+    const held = allClaimRecords(git).filter((record) => record.holder === input.attemptId);
     if (held.length === 0) {
       return {
         kind: "refused",

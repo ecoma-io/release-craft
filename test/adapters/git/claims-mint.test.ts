@@ -7,6 +7,7 @@ import {
   type GitTagNaming,
 } from "../../../src/adapters/git/index.js";
 import {
+  claimRegisterRefFor,
   GitClaimStore,
   GitTagDoor,
   openGitBinding,
@@ -133,7 +134,7 @@ const nextCommit = (git: GitRun, parent: string): string => {
 };
 
 describe("the git-backed claim store (fixture 3)", () => {
-  it("accepts through exactly one ref and denies the loser naming the winner", () => {
+  it("accepts through the line's register and denies the loser naming the winner", () => {
     withStore((store, _mint, git) => {
       const winner = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_winner"));
       expect(winner.holder).toBe("attempt_winner");
@@ -149,23 +150,24 @@ describe("the git-backed claim store (fixture 3)", () => {
       // namespace marker on the store's own shape.
       expect(Object.hasOwn(loser, "refusal")).toBe(false);
 
-      // One scope, one ref; the tip's blob is the record, in canonical
-      // form, naming the winner.
+      // One line, one register ref — the sha256 of the lineId — whose
+      // tip's blob is the register envelope holding the claim record in
+      // canonical form.
       const refs = refNames(git, "refs/ecoma/claims/");
-      expect(refs).toHaveLength(1);
+      expect(refs).toEqual([claimRegisterRefFor("line-main")]);
       const tip = asTip(readRef(git, firstRef(refs)));
       expect(commitRecord(git, tip)).toBe(
-        canonicalJson({
+        `{"claims":[${canonicalJson({
           kind: "claim",
           scope: stableVersion("1.2.3"),
           token: winner.token,
           holder: "attempt_winner",
-        }),
+        })}]}`,
       );
     });
   });
 
-  it("re-admits the holder idempotently and never writes a second ref", () => {
+  it("re-admits the holder idempotently and never writes a second register", () => {
     withStore((store, _mint, git) => {
       const first = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       const again = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
@@ -187,7 +189,7 @@ describe("the git-backed claim store (fixture 3)", () => {
     });
   });
 
-  it("enforces the line exclusion law across scope refs (§2.3)", () => {
+  it("enforces the line exclusion law through the line registers (§2.3)", () => {
     withStore((store, _mint, git) => {
       const held = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       expect(asDenied(store.acquire(releaseLine("line-main"), "attempt_b")).holder).toBe(
@@ -199,16 +201,21 @@ describe("the git-backed claim store (fixture 3)", () => {
         asDenied(store.acquire(stableVersion("1.0.0", "line-other"), "attempt_e")).holder,
       ).toBe("attempt_d");
 
-      // Disjoint keys on the same line coexist: stable versions are not
-      // excluded by each other, only by a held release-line.
+      // Disjoint keys on the same line coexist in one register: stable
+      // versions are not excluded by each other, only by a held
+      // release-line.
       const coexisting = asClaim(store.acquire(stableVersion("9.9.9"), "attempt_c"));
       expect(coexisting.token).not.toBe(held.token);
       expect(lineHolder.token).not.toBe(held.token);
-      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(3);
+      // Two lines, two registers — the claims of a line live together.
+      expect(refNames(git, "refs/ecoma/claims/")).toEqual([
+        claimRegisterRefFor("line-main"),
+        claimRegisterRefFor("line-other"),
+      ]);
     });
   });
 
-  it("verifies the token against the refs and loses released leases (§2.3)", () => {
+  it("verifies the token through the registers and loses released leases (§2.3)", () => {
     withStore((store, _mint, git) => {
       const claim = asClaim(store.acquire(prerelease(7), "attempt_a"));
       expect(store.verify(claim.token)).toEqual({ kind: "held", claim });
@@ -216,7 +223,11 @@ describe("the git-backed claim store (fixture 3)", () => {
 
       store.release(claim.token);
       expect(store.verify(claim.token)).toEqual({ kind: "lost" });
-      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(0);
+      // The empty register persists — the ref is never deleted, so the
+      // write path stays one primitive (ADR-0011 decision 4).
+      const refs = refNames(git, "refs/ecoma/claims/");
+      expect(refs).toEqual([claimRegisterRefFor("line-main")]);
+      expect(commitRecord(git, asTip(readRef(git, refs[0] ?? "")))).toBe('{"claims":[]}');
     });
   });
 
@@ -273,8 +284,8 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
       expect(readRef(git, "refs/tags/v1.2.3")).toBe(base);
 
       // Two scopes racing one global namespace resolve through the same
-      // CAS: both accepts win their own scope refs, but the tag ref has
-      // one value and the second mint's target loses.
+      // CAS: both accepts land in their own lines' registers, but the tag
+      // ref has one value and the second mint's target loses.
       const second = asClaim(store.acquire(stableVersion("1.2.3", "line-b"), "attempt_b"));
       expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(2);
       const raced = asConflict(

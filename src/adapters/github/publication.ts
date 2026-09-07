@@ -120,40 +120,44 @@ const releasePath = (credentials: GitHubCredentials, tag: string): string =>
 
 /** Projects the tag's changelog out of the binding's recorded state
  *  (§2.8): tag → minting claim → holding attempt → the completed
- *  changelog generation record → the recorded tree's file. */
+ *  changelog generation record → the recorded tree's file. A claim ref
+ *  holds the line's whole register (ADR-0011), so the derivation iterates
+ *  each register's set — the first recorded claim deriving the tag wins,
+ *  exactly as the single-record read's first ref won before it. */
 const recordedChangelog = (binding: GitBinding, tag: string): RecordedChangelog => {
   for (const row of binding.refs.claims()) {
-    const claim = binding.content.claim(row.ref);
-    if (claim === null || binding.content.tagFor(claim.scope) !== tag) {
-      continue;
+    for (const claim of binding.content.claims(row.ref)) {
+      if (binding.content.tagFor(claim.scope) !== tag) {
+        continue;
+      }
+      for (const entry of binding.content.tail(claim.holder)) {
+        if (entry.kind !== "step") {
+          continue;
+        }
+        const record = entry.record;
+        if (record.stepKey !== CHANGELOG_STEP || record.to !== "completed") {
+          continue;
+        }
+        const digest = record.contentFingerprint ?? record.artifact?.digest;
+        if (digest === undefined) {
+          continue;
+        }
+        const body = binding.content.file(digest, CHANGELOG_PATH);
+        if (body === null) {
+          return {
+            ok: false,
+            reason: "changelog-unrecorded",
+            detail: `the recorded tree ${digest} holds no ${CHANGELOG_PATH}`,
+          };
+        }
+        return { ok: true, digest, body };
+      }
+      return {
+        ok: false,
+        reason: "changelog-unrecorded",
+        detail: `the attempt ${claim.holder} holds no completed ${CHANGELOG_STEP} record`,
+      };
     }
-    for (const entry of binding.content.tail(claim.holder)) {
-      if (entry.kind !== "step") {
-        continue;
-      }
-      const record = entry.record;
-      if (record.stepKey !== CHANGELOG_STEP || record.to !== "completed") {
-        continue;
-      }
-      const digest = record.contentFingerprint ?? record.artifact?.digest;
-      if (digest === undefined) {
-        continue;
-      }
-      const body = binding.content.file(digest, CHANGELOG_PATH);
-      if (body === null) {
-        return {
-          ok: false,
-          reason: "changelog-unrecorded",
-          detail: `the recorded tree ${digest} holds no ${CHANGELOG_PATH}`,
-        };
-      }
-      return { ok: true, digest, body };
-    }
-    return {
-      ok: false,
-      reason: "changelog-unrecorded",
-      detail: `the attempt ${claim.holder} holds no completed ${CHANGELOG_STEP} record`,
-    };
   }
   return {
     ok: false,

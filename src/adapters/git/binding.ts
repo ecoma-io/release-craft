@@ -35,9 +35,10 @@ export interface GitBinding {
   readonly ledger: ExecutionLedger;
   /** The git-backed attempt register. */
   readonly register: AttemptRegister;
-  /** The git-backed claim store — acquire creates the claim ref, and a
-   * scope the declared naming maps to no tag is denied before git sees it
-   * (§2.4's namespace door at the acquisition, `holder` absent). */
+  /** The git-backed claim store — acquire lands the claim through the
+   * line's whole-register CAS (ADR-0011), and a scope the declared naming
+   * maps to no tag is denied before git sees it (§2.4's namespace door at
+   * the acquisition, `holder` absent). */
   readonly claims: ClaimStore;
   /** The binding's own door — the tag mint (§2.6): refused (`namespace`,
    * `unclaimed`, `foreign-token`) and conflict outcomes are returned
@@ -53,8 +54,8 @@ export interface GitBinding {
   readonly repo: string;
   /** The recorded refs' read-only enumeration (the Phase 9 contract
    *  §2.7; D26): the claim refs and the declared-namespace tags, each
-   *  with the object it names — the claim record's blob, the tag's
-   *  peeled commit. */
+   *  with the object it names — the register blob, the tag's peeled
+   *  commit. */
   readonly refs: RefRead;
   /** The content read seam (the Phase 9 contract §2.8; D27): the
    *  release projection's read-only half — the minting claim, the
@@ -76,8 +77,8 @@ export function openGitBinding(config: BindingConfig): GitBinding {
   const store = new GitClaimStore(config.repo);
   // The namespace door runs at both doors, before any ref moves (§2.4): a
   // scope the declared naming maps to no tag is denied at acquire — holder
-  // absent, no claim ref written — and a mint outside it is refused at the
-  // mint door (§2.6's `namespace` refusal class).
+  // absent, no register move written — and a mint outside it is refused at
+  // the mint door (§2.6's `namespace` refusal class).
   const claims: ClaimStore = {
     acquire: (scope, attemptId) =>
       config.tagNaming.tagFor(scope) === null
