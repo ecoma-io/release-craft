@@ -9,22 +9,26 @@ and are not duplicated here.
 
 A general-purpose, open-source release engine for software projects,
 developed and maintained by ecoma-io. **It is in foundation phase, the
-kernel's value population, the deterministic planner, and the execution kernel**:
-`src/` holds a toolchain canary, the planner (`src/planner/`, the
-deterministic planning door — ADR-0003, ADR-0004), and the execution kernel
-(`src/execution/`, the pure attempt/claim/transition machinery — issue #27,
-ADR-0005), and `core/domain/` holds the semantic `Version` value plus the
-five release values the Phase 0 vocabulary locked — `Change`, `ChangeSet`,
-`ReleaseLine`, `Channel`, `Artifact` — behind the barrel entrypoint
-(ADR-0001, ADR-0002). The ledger, lifecycle hooks, artifact realization,
-publishing, and provider behavior do not exist yet — no ledger, hook,
-artifact, Git, or provider code may appear outside its own phase. Do
-not implement release planning twice, release lines as behavior,
-lifecycle hooks, artifact publishing, GitHub Releases, npm publishing, or
-release-please compatibility in a drive-by change — that work lands through
-its own issue and design, not inside unrelated fixes. Do not claim shipped
-capabilities in docs or code comments; the README's status section is the
-honest one.
+kernel's value population, the deterministic planner, the execution
+kernel, and the Phase 9 assembled GitHub adapter**: `src/` holds the
+planner (`src/planner/`, the deterministic planning door — ADR-0003,
+ADR-0004), the execution kernel (`src/execution/`, the pure
+attempt/claim/transition machinery — issue #27, ADR-0005), the git
+binding (`src/adapters/git/` — ADR-0009), and the assembled GitHub
+adapter (`src/adapters/github/` — remote synchronization, release
+publication, and reconciliation composed behind the
+`openGitHubAdapter` factory — ADR-0010, issue #65), and `core/domain/`
+holds the semantic `Version` value plus the five release values the
+Phase 0 vocabulary locked — `Change`, `ChangeSet`, `ReleaseLine`,
+`Channel`, `Artifact` — behind the barrel entrypoint (ADR-0001,
+ADR-0002). The engine's own release adoption, publishing pipelines, and
+the GitHub action do not exist yet — no release behavior, provider
+pipeline, or action wiring may appear outside its own issue and design.
+Do not implement new provider behavior, release lines as behavior,
+publishing pipelines, npm publishing, or release-please compatibility in
+a drive-by change — that work lands through its own issue and design,
+not inside unrelated fixes. Do not claim shipped capabilities in docs or
+code comments; the README's status section is the honest one.
 
 The product boundary is fixed: the engine serves any software project; Ecoma is
 the maintainer's first-party dogfood consumer, never a domain concept, and

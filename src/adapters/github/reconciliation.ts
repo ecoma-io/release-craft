@@ -14,7 +14,6 @@ import type {
   GitHubCredentials,
   GitHubResponse,
   GitHubTransport,
-  Reconciliation,
   ReconciliationReport,
 } from "./adapter-types.js";
 
@@ -72,17 +71,16 @@ const recordedTags = (binding: GitBinding): Map<string, string> => {
   return recorded;
 };
 
-/**
- * The reconciliation over a real binding and the caller-injected
+/** The reconciliation over a real binding and the caller-injected
  * transport (ADR-0010 decision 2's boundary, the no-runtime-dependency
- * house rule). Interim surface until 9.5's `openGitHubAdapter` composes
- * the units behind the factory.
+ * house rule). The assembly composes it behind `openGitHubAdapter` —
+ * implementation, never a public crossing.
  */
 export const GitReleaseReconciliation = (
   binding: GitBinding,
   credentials: GitHubCredentials,
   transport: GitHubTransport,
-): Reconciliation => ({
+): { reconcile(): ReconciliationReport } => ({
   reconcile(): ReconciliationReport {
     const recorded = recordedTags(binding);
     const remoteTags = asRows(

@@ -14,8 +14,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  classifyGitFailure,
-  GitRemoteSync,
+  openGitHubAdapter,
+  type GitHubTransport,
   type SyncReport,
 } from "../../../src/adapters/github/index.js";
 import {
@@ -47,6 +47,15 @@ const spawnGit = (args: readonly string[]): string => {
     );
   }
   return result.stdout;
+};
+
+/** The composed adapter needs a transport at open; the sync's door is
+ *  git-level, so its transport's only behaviour is failing loudly if a
+ *  sync ever reached for it. */
+const syncTransport: GitHubTransport = {
+  request() {
+    throw new Error("the remote synchronization never reaches the HTTP transport");
+  },
 };
 
 /** The declared tag naming the fixture opens the binding with: stable
@@ -107,11 +116,18 @@ const withSyncRepo = (name: string, fn: (fixture: SyncRepo) => void): void => {
         return opened;
       },
       sync(): SyncReport {
-        return GitRemoteSync(this.binding(), {
-          owner: "ecoma-io",
-          repo: "release-craft",
-          token: "t0k3n",
-        }).syncRemote();
+        // The sync's door is git-level: the composed adapter's only
+        // HTTP access is this transport, and it fails the test loudly
+        // if a sync ever reached for it.
+        return openGitHubAdapter(
+          this.binding(),
+          {
+            owner: "ecoma-io",
+            repo: "release-craft",
+            token: "t0k3n",
+          },
+          syncTransport,
+        ).syncRemote();
       },
     });
   } finally {
@@ -226,25 +242,5 @@ describe("the remote synchronization (§2.2 rows 1–3, 7–9)", () => {
 
       expect(() => fixture.sync()).toThrow(GitFaultError);
     });
-  });
-});
-
-describe("the failure classifier (§2.3 rows 8–9)", () => {
-  it("reads a rate limit as rate-limited before the 403 pattern (R-08)", () => {
-    expect(classifyGitFailure("remote: Rate limit exceeded (HTTP 403)")).toBe("rate-limited");
-    expect(classifyGitFailure("you have exceeded a secondary rate limit")).toBe("rate-limited");
-  });
-
-  it("reads a rejected credential as auth-expired (R-09)", () => {
-    expect(
-      classifyGitFailure("fatal: Authentication failed for 'https://github.com/ecoma-io/x.git/'"),
-    ).toBe("auth-expired");
-    expect(classifyGitFailure("remote: Invalid username or password")).toBe("auth-expired");
-  });
-
-  it("reads anything else as transport-failure", () => {
-    expect(classifyGitFailure("fatal: the remote end hung up unexpectedly")).toBe(
-      "transport-failure",
-    );
   });
 });

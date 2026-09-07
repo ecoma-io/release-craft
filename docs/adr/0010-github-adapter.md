@@ -65,6 +65,18 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    binding and a credential — the repository the adapter transports
    against is the binding's own, never a caller-supplied path or an
    ambient token.
+   Amendment landed in #65 (phase 9.5): the factory is
+   `openGitHubAdapter(binding, credentials, transport: GitHubTransport)` —
+   the caller injects the HTTP transport at open, alongside the
+   credentials. The API-path units (publication, reconciliation) consume
+   the injected transport; the git-path unit (remote synchronization)
+   never does. The injection is forced by the platform, not taste: Node
+   has no synchronous HTTPS client, and every improvisation inside the
+   factory (spawning `curl` with the token in argv, or a token-bearing
+   temp file) breaks the credential discipline — the token would leave
+   the process — or the sync discipline (§2.2, the units' synchronous
+   shape). Injection at the composition root keeps the token's lifecycle
+   entirely with the caller, like the credentials themselves.
 
 3. **Remote synchronization is push-only for writes, fetch-only for
    discovery.** The adapter pushes refs (the binding's claim refs under

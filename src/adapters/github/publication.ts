@@ -39,7 +39,6 @@ import type {
   GitHubCredentials,
   GitHubResponse,
   GitHubTransport,
-  Publication,
   RefusalReason,
   ReleaseOutcome,
   VerificationOutcome,
@@ -222,7 +221,10 @@ export function GitReleasePublication(
   binding: GitBinding,
   credentials: GitHubCredentials,
   transport: GitHubTransport,
-): Publication {
+): {
+  publishRelease(tag: string): ReleaseOutcome;
+  verifyRelease(tag: string): VerificationOutcome;
+} {
   return {
     publishRelease(tag: string): ReleaseOutcome {
       const recorded = recordedChangelog(binding, tag);

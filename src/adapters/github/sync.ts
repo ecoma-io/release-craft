@@ -17,14 +17,14 @@
  * - a push that outlives the spawn timeout reports `ambiguous` — the
  *   write may have landed; verification is the caller's separate read.
  *
- * The unit is the phase-9.2 increment of the adapter surface: 9.5's
- * `openGitHubAdapter` composes it (with the release and reconciliation
- * units of 9.3/9.4) behind the ADR-0010 decision 2 factory, and this
- * module's barrel export is interim until that assembly lands.
+ * The assembly composes it (with the release and reconciliation units)
+ * behind the `openGitHubAdapter` factory — implementation, never a
+ * public crossing: the §2.6 barrel exports the factory and the surface
+ * types only.
  */
 
 import { GitFaultError, type GitBinding } from "../git/index.js";
-import type { GitHubCredentials, RemoteSync, SyncReport, SyncedRef } from "./adapter-types.js";
+import type { GitHubCredentials, SyncReport, SyncedRef } from "./adapter-types.js";
 import {
   classifyGitFailure,
   openRemoteGit,
@@ -156,7 +156,10 @@ const syncOneRef = (
  * itself and throws, like a missing git binary — it is not a remote
  * outcome.
  */
-export function GitRemoteSync(binding: GitBinding, credentials: GitHubCredentials): RemoteSync {
+export function GitRemoteSync(
+  binding: GitBinding,
+  credentials: GitHubCredentials,
+): { syncRemote(): SyncReport } {
   const git: RemoteGitRun = openRemoteGit({ repoPath: binding.repo, token: credentials.token });
   return {
     syncRemote(): SyncReport {

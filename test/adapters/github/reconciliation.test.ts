@@ -10,11 +10,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  GitReleaseReconciliation,
+  openGitHubAdapter,
   type GitHubCredentials,
   type GitHubRequestInit,
   type GitHubResponse,
   type GitHubTransport,
+  type ReconciliationReport,
 } from "../../../src/adapters/github/index.js";
 import { openGitBinding, type GitTagNaming } from "../../../src/adapters/git/index.js";
 import type { Claim, ClaimDenied, ClaimScope } from "../../../src/index.js";
@@ -81,9 +82,7 @@ const listResponse = (rows: readonly unknown[]): GitHubResponse => ({
  *  listings that match or drift from it. */
 interface ReconcileFixture {
   readonly recordedTarget: string;
-  reconcile(
-    transport: GitHubTransport,
-  ): ReturnType<ReturnType<typeof GitReleaseReconciliation>["reconcile"]>;
+  reconcile(transport: GitHubTransport): ReconciliationReport;
   recordedRefs(): readonly string[];
 }
 
@@ -115,7 +114,7 @@ const withReconcileRepo = (_name: string, fn: (fixture: ReconcileFixture) => voi
     fn({
       recordedTarget: target,
       reconcile(transport) {
-        return GitReleaseReconciliation(opened(), credentials, transport).reconcile();
+        return openGitHubAdapter(opened(), credentials, transport).reconcile();
       },
       recordedRefs() {
         return [...opened().refs.claims(), ...opened().refs.tags()].map(
