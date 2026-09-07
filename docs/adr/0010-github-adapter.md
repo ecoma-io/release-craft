@@ -113,6 +113,11 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    the file absent from the recorded tree, is `refused(reason:
   "changelog-unrecorded")` — a release never publishes bytes the binding
    did not record.
+   Amendment proposed in #60 (phase 9.3): `verifyRelease` reports a
+   release that does not exist for the recorded tag as `absent` — a
+   determinate read, never a retryable transport failure and never a
+   refusal of a write; the caller's action is the publication itself (the
+   create path is idempotent).
 
 7. **Failure classes are returned values, never exceptions.** Every remote
    operation returns a discriminated union:
