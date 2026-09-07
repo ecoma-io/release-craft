@@ -13,3 +13,4 @@ export * from "./adapter-types.js";
 export * from "./remote-git.js";
 export * from "./sync.js";
 export * from "./publication.js";
+export * from "./reconciliation.js";
