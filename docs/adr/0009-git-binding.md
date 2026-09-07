@@ -4,7 +4,7 @@ title: "The git binding — persistence, the tag-push CAS, and the ref-side name
 status: Proposed
 implements: "https://github.com/ecoma-io/release-craft/issues/39"
 created: 2026-09-06
-updated: 2026-09-06
+updated: 2026-09-07
 ---
 
 # ADR-0009: The git binding — persistence, the tag-push CAS, and the ref-side namespace door
@@ -117,7 +117,11 @@ job is to express that discipline over git, not to invent a second one.
    own ADR. The binding's surface is: local git object and ref
    operations, the four ports, the producer seam, and the binding's own
    doors the contract's §2.6 pins (the tag mint — the decision-record
-   door stays deferred until a consumer exists). How the binding talks
+   door stays deferred until a consumer exists) — amended (phase 9.2,
+   proposed in #54) by the read-only remote-projection seam (`repo`,
+   `refs`; the Phase 9 contract §2.7), which carries no credential, no
+   network, and no environment into the binding.
+   How the binding talks
    to git (executable, library) is the implementation PR's choice,
    constrained only by the no-runtime-dependency rule and the isolation
    gate.
