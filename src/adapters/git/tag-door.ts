@@ -71,11 +71,14 @@ export function GitTagDoor(git: GitRun, naming: GitTagNaming): TagMint {
             detail: `no claim held by attempt ${input.attemptId} derives tag ${input.tag}`,
           };
     }
-    // A held claim under another attempt's token is a foreign mint: never
-    // an admission, the held claim wins.
+    // A held claim under another attempt's token is a foreign mint: a
+    // refusal with the failure class named (contract §2.6 — `conflict`
+    // names a present tag ref, a foreign token a refusal), the held claim
+    // winning without a ref moving.
     if (match.record.token !== input.token) {
       return {
-        kind: "conflict",
+        kind: "refused",
+        reason: "foreign-token",
         tag: input.tag,
         detail: `the claim deriving tag ${input.tag} is held under a different token`,
       };

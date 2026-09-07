@@ -281,11 +281,11 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
     });
   });
 
-  it("denies a foreign token as a conflict, never a mint", () => {
+  it("refuses a foreign token, never a mint (§2.6 — conflict names a tag ref)", () => {
     withStore((store, mint, git) => {
       asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       const stranger = asClaim(store.acquire(stableVersion("2.0.0"), "attempt_c"));
-      const foreign = asConflict(
+      const foreign = asRefused(
         mint({
           attemptId: "attempt_a",
           token: stranger.token,
@@ -293,6 +293,7 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
           target: rootCommit(git),
         }),
       );
+      expect(foreign.reason).toBe("foreign-token");
       expect(foreign.tag).toBe("v1.2.3");
       expect(readRef(git, "refs/tags/v1.2.3")).toBeNull();
     });
