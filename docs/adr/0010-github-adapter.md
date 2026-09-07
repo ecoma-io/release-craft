@@ -55,6 +55,14 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    same binding. Credentials (token or app installation) are supplied at
    open, never ambient, never stored by the adapter — the caller retains
    lifecycle control.
+   Amendment proposed in #54 (phase 9.2): the binding's public surface
+   gains the read-only remote-projection seam — `GitBinding.repo` (its
+   own opened path) and `GitBinding.refs` (`RefRead`, the recorded
+   claims and declared-namespace tags with peeled targets; the Phase 9
+   contract §2.7). The law is unchanged: the factory still opens on a
+   binding and a credential — the repository the adapter transports
+   against is the binding's own, never a caller-supplied path or an
+   ambient token.
 
 3. **Remote synchronization is push-only for writes, fetch-only for
    discovery.** The adapter pushes refs (the binding's claim refs under

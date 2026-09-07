@@ -53,8 +53,14 @@ src/adapters/github/          // the new layer; consumes, never re-owns
 ```
 
 - The layer opens on an already-opened `GitBinding` (ADR-0009's
-  `openGitBinding`) and a credential value, never on a repository path or
-  an ambient token (ADR-0010 decision 2).
+  `openGitBinding`) and a credential value, never on an ambient token
+  (ADR-0010 decision 2). It takes no repository path from its caller
+  either: the repository it transports against is the binding's own,
+  read through the binding's seam (§2.7) — the adapter layers over the
+  binding's repository, never one chosen independently. (#54 proposes
+  this amendment: the bullet first barred the repository path outright,
+  which left ADR-0010 decision 10's read unimplementable through the
+  barrel-only rule.)
 - Layering: nothing under `core/domain/` reaches the layer (structural,
   ADR-0001); `src/execution/` does not import it; the package gains no
   runtime dependency (the house rule — how the adapter calls the GitHub
@@ -145,6 +151,41 @@ The barrel re-exports the adapter factory, the surface types (`GitHubAdapter`,
 `GitHubCredentials`, `SyncReport`, `ReleaseOutcome`, `VerificationOutcome`,
 `ReconciliationReport`), and nothing else. Tests import through the barrel
 only (ADR-0001 decision 9's shape, extended).
+
+### 2.7 The binding's read seam (#54)
+
+`syncRemote()` and `reconcile()` read the binding's recorded state
+(ADR-0010 decisions 3, 10), and the barrel-only rule (§2.1, ADR-0009
+decision 8) forbids reaching the binding's internal modules to do it.
+The binding's public surface therefore carries the read-only seam the
+remote projection reads — proposed in #54, weighing three shapes:
+
+- **The seam on the binding (this amendment).** `GitBinding.repo` (the
+  opened configuration's own repository path) and `GitBinding.refs:
+RefRead`, the recorded refs' read-only enumeration — `claims()`
+  (every claim ref under the binding's claim-ref namespace, each with
+  its peeled target) and `tags()` (every tag within the configuration's
+  declared namespaces — the mint door's namespace rule — each with its
+  peeled target). Pure `for-each-ref` reads: no write, no `HEAD`
+  resolution, no working-tree state (the mint door's discipline, read
+  side). The adapter's transport-level git (`ls-remote`, `push`) runs
+  against exactly this repository — structural, not conventional.
+- **Rejected — a remote-operation door on the binding** (`ls-remote` /
+  `push` behind `GitBinding`): it would move network I/O and
+  credentials into the binding, rewriting ADR-0009 decision 7 ("no API
+  calls, no environments") and spanning §2.5's authentication boundary
+  across two layers.
+- **Rejected — a caller-injected transport runner**: the caller
+  supplies the runner the adapter pushes through, leaving the
+  object-source bound by wiring convention instead of structure; a
+  mismatched wiring pushes the binding's recorded ref names over
+  another repository's objects.
+
+`repo` crosses to the adapter as read-only configuration data — no
+credential, no network, no environment enters the binding (ADR-0009
+decision 7 stands). The changelog/generation lookup that
+`publishRelease`/`verifyRelease` will need is NOT part of this seam; it
+gets its own decision when Phase 9.3 starts.
 
 ## 3. Laws
 
