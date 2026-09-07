@@ -63,6 +63,49 @@ export const COMMIT_ENV = {
 const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 /**
+ * The git process variables that would resolve a spawned git away from its
+ * own `cwd`: repository, work tree, index, and object-database overrides
+ * that hook runners and CI wrappers export around their own plumbing. A
+ * spawned git's repository must come from the `cwd` alone — the binding
+ * opens on one repository; the fixtures build their own — so these are
+ * stripped before every spawn. This is the leak that let a fixture commit
+ * land on the invoking repository's refs while the suite ran inside a
+ * hook.
+ */
+const LEAKED_GIT_CONTEXT: ReadonlySet<string> = new Set([
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_COMMON_DIR",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CEILING_DIRECTORIES",
+  "GIT_PREFIX",
+  "GIT_INTERNAL_SUPER_PREFIX",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_CONFIG_COUNT",
+]);
+
+/**
+ * The hermetic floor every binding or fixture git spawn runs on: process
+ * env minus the leaked repository context, plus no system gitconfig and
+ * no credential prompts, plus the deterministic commit identity. Exported
+ * for the test fixture, whose spawns must be as hermetic as the
+ * binding's own.
+ */
+export function hermeticGitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !LEAKED_GIT_CONTEXT.has(key)),
+  );
+  return {
+    ...env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_TERMINAL_PROMPT: "0",
+    ...COMMIT_ENV,
+  };
+}
+
+/**
  * Opens the binding's git runner on `repo`. The environment is process.env
  * plus the hermetic floor — no system gitconfig, no credential prompts
  * (ADR-0009 decision 7: the binding reads nothing beyond its repository) —
@@ -73,12 +116,7 @@ const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
  * no operator identity in the binding).
  */
 export function openGitRun(repo: string): GitRun {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_TERMINAL_PROMPT: "0",
-    ...COMMIT_ENV,
-  };
+  const env = hermeticGitEnv();
   return (args, input) => {
     const result = spawnSync("git", [...args], {
       cwd: repo,

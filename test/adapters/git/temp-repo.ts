@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { COMMIT_ENV, openGitRun, type GitRun } from "../../../src/adapters/git/index.js";
+import { hermeticGitEnv, openGitRun, type GitRun } from "../../../src/adapters/git/index.js";
 
 /** The shape createTempRepo hands back: the repository path, a runner bound
  * to it, and the cleanup every test owes. */
@@ -25,12 +25,7 @@ export interface TempRepo {
 /** The hermetic environment the fixture's own spawns need. The runner bakes
  * the same floor, but `git init` must run before a runner can be opened on
  * the directory, so the fixture spawns it directly. */
-const GIT_ENV: NodeJS.ProcessEnv = {
-  ...process.env,
-  GIT_CONFIG_NOSYSTEM: "1",
-  GIT_TERMINAL_PROMPT: "0",
-  ...COMMIT_ENV,
-};
+const GIT_ENV: NodeJS.ProcessEnv = hermeticGitEnv();
 
 const spawnGit = (repo: string, args: readonly string[]): void => {
   const result = spawnSync("git", [...args], { cwd: repo, env: GIT_ENV, encoding: "utf8" });

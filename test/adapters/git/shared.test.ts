@@ -135,6 +135,28 @@ describe("the git binding's shared surface", () => {
     });
   });
 
+  it("stays hermetic under a leaked hook environment", () => {
+    // The hook runner's environment exports repository-context variables
+    // around its own plumbing; a leaked GIT_DIR must not redirect a
+    // fixture's or the binding's spawns away from their cwd — this is the
+    // regression the pre-push hook pinned (fixture commits landing on the
+    // invoking repository's refs).
+    process.env.GIT_DIR = "/nonexistent/leaked-git-dir";
+    process.env.GIT_INDEX_FILE = "/nonexistent/leaked-git-index";
+    process.env.GIT_COMMON_DIR = "/nonexistent/leaked-git-common";
+    try {
+      withRepo((git) => {
+        expect(git(["rev-parse", "--git-dir"]).trim()).toBe(".git");
+        expect(git(["rev-parse", "--git-path", "HEAD"]).trim()).toBe(".git/HEAD");
+        expect(refExists(git, "HEAD")).toBe(true);
+      });
+    } finally {
+      delete process.env.GIT_DIR;
+      delete process.env.GIT_INDEX_FILE;
+      delete process.env.GIT_COMMON_DIR;
+    }
+  });
+
   it("freezes parsed values all the way down — the reload path's discipline", () => {
     const value = frozenParse('{"outer":{"inner":[1,2],"text":"x"}}') as {
       outer: { inner: readonly number[]; text: string };
