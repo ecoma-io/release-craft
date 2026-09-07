@@ -139,11 +139,20 @@ export interface ClaimDenied {
   /** Discriminant — an acquisition denial. */
   readonly kind: "denied";
   readonly scope: ClaimScope;
-  /** The winning attempt id. */
-  readonly holder: string;
+  /** The winning attempt id — present whenever a winner exists to name.
+   * A policy refusal (the binding's namespace door, ADR-0009 decision 5
+   * as amended) denies without one: there is no winner, so no holder.
+   * The reference in-memory store never omits it; no engine behavior
+   * reads a denial's holder or refusal reason (contract amendment,
+   * PR #41). */
+  readonly holder?: string;
   /** The winner's recorded sequence, when the denied scope is a
    * `prerelease-sequence`. Omitted otherwise. */
   readonly holderSequence?: number;
+  /** Why the acquisition was denied, when the denial is a policy
+   * refusal rather than a lost race. The one reviewed widening the
+   * phase 8 correction pins; `"namespace"` is its only value today. */
+  readonly refusal?: "namespace";
 }
 
 /** `verify`'s outcome (§2.3): held — with the claim — or lost. A lost
