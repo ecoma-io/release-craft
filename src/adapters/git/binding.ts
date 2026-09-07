@@ -3,10 +3,12 @@
  * decision 8). One factory, one shared runner: every port the binding
  * exposes — the ledger, the attempt register, the claim store, the tag
  * door, the artifact producer — is the git-backed implementation of an
- * engine port over the same repository through the same hermetic runner.
- * No port here exists in the engine's own surface: the assembly wires
- * them in at ADR-0008's seams and ADR-0005's kernel constructor, and the
- * engine never learns the backing is git.
+ * engine port over the same repository through the same hermetic runner,
+ * and the read seam the remote projection reads (§2.7) enumerates the
+ * same repository's recorded refs. No port here exists in the engine's
+ * own surface: the assembly wires them in at ADR-0008's seams and
+ * ADR-0005's kernel constructor, and the engine never learns the backing
+ * is git.
  */
 
 import type {
@@ -16,12 +18,13 @@ import type {
   ExecutionLedger,
 } from "../../index.js";
 
-import type { BindingConfig } from "./binding-types.js";
+import type { BindingConfig, RefRead } from "./binding-types.js";
 import { GitClaimStore } from "./claim-store-git.js";
 import { GitLedger } from "./ledger-git.js";
 import { GitArtifactProducer } from "./producer-git.js";
 import { GitAttemptRegister } from "./register-git.js";
 import { openGitRun, type GitRun } from "./git-run.js";
+import { GitRefRead } from "./refs-read.js";
 import { GitTagDoor, type TagMint } from "./tag-door.js";
 
 /** The binding the assembly receives (contract §2.6): the three ports and
@@ -40,8 +43,18 @@ export interface GitBinding {
    * values, never exceptions. */
   readonly mintTag: TagMint;
   /** The git-backed artifact producer — the digest of the repository's
-   * recorded content (ADR-0008 decision 12's first half, §2.5). */
+   *  recorded content (ADR-0008 decision 12's first half, §2.5). */
   readonly producer: ArtifactProducer;
+  /** The repository path the binding was opened on (the Phase 9
+   *  contract §2.7; D26) — its own configuration value, the remote
+   *  projection's transport target. State reads never use it; they go
+   *  through `refs`. */
+  readonly repo: string;
+  /** The recorded refs' read-only enumeration (the Phase 9 contract
+   *  §2.7; D26): the claim refs and the declared-namespace tags, each
+   *  with the object it names — the claim record's blob, the tag's
+   *  peeled commit. */
+  readonly refs: RefRead;
 }
 
 /**
@@ -74,5 +87,7 @@ export function openGitBinding(config: BindingConfig): GitBinding {
     claims,
     mintTag: GitTagDoor(git, config.tagNaming),
     producer: GitArtifactProducer(config.repo),
+    repo: config.repo,
+    refs: GitRefRead(git, config.tagNaming.namespaces),
   };
 }
