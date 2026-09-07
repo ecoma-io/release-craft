@@ -141,20 +141,24 @@ correctly asserts nothing (verified in "Execution-only cleanliness");
 | R-12                                                                     | adapter | owned (phase 9) | Reconciliation — unadopted remote release: remote release for tag binding has no record of (ADR-0010 decision 8; phase9 contract §4, scenario 12)                                                               |
 | R-13                                                                     | adapter | owned (phase 9) | Ambiguous outcome — timeout returns ambiguous; caller must verify (ADR-0010 decision 7; phase9 contract §4, scenario 13)                                                                                        |
 | R-14                                                                     | adapter | owned (phase 9) | Isolation — engine suite green without adapter; no engine module imports it (phase9 contract §4, scenario 14)                                                                                                   |
+| R-15                                                                     | adapter | owned (phase 9) | Reconciliation — unobserved listing: a listing that never became a usable observation claims no comparison over it (issue #66; D30; phase9 contract §4, scenario 15)                                            |
+| R-16                                                                     | adapter | owned (phase 9) | Reconciliation — refused listing: rate-limit/auth refusal on a listing claims no comparison over it (issue #66; D30; phase9 contract §4, scenario 16)                                                           |
 | Class census: 29 full, 8 partial (P-03, M-10, AR-02, AR-04, AR-06, E-05, |
 | E-10, E-11), 16 execution-only — 53 total.                               |
 
-### Phase 9 extension — 14 adapter scenarios
+### Phase 9 extension — 16 adapter scenarios
 
-The 14 Remote (R) scenarios above are the Phase 9 adapter's coverage,
+The 16 Remote (R) scenarios above are the Phase 9 adapter's coverage,
 added after the 53-scenario sweep. They are not part of the original
 inventory; the class `adapter` is the Phase 9 layer's own. The 53-row
 census and the gap ledger above are unchanged. The 9.5 assembly (#65,
 D29) composed the three units behind the §2.6 barrel: R-14's adapter
 half is pinned by `test/adapters/github/adapter.test.ts` (the barrel's
-runtime surface is the factory), and the classifier pins behind §2.3
-rows 8–9 moved to the white-box suite the contract §4 names as its one
-exception.
+runtime surface is the factory), and the classifier pins behind §4
+scenarios 8–9 moved to the white-box suite the contract §4 names as its one
+exception. R-15/R-16 (issue #66, D30) pin the reconciliation's
+listing-failure outcomes — their fixtures land with the shape-change PR
+that re-pins scenarios 10–12 on the amended report.
 
 ## Gap ledger and resolution
 
