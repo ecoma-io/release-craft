@@ -24,9 +24,21 @@ const open = (): ReleaseAttempt =>
   );
 
 const SCOPE = { kind: "stable-version", lineId: "line-main", version: "1.2.0" } as const;
+// A lease scope: a stable-version claim is a record (P-01), so releasing
+// its token is a no-op — the released-claim scenarios release this one.
+const LEASE_SCOPE = {
+  kind: "prerelease-sequence",
+  lineId: "line-main",
+  target: "1.3.0-rc",
+  streamId: "rc",
+  sequence: 1,
+} as const;
 
 const asClaim = (outcome: Claim | ClaimDenied): Claim => {
   if (outcome.kind !== "claim") {
+    if (outcome.holder === undefined) {
+      throw new Error("expected a claim, got a denial without a holder");
+    }
     throw new Error(`expected a claim, got a denial by ${outcome.holder}`);
   }
   return outcome;
@@ -68,7 +80,7 @@ const executingWithoutClaim = (store: MemoryClaimStore, log: MemoryTransitionLog
  * stage behind it — with its token returned for release scenarios. */
 const withReleasedClaim = (store: MemoryClaimStore, log: MemoryTransitionLog) => {
   const attempt = executingWithoutClaim(store, log);
-  const token = asClaim(store.acquire(SCOPE, attempt.attemptId)).token;
+  const token = asClaim(store.acquire(LEASE_SCOPE, attempt.attemptId)).token;
   expect(run(attempt, "claim", store, log).kind).toBe("advance");
   expect(run(attempt, "prepare", store, log).kind).toBe("advance");
   expect(run(attempt, "validate", store, log).kind).toBe("advance");
@@ -129,7 +141,7 @@ describe("fixture 6 — no mutation before claim", () => {
     const store = new MemoryClaimStore();
     const log = new MemoryTransitionLog();
     const attempt = executingWithoutClaim(store, log);
-    const token = asClaim(store.acquire(SCOPE, attempt.attemptId)).token;
+    const token = asClaim(store.acquire(LEASE_SCOPE, attempt.attemptId)).token;
     expect(run(attempt, "claim", store, log).kind).toBe("advance");
     expect(run(attempt, "prepare", store, log).kind).toBe("advance");
 

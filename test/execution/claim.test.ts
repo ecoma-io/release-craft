@@ -9,6 +9,9 @@ const prerelease = (sequence: number, lineId = "line-main") =>
 const releaseLine = (lineId = "line-main") => ({ kind: "release-line", lineId }) as const;
 const asClaim = (outcome: Claim | ClaimDenied): Claim => {
   if (outcome.kind !== "claim") {
+    if (outcome.holder === undefined) {
+      throw new Error("expected a claim, got a denial without a holder");
+    }
     throw new Error(`expected a claim, got a denial by ${outcome.holder}`);
   }
   return outcome;
@@ -74,13 +77,21 @@ describe("the claim store", () => {
 
   it("verifies against current state and loses released claims (§2.3)", () => {
     const store = new MemoryClaimStore();
-    const claim = store.acquire(stableVersion("1.2.0"), "attempt_sha256:a");
+    const claim = store.acquire(prerelease(1), "attempt_sha256:a");
     expect(claim.kind).toBe("claim");
     const token = asClaim(claim).token;
     expect(store.verify(token)).toEqual({ kind: "held", claim: asClaim(claim) });
     expect(store.verify("claim:999").kind).toBe("lost");
     store.release(token);
     expect(store.verify(token).kind).toBe("lost");
+  });
+
+  it("keeps a released stable-version claim as its record — a record, not a lease (P-01)", () => {
+    const store = new MemoryClaimStore();
+    const claim = store.acquire(stableVersion("1.2.0"), "attempt_sha256:a");
+    const token = asClaim(claim).token;
+    store.release(token);
+    expect(store.verify(token)).toEqual({ kind: "held", claim: asClaim(claim) });
   });
 
   it("pins same-tick contention by explicit initial state", () => {
