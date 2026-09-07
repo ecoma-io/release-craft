@@ -31,15 +31,11 @@ import type {
 } from "./adapter-types.js";
 import { readFailure, type ReadFailure } from "./response.js";
 
-/** One row of the REST tag listing the reconciliation reads — only the
- *  fields the comparison uses, everything else unknown. */
-interface RemoteTag {
+/** One row of either REST listing the reconciliation reads — only the
+ *  fields the comparisons use, everything else unknown. */
+interface RemoteRow {
   readonly name?: unknown;
   readonly commit?: { readonly sha?: unknown };
-}
-
-/** One row of the REST release listing. */
-interface RemoteRelease {
   readonly tag_name?: unknown;
 }
 
@@ -79,6 +75,12 @@ const asRows = (response: GitHubResponse): ParsedListing => {
 const asText = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
 
+/** The row as the shape the comparison reads, or undefined — a row that
+ *  is not an object (a null, a number) is a lying listing like any
+ *  other, never a throw past the no-exception law (§2.3). */
+const asRow = (row: unknown): RemoteRow | undefined =>
+  row !== null && typeof row === "object" ? row : undefined;
+
 const recordedTags = (binding: GitBinding): Map<string, string> => {
   const recorded = new Map<string, string>();
   for (const row of binding.refs.tags()) {
@@ -88,6 +90,11 @@ const recordedTags = (binding: GitBinding): Map<string, string> => {
   }
   return recorded;
 };
+
+/** The comparison's stable order: code-unit comparison, deterministic
+ *  across environments (a review reads the same report twice). */
+const byTag = (left: Divergence, right: Divergence): number =>
+  left.tag < right.tag ? -1 : left.tag > right.tag ? 1 : 0;
 
 /** The tag listing's comparison: every remote tag checked against the
  *  binding's record. A tag the binding holds no record of is unadopted,
@@ -102,9 +109,9 @@ const comparedTags = (
   const divergences: Divergence[] = [];
   const verifiedTags: string[] = [];
   for (const row of rows) {
-    const tag = row as RemoteTag;
-    const name = asText(tag.name);
-    const target = asText(tag.commit?.sha);
+    const tag = asRow(row);
+    const name = asText(tag?.name);
+    const target = asText(tag?.commit?.sha);
     if (name === undefined || target === undefined) {
       return { state: "transport-failure" };
     }
@@ -127,9 +134,7 @@ const comparedTags = (
   }
   // Stable reports: the comparison's output is data for review, and a
   // review reads the same report twice.
-  divergences.sort(
-    (left, right) => left.kind.localeCompare(right.kind) || left.tag.localeCompare(right.tag),
-  );
+  divergences.sort(byTag);
   verifiedTags.sort();
   return { state: "listed", divergences, verifiedTags };
 };
@@ -144,8 +149,8 @@ const comparedReleases = (
 ): ReleasesListingOutcome => {
   const divergences: Divergence[] = [];
   for (const row of rows) {
-    const release = row as RemoteRelease;
-    const tag = asText(release.tag_name);
+    const release = asRow(row);
+    const tag = asText(release?.tag_name);
     if (tag === undefined) {
       return { state: "transport-failure" };
     }
@@ -157,9 +162,7 @@ const comparedReleases = (
       });
     }
   }
-  divergences.sort(
-    (left, right) => left.kind.localeCompare(right.kind) || left.tag.localeCompare(right.tag),
-  );
+  divergences.sort(byTag);
   return { state: "listed", divergences };
 };
 

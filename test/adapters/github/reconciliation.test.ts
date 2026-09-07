@@ -330,6 +330,19 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
     });
   });
 
+  it("R-15 — a row that is not an object is a transport failure, never a throw", () => {
+    withReconcileRepo("null-row", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([tagRow("v1.2.3", fixture.recordedTarget), null])
+          : listResponse([null, releaseRow("v9.9.9")]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(report.releases).toEqual({ state: "transport-failure" });
+    });
+  });
+
   it("R-16 — a rate-limited listing is a refusal carrying the reset timestamp (decision 9)", () => {
     withReconcileRepo("rate-limited", (fixture) => {
       const { transport } = fakeTransport((call) =>
