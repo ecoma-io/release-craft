@@ -223,7 +223,8 @@ remote projection reads — proposed in #54, weighing three shapes:
 RefRead`, the recorded refs' read-only enumeration — `claims()`
   (every claim ref under the binding's claim-ref namespace, each with
   the register blob's oid — D24: a claim ref names a blob,
-  nothing to peel; the per-line claim register of ADR-0011) and `tags()` (every tag within the configuration's
+  nothing to peel; the per-line claim register of ADR-0011) and
+  `tags()` (every tag within the configuration's
   declared namespaces — the mint door's namespace rule — each with its
   commit: the peeled commit for an annotated tag, the ref's own target
   for a lightweight one). Pure `for-each-ref` reads: no write, no `HEAD`

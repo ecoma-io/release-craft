@@ -96,10 +96,24 @@ job is to express that discipline over git, not to invent a second one.
    canonical form, and every mutation is a compare-and-set of the whole
    set. The one-ref CAS is unchanged; what it arbitrates widens from
    the same-scope race to the line's whole exclusion predicate, closing
-   #47's scan-then-CAS window (#47, #49). The claim namespace's blob
-   shape changes with it: a blob that is not a register refuses loudly,
+   #47's scan-then-CAS window (#47, #49). The release boundary moves
+   with it: the lease release above ("a check-and-set delete of the
+   scope's claim ref") becomes a whole-set compare-and-set that removes
+   the record **by token, never by scope** — a release racing the same
+   scope's re-acquisition by a new holder deletes the old holder's
+   record only — and releasing the last claim of a line leaves the
+   empty register in place: the ref is never deleted, the delete
+   primitive (`casDeleteRef`) leaves the claim path, and recorded state
+   grows by one full-set commit per claim mutation, the ledger's
+   append-only norm extended to claims. The claim namespace's blob
+   shape changes with the mapping: a blob that is not a register
+   refuses loudly,
    and repositories written by the per-scope layout are not readable by
-   the register store (pre-adoption; no migration owed).
+   the register store (pre-adoption; no migration owed). The tag
+   door's admission ("under a claim ref the calling attempt holds")
+   reads "under a claim record the calling attempt holds" — the
+   register record whose `holder` is the attempt — with the door's
+   shape and refusals unchanged.
 5. **The namespace door runs at both doors, before any ref moves.** The
    binding refuses a claim whose derived tag name lies outside the
    namespace the plan declares, and refuses a mint whose tag lies

@@ -136,6 +136,19 @@ mint(tag, target) — the binding's tag door, not the port —
   than silently read as unclaimed. The exclusion-path denial carries no
   `holderSequence`; the same-scope adjudication denial carries the
   winner's sequence (issue #69's parity pin, folded into the rewrite).
+  The amendment supersedes this section's stale text loudly rather
+  than silently: the diagram above shows the two-step scan-then-create
+  the register closes — under the register, `accept` reads "the line's
+  register without the requested scope → created by a whole-set CAS,
+  accepted; the register holding an excluding claim → refused, denied
+  naming the winner's recorded holder"; the release paragraph's
+  check-and-set delete of the scope's claim ref becomes the whole-set
+  CAS removing **by token, never by scope**; the tag door's "under a
+  claim ref the calling attempt holds" reads "under a claim record the
+  calling attempt holds"; and §2.2's "each scope anchors to exactly
+  one ref" keeps its word for the ledger, ordinal, and decision scopes
+  — the claim scope's anchor is the line's register, not the scope's
+  own ref.
 
 ### 2.4 The ref-side namespace door (E-08, M-11)
 

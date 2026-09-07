@@ -36,15 +36,23 @@ nothing less.
 1. **The binding's claim store holds one register ref per release
    line, and every mutation is a compare-and-set of the whole
    register.** The register ref lives under the same claim namespace —
-   `refs/ecoma/claims/<sha256(lineId)>` — and its tip commit's blob is
+   `refs/ecoma/claims/<sha256(lineId)>`, the digest over the lineId's
+   UTF-8 bytes — and its tip commit's blob is
    the line's claim set in canonical form:
    `{"claims":[<claim record>…]}`, the records sorted by their scope's
    canonical JSON (a total order; scopes are unique within a register —
-   same scope is the same key). `acquire` and `release` read the
-   register, compute the next set, and land it with the existing
+   same scope is the same key). `acquire` reads exactly its line's
+   register and computes the next set; `release(token)` — the port's
+   only release signature — first resolves the token through the
+   all-register walk decision 3 names, then computes the next set.
+   Both land with the existing
    one-ref CAS (`casAppendCommit` against the observed tip); a lost CAS
-   re-reads and re-evaluates, it never adjudicates against stale state.
-   The exclusion predicate and the accept become one atomic transition
+   re-reads and re-evaluates, it never adjudicates against stale state —
+   and a release's re-read re-checks the record's presence and removes
+   **by token, never by scope**: a release racing the same scope's
+   re-acquisition by a new holder must delete the old holder's record
+   only. The exclusion predicate and the accept become one atomic
+   transition
    per line: the same ref's CAS that creates the claim is the CAS that
    checked the line's other claims.
 
@@ -55,22 +63,26 @@ nothing less.
    the one the binding already assumes: concurrent writers on one
    repository, git's per-ref lockfile making each ref update atomic, no
    wall clock, no network coordination, no component above git. The
-   register needs nothing newer: a read-compute-write cycle that loses
-   its CAS observed a concurrent winner and simply retries from the new
+   register needs nothing newer: the claim–verify–write cycle the
+   protocol already names (the CAS is the verify), whose loser observed
+   a concurrent winner and simply retries from the new
    tip. Cross-line concurrency touches different refs and needs no
    coordination — the predicate it would have to enforce does not
    exist.
 
-3. **Reads narrow to the line.** `acquire` reads exactly one ref (the
+3. **Reads narrow to the line, with three named exceptions.** `acquire`
+   reads exactly one ref (the
    requested scope's line register) instead of scanning every claim ref
-   in the namespace; `verify(token)` and the tag door's held-claim
+   in the namespace; `verify(token)`, `release(token)`'s token
+   resolution, and the tag door's held-claim
    lookup still walk every register (the token index is the set of
    registers), but the enumeration is per-line registers, not
    per-scope refs. The `ClaimStore` port is unchanged — the same
    `acquire`/`verify`/`release` surface, the same `Claim`/`ClaimDenied`
    values, and the in-memory store is untouched: it already enforces
-   the invariant atomically, and the two stores remain
-   indistinguishable through the port (ADR-0009 decision 3).
+   the invariant atomically, and once the rewrite lands the two stores
+   are indistinguishable through the port (ADR-0009 decision 3;
+   decision 7 records today's one divergence, #69).
 
 4. **An empty register persists; the ref is never deleted.** Releasing
    the last claim of a line leaves `{"claims":[]}` at the ref. Deleting
@@ -112,7 +124,7 @@ nothing less.
    winner's scope is a prerelease sequence (E-08's retry base). The
    git store's current exclusion path stamps the requester's own
    sequence into `holderSequence`, diverging from the reference store
-   and enabling a read-compute-write retry loop keyed on a meaningless
+   and enabling an E-08 retry loop keyed on a meaningless
    base; the register rewrite lands the parity pin.
 
 8. **The Phase 9 read seams follow the record (the amendment's blast
@@ -125,7 +137,8 @@ nothing less.
    enumerates the namespace — and its documented object ("the
    canonical record's blob") becomes the register blob. The tag door's
    held-claim lookup changes its source, not its shape: same filter,
-   same caller contract. No port widens, no new door exists.
+   same caller contract. No engine port widens and no new door exists;
+   the widening is the binding's own §2.8 read seam, named above.
 
 ### Rejected alternatives
 
@@ -156,30 +169,49 @@ nothing less.
 
 ## Consequences
 
-- **Test strategy.** The exclusion matrix re-pins on both stores (the
-  port's provider-isolation suite: same scenario list, both
-  backends). The deterministic concurrency suite drives two writers
+- **Test strategy.** The exclusion matrix re-pins on both backends:
+  the memory store's exclusion matrix (`test/execution/claim.test.ts`)
+  and the git claim fixtures (`test/adapters/git/claims-mint.test.ts`)
+  re-pinned on the register shape, plus one dual-backend scenario list
+  run over both stores — new suite work, not a re-pin of an existing
+  one. The deterministic concurrency suite drives two writers
   one move at a time through a hostile `GitRun` that diverges the
   register between a loser's read and its CAS: the loser re-evaluates
   against the diverged tip and lands or denies — never both-accept,
-  never a stale adjudication. The crash windows pin the register at a
+  never a stale adjudication. The release pins hold the removal key:
+  a release racing the same scope's re-acquisition deletes the old
+  holder's record, never the new holder's. The crash windows pin the
+  register at a
   consistent tip on either side of every CAS. The #69 pins hold the
   denial shapes. The empty-register and foreign-blob pins hold
   decision 4 and 5's postures.
+- **Recorded state grows with claim churn.** A register mutation
+  appends one full-set commit, so every accept and release on a line
+  adds a commit where the per-scope lease's release deleted its ref —
+  the ledger's append-only norm extended to claims, bounded by the
+  line's claim lifetime; the same posture the ledger's tail already
+  holds.
 - **Zero-config regression** holds: the store is opened exactly as
   before, on a repository path; the mapping is internal.
 - **The layout amendment is loud**: ADR-0009 decision 4 is amended
-  (the one-ref accept becomes the one-register accept), the Phase 8
-  contract §2.3's mapping paragraph is amended with it, and the Phase
+  (the one-ref accept becomes the one-register accept, and the
+  check-and-set delete of a scope's ref leaves the claim path), the
+  Phase 8 contract's §2.2 mapping sentence and §2.3's accept diagram
+  and release paragraph are amended with it, D24 is annotated as
+  superseded on the claim mapping, and the Phase
   9 contract's §2.7/§2.8 seam texts follow the widened read. The
   decision log records this as D31.
 
 ## Amendments this ADR makes (loud, in this PR)
 
-- [0009-git-binding.md](0009-git-binding.md): decision 4's accept
-  boundary (per-scope ref → per-line register).
+- [0009-git-binding.md](0009-git-binding.md): decision 4's accept and
+  release boundaries (per-scope refs → the per-line register; the
+  check-and-set delete dies with the per-scope mapping —
+  `casDeleteRef` leaves the claim path).
 - [../design/phase8-git-binding-contract.md](../design/phase8-git-binding-contract.md):
-  §2.3's mapping and release paragraphs.
+  §2.2's per-scope mapping sentence and §2.3's accept diagram, release
+  paragraph, and mint-door phrasing.
 - [../design/phase9-github-adapter-contract.md](../design/phase9-github-adapter-contract.md):
   §2.7's claim-object wording and §2.8's `claim(ref)` → `claims(ref)`.
-- [../design/decision-log.md](../design/decision-log.md): D31.
+- [../design/decision-log.md](../design/decision-log.md): D31, with
+  D24 annotated.
