@@ -57,3 +57,40 @@ export interface BindingConfig {
   readonly repo: string;
   readonly tagNaming: GitTagNaming;
 }
+
+/**
+ * One recorded ref the remote projection reads (the Phase 9 contract
+ * §2.7; D26): the binding's own recorded state — a claim ref under its
+ * namespace or a tag within the declared namespaces — with the object it
+ * names. For a claim ref that object is the canonical record's blob
+ * (D24); for a tag it is the commit — the tag object itself for a
+ * lightweight tag (the mint door's shape), the peeled commit for an
+ * annotated one.
+ */
+export interface RecordedRef {
+  /** The full ref name — `refs/ecoma/claims/<record>` or
+   *  `refs/tags/<tag>`. */
+  readonly ref: string;
+  /** The object the ref names — the claim record's blob oid for a claim
+   *  ref; the commit for a tag, peeled from the tag object for an
+   *  annotated one. */
+  readonly target: string;
+  /** Which recorded namespace the ref came from. */
+  readonly kind: "claim" | "tag";
+}
+
+/**
+ * The binding's read-only ref enumeration (the Phase 9 contract §2.7;
+ * D26): what the remote projection reads to determine what to push.
+ * Pure reads over the recorded refs — no write, no `HEAD` resolution, no
+ * working-tree state (ADR-0009 decision 4's discipline, read side).
+ */
+export interface RefRead {
+  /** Every claim ref under the binding's claim-ref namespace, each with
+   *  the canonical record's blob oid as its target. */
+  claims(): readonly RecordedRef[];
+  /** Every tag within the configuration's declared namespaces (the mint
+   *  door's namespace rule) the repository holds, each with its peeled
+   *  target. */
+  tags(): readonly RecordedRef[];
+}
