@@ -1116,6 +1116,10 @@ describe("P-03 through the door — the promote intent over the in-flight rc", (
     // The target is the pointed-at release: bumpPatch over 1.2.0-rc.2 is
     // 1.2.0 (SemVer §11.3). One releasing line meets one declared component
     // (D17(8)), so the propagation plan maps it without negative evidence.
+    // ADR-0012 decision 2: the promote names its planned channel
+    // transitions even with no channels declared — the promoted-from edge
+    // (1.2.0-rc.2 → 1.2.0) and the promoted stream's close (rc on 1.2.0);
+    // no channel move can be named for an undeclared registry.
     expect(planLineOf(outcome)).toEqual({
       lineId: "1.x",
       stable: { version: "1.2.0", tag: "1.2.0" },
@@ -1124,6 +1128,10 @@ describe("P-03 through the door — the promote intent over the in-flight rc", (
       propagation: { edges: [], order: ["release-craft"], notMoved: [] },
       preconditions: [{ kind: "tag-absent", tag: "1.2.0" }],
       artifacts: ["1.2.0"],
+      channels: [
+        { kind: "promoted-from", from: "1.2.0-rc.2", to: { line: "1.x", version: "1.2.0" } },
+        { kind: "stream-close", stream: "rc", target: "1.2.0" },
+      ],
     });
     // §2.14: the door is pure — identical inputs, identical whole outcome.
     expect(plan(input())).toEqual(outcome);

@@ -34,6 +34,7 @@ export { loadTagHistory, deriveRanges } from "./history.js";
 export { resolveBump, decideLine } from "./decide.js";
 export { rebuildLineState } from "./state.js";
 export { planTargets, planStreams } from "./plan.js";
+export { plannedChannelTransitions } from "./channels.js";
 export { planPropagation } from "./propagate.js";
 export { canonicalJson, planFingerprint, inputsFingerprint } from "./identity.js";
 export { plan } from "./assemble.js";

@@ -170,7 +170,9 @@ function releaseTriggeringChangesOf(input: PlanningInput): readonly Record<strin
  * The locked `InputsFingerprint` (§2.11, E-04, D17(7)): SHA-256 over the
  * canonical JSON of the input's policy-relevant projection — the closed
  * tuple of policy digest, refs, tags, lines, components, bootstrap, intents,
- * and the extracted release-triggering change set.
+ * the declared channel registry (ADR-0012 decision 2 — worlds differing in
+ * declared channels must plan differently), and the extracted
+ * release-triggering change set.
  */
 export const inputsFingerprint: InputsFingerprint = (input: PlanningInput): string => {
   const world = {
@@ -181,6 +183,7 @@ export const inputsFingerprint: InputsFingerprint = (input: PlanningInput): stri
     components: input.components,
     bootstrap: input.bootstrap,
     intents: input.intents,
+    channels: input.channels,
     changes: releaseTriggeringChangesOf(input),
   };
   return `inputs_sha256:${createHash("sha256").update(canonicalJson(world)).digest("hex")}`;

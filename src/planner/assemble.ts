@@ -60,7 +60,8 @@
 import { Version } from "@ecoma-io/release-craft/domain";
 
 import { attribute } from "./attribute.js";
-import { decideLine, resolveBump } from "./decide.js";
+import { plannedChannelTransitions } from "./channels.js";
+import { decideLine, pointerFor, resolveBump } from "./decide.js";
 import { extract } from "./extract.js";
 import { deriveRanges, loadTagHistory } from "./history.js";
 import { inputsFingerprint, planFingerprint } from "./identity.js";
@@ -72,6 +73,7 @@ import type {
   LineConfig,
   LineDecision,
   OperatorIntent,
+  PlannedChannelTransition,
   PlannedStream,
   Plan,
   PlanLine,
@@ -99,6 +101,10 @@ interface PlannedLine {
   readonly decision: LineDecision;
   readonly stable: TargetPlan["stable"];
   readonly streams: readonly PlannedStream[];
+  /** ADR-0012 decision 2 — the planned channel transitions, resolved at the
+   * plan loop where the decision, state, and input are all live; absent for
+   * every non-promote run. */
+  readonly channels?: readonly PlannedChannelTransition[];
 }
 
 /** A stage output the preceding doors guarantee for every declared line —
@@ -219,7 +225,10 @@ function refusedStreamReason(line: LineConfig, identifier: string): string {
 
 /** One §2.11 line tuple. The plan-level propagation plan rides verbatim
  * (reading 2 in the module header); the stable version is recorded as its
- * string; the streams are the planned streams verbatim. */
+ * string; the streams are the planned streams verbatim; the planned channel
+ * transitions ride only when the run promotes (ADR-0012 decision 2) —
+ * absent, never an empty list, so plans that name no transitions stay
+ * byte-identical to the pre-ADR-0012 shape. */
 function assembleLine(
   minted: PlannedLine,
   propagation: PropagationPlan,
@@ -238,6 +247,7 @@ function assembleLine(
     propagation,
     preconditions: tags.map((tag) => ({ kind: "tag-absent" as const, tag })),
     artifacts: tags,
+    ...(minted.channels === undefined ? {} : { channels: minted.channels }),
   };
 }
 
@@ -301,12 +311,38 @@ export const plan: Plan = (raw) => {
               streams: planStreams(intents, decision, state, config, input.policy),
             }
           : planTargets(intents, decision, state, config, input.policy);
+    // ADR-0012 decision 2: a promote (release with an inherited change set,
+    // bump null) over a minted stable target names its planned channel
+    // transitions in the plan — the declared channels' moves, the
+    // promoted-from edge, the promoted stream's close. Pure plan content
+    // (invariant 2.2); the execution side records it at the stage of the
+    // same name. Every other run plans no transitions. The edge's `from`
+    // is `pointerFor`'s pointer — the SAME pointer the promote decision
+    // named: on a build-metadata tie (`1.2.0-rc.2+a` / `+b`) the rebuilt
+    // state keeps the tie's first entry while the decision names the
+    // last, and one plan may not carry two identities for the prerelease
+    // it promotes. The promoted stable target is unaffected (bumpPatch
+    // drops the prerelease either way).
+    const promotePointer =
+      decision.kind === "release" && decision.bump === null
+        ? pointerFor(line.lineId, input)
+        : undefined;
+    const channels: readonly PlannedChannelTransition[] | undefined =
+      promotePointer !== undefined && targets.stable !== null
+        ? plannedChannelTransitions(
+            input.channels ?? [],
+            line.lineId,
+            promotePointer,
+            targets.stable.version,
+          )
+        : undefined;
     if (targets.stable !== null || targets.streams.length > 0) {
       planned.push({
         lineId: line.lineId,
         decision,
         stable: targets.stable,
         streams: targets.streams,
+        ...(channels === undefined ? {} : { channels }),
       });
     }
   }
