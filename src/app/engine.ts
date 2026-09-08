@@ -24,6 +24,7 @@
 import {
   CANONICAL_STAGES,
   abort as abortAttempt,
+  attemptIdentity,
   block,
   classifyResume,
   effectiveSteps,
@@ -43,7 +44,9 @@ import {
   type BlockedResolution,
   type Claim,
   type ClaimScope,
+  type ExecutionLedger,
   type HookAnchorPosition,
+  type LedgerRecord,
   type PlanningInput,
   type PlanningOutcome,
   type PlanLine,
@@ -111,6 +114,59 @@ const attributionFor = (handle: AttemptHandle): Attribution => ({
  * derivation verbatim: the first stream's tag, else the stable tag. */
 const plannedTagOf = (planLine: PlanLine): string | null =>
   planLine.streams[0]?.tag ?? planLine.stable?.tag ?? null;
+
+/** The recorded abandonment a fresh run must answer for (ADR-0013 decision
+ * 4): a plan's attempt sequence is derived, never looked up — the fresh
+ * ordinal's own identity bounds the scan, and every ordinal at or below it
+ * names an attempt id whose tail the ledger already holds. The first
+ * recorded abandonment on those tails is the human's standing word over
+ * the plan (E-09): the run refuses quoting it before the claim is
+ * acquired and before the ledger is written, instead of silently
+ * re-executing over the recorded word. The ordinal itself is already
+ * allocated when the scan runs — the register has no read door, so the
+ * refusal burns it; the plan-keyed attempt lookup that would avoid that
+ * stays §4 question 6's own reviewed change. Termination is mechanical:
+ * `freshOrdinal` is the 1-based ordinal the register just allocated,
+ * captured at the allocation seam, and the loop tops out there — reaching
+ * it without the identity matching `attemptIdentity(planId, N)` is the two
+ * derivations diverging, the named violation, never a longer walk. */
+const recordedAbandonment = (
+  ledger: ExecutionLedger,
+  planId: string,
+  freshAttemptId: string,
+  freshOrdinal: number,
+): { readonly attemptId: string; readonly actor: string; readonly reason: string } | undefined => {
+  let found:
+    { readonly attemptId: string; readonly actor: string; readonly reason: string } | undefined;
+  for (let ordinal = 1; ordinal <= freshOrdinal; ordinal += 1) {
+    const attemptId = attemptIdentity(planId, ordinal);
+    if (ordinal === freshOrdinal && attemptId !== freshAttemptId) {
+      throw new Error(
+        `the fresh attempt ${freshAttemptId} is not the plan's ordinal-${String(freshOrdinal)} ` +
+          `identity ${attemptId} — attemptIdentity and the register's allocation have ` +
+          `diverged; refusing to guess (phase 4 §2.1; ADR-0013 decision 4)`,
+      );
+    }
+    if (found === undefined) {
+      const abandonment = ledger
+        .tail(attemptId)
+        .find(
+          (record): record is LedgerRecord & { readonly kind: "abandonment" } =>
+            record.kind === "abandonment",
+        );
+      if (abandonment !== undefined) {
+        found = { attemptId, actor: abandonment.attribution.actor, reason: abandonment.reason };
+      }
+    }
+    if (attemptId === freshAttemptId) {
+      return found;
+    }
+  }
+  throw new Error(
+    `the abandonment scan ran past the fresh ordinal ${String(freshOrdinal)} without meeting ` +
+      `it — unreachable while attemptIdentity derives the ids (ADR-0013 decision 4)`,
+  );
+};
 
 /**
  * The anchor stage a classification verdict's extension step hangs from —
@@ -639,17 +695,24 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     // §2.5 step 2 — the attempt: carried continues, fresh allocates.
     const carried = attempts.get(planId);
     let entry: AttemptEntry;
+    // The ordinal this run's own allocation consumes, captured at the
+    // allocation seam — the register's only door allocates, so the fresh
+    // run's allocation is itself the read the scan's top needs.
+    let freshOrdinal = 0;
     if (carried === undefined) {
       const opened = start(
         openAttempt(
-          ports.register,
+          { nextOrdinal: (id) => (freshOrdinal = ports.register.nextOrdinal(id)) },
           { planId, planFingerprint: planId },
           request.declarations?.hooks,
           request.declarations?.artifacts,
         ),
       );
       entry = { attempt: opened, planLine, claim: null, tags: [] };
-      attempts.set(planId, entry);
+      // Deliberately NOT in the map yet: a fresh run whose evidence refusal
+      // fires below must leave no entry behind — the attempt store is
+      // bookkeeping, never authority (§2.7), and a carried phantom would
+      // decide whether the next run's scan happens at all.
     } else {
       entry = carried;
     }
@@ -658,6 +721,33 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
       attemptId: entry.attempt.attemptId,
       actor: request.actor,
     };
+    if (carried === undefined) {
+      // A fresh run answers the plan's recorded abandonments before the
+      // claim is acquired and before the ledger is written (ADR-0013
+      // decision 4): the human abort is durable evidence standing over the
+      // plan (E-09), so the run refuses quoting the recorded word — a new
+      // ordinal never silently re-executes over it. The ordinal itself is
+      // already allocated (above), so a refused run burns it and the NEXT
+      // fresh run allocates the following ordinal and answers again — the
+      // recorded word is quoted every time, not once per process; the
+      // carried path's classification throws on the same record (decision
+      // 3), so both doors read the same evidence.
+      const abandonment = recordedAbandonment(ports.ledger, planId, handle.attemptId, freshOrdinal);
+      if (abandonment !== undefined) {
+        return refusedOutcome(
+          `the plan's recorded tail carries an abandonment attributed to ` +
+            `${abandonment.actor} on attempt ${abandonment.attemptId} ("${abandonment.reason}")` +
+            ` — the human abort stands over this plan; re-running it is a new human decision, ` +
+            `never a door this run takes silently (E-09; ADR-0013 decision 4)`,
+          planId,
+          handle,
+        );
+      }
+      // The scan came back clean: only now does the fresh attempt become
+      // the carried one — every later step (claim denial, walk, block)
+      // leaves a resumable entry, as before.
+      attempts.set(planId, entry);
+    }
     const denial = acquireFor(entry, scope, handle);
     if (denial !== null) {
       return denial;
@@ -724,11 +814,20 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     const { entry } = found;
     // abort is the kernel's own door: terminal is terminal (E-09), and the
     // throw on a terminal attempt is the kernel's contract violation. The
-    // ledger names no abandonment record kind (phase 4 §2.8 left the
-    // durable record to its own slice), so the recorded attempt — terminal
-    // reason carried — is what the store keeps and observe reads back.
+    // durable half lands beside it (ADR-0013 decision 2): the abandonment
+    // record carries the kernel's `AbortOutcome.attribution` (the value
+    // this door used to drop) and the reason verbatim, so the abort
+    // outlives this process and a later assembly classifies the attempt
+    // terminal from the ledger alone. The boundary's own door is the
+    // record's only writer (phase 11 contract §2.9).
     const outcome = abortAttempt(entry.attempt, actor, reason);
     entry.attempt = outcome.attempt;
+    ports.ledger.append({
+      kind: "abandonment",
+      attemptId: handle.attemptId,
+      reason,
+      attribution: outcome.attribution,
+    });
     return { kind: "abandoned", reason, ...outcomeBase(handle.planId, handle, []) };
   };
 

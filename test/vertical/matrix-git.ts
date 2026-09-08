@@ -109,6 +109,11 @@ export const seedLineHeads = (git: GitRun): Record<string, string> => {
 // The binding and naming — the §3 scopes map onto the matrix's version strings
 // ---------------------------------------------------------------------------
 
+/** Re-exported so a caller may open a FRESH binding over the same repository
+ * (a restarted process — nothing process-local survives) without reaching
+ * past the adapter barrel from a boundary test (§5 obligation 7). */
+export { openGitBinding };
+
 /** The tag naming the matrix's scopes derive (values exactly the matrix
  * version strings, no prefix): a prerelease sequence mints
  * `<target>-<streamId>.<sequence>` (`5.0.0-beta.1`), a stable version mints

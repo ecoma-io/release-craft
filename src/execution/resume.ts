@@ -50,21 +50,36 @@ const firstUncompleted = (attempt: ReleaseAttempt, ledger: ExecutionLedger): Ste
 
 /** Classifies a resume (§2.3, E-01, E-02, E-05) — the pure ledger-side
  * classification, distinct from attempt.ts's `resume` state-machine door.
- * The order is the contract's: a terminal attempt is a thrown protocol
- * violation (types.ts §2.2: terminal is terminal); the recorded plan
- * fingerprint is §2.2's equality-proof half and resume refuses without it;
- * a mismatch with the attempt's carried fingerprint is `stale` (E-05 —
- * refuse, record, re-plan through the planner's door, never continue); a
- * completed step with no preceding `started` for the same stepKey is
- * structurally corrupt; a failed stage is classifyCrash's territory
- * (§2.4); a `blocked` attempt re-arms only over a recorded resolution
- * (§2.7's resolveBlocked door, E-04). Otherwise the verdict continues at
- * the first stage not completed, or completes: every stage completed means
- * the attempt is done, and its terminal outcome follows the recorded steps
- * — `satisfied-externally` when the ledger's external view recorded an
- * observed satisfaction for any of the attempt's stages (E-03's
- * ledger-first done-ness), `published` otherwise. */
+ * The order is the contract's: a recorded abandonment is terminal from the
+ * ledger alone (ADR-0013 decision 3 — the human abort's durable record
+ * outranks whatever a process-local attempt value claims, E-09), then a
+ * terminal attempt is a thrown protocol violation (types.ts §2.2: terminal
+ * is terminal); the recorded plan fingerprint is §2.2's equality-proof half
+ * and resume refuses without it; a mismatch with the attempt's carried
+ * fingerprint is `stale` (E-05 — refuse, record, re-plan through the
+ * planner's door, never continue); a completed step with no preceding
+ * `started` for the same stepKey is structurally corrupt; a failed stage is
+ * classifyCrash's territory (§2.4); a `blocked` attempt re-arms only over a
+ * recorded resolution (§2.7's resolveBlocked door, E-04). Otherwise the
+ * verdict continues at the first stage not completed, or completes: every
+ * stage completed means the attempt is done, and its terminal outcome
+ * follows the recorded steps — `satisfied-externally` when the ledger's
+ * external view recorded an observed satisfaction for any of the attempt's
+ * stages (E-03's ledger-first done-ness), `published` otherwise. */
 export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger): ResumeOutcome => {
+  const abandonment = ledger
+    .tail(attempt.attemptId)
+    .find(
+      (record): record is LedgerRecord & { readonly kind: "abandonment" } =>
+        record.kind === "abandonment",
+    );
+  if (abandonment !== undefined) {
+    throw new InvalidExecutionTransitionError(
+      `the recorded tail carries an abandonment attributed to ${abandonment.attribution.actor} ` +
+        `("${abandonment.reason}") — the human abort is terminal from the ledger alone; no ` +
+        `later classification revives it (E-09; ADR-0013 decision 3)`,
+    );
+  }
   if (isTerminalAttempt(attempt.state)) {
     throw new InvalidExecutionTransitionError(
       `classifyResume on a terminal attempt (${attempt.state}) — terminal is terminal; classification is for open attempts`,

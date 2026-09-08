@@ -353,8 +353,11 @@ ADR-0001 decision 9's shape). The phase's named fixtures:
 3. **Human abort** — abort by a human actor moves to `abandoned`; every later
    `requestStep` on the aborted attempt throws (terminal is terminal, §2.2);
    a retry attempt over the same plan gets a fresh ordinal and proceeds (the
-   abort never leaks into the new attempt). Phase 5's ledger replay door is
-   where a terminal step request becomes a recorded refusal instead.
+   abort never leaks into the new attempt — the kernel's own posture, which
+   stands here; the application boundary's re-run door is where the recorded
+   abandonment is answered first: ADR-0013 decision 4). Phase 5's ledger
+   replay door is where a terminal step request becomes a recorded refusal
+   instead.
 4. **Superseded plan** — supersede moves non-terminal attempts to
    `superseded` at the boundary; an attempt past `tag` records the
    supersession and does not void; nothing is deleted.
