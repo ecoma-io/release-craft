@@ -94,6 +94,15 @@ export interface Divergence {
   readonly detail: string;
 }
 
+/** The completeness of a listing's observation over pagination (issue
+ *  #68; D32): the contract binds the observation to the resource's full
+ *  surface. `complete` — the walk followed the page chain to its end and
+ *  the comparison ran over every row. `truncated` — the observation
+ *  stopped before the surface was fully observed; only the adapter's
+ *  deliberate stop (none produced today) may be `truncated`, and it
+ *  claims no comparison. */
+export type PaginationCompleteness = "complete" | "truncated";
+
 /** The tag listing's observation outcome (issue #66; contract §2.2): the
  *  comparison's premise — `listed` claims its divergences and its
  *  verified tags, every unobserved state claims nothing. An empty
@@ -104,6 +113,8 @@ export interface Divergence {
 export type TagsListingOutcome =
   | {
       readonly state: "listed";
+      readonly listed: number;
+      readonly pagination: PaginationCompleteness;
       readonly divergences: readonly Divergence[];
       readonly verifiedTags: readonly string[];
     }
@@ -115,7 +126,12 @@ export type TagsListingOutcome =
  *  the unadopted-release divergences, every unobserved state claims
  *  nothing. */
 export type ReleasesListingOutcome =
-  | { readonly state: "listed"; readonly divergences: readonly Divergence[] }
+  | {
+      readonly state: "listed";
+      readonly listed: number;
+      readonly pagination: PaginationCompleteness;
+      readonly divergences: readonly Divergence[];
+    }
   | { readonly state: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
   | { readonly state: "transport-failure" };
 
