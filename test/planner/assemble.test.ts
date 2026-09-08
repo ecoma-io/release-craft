@@ -1137,50 +1137,42 @@ describe("P-03 through the door — the promote intent over the in-flight rc", (
     expect(plan(input())).toEqual(outcome);
   });
 
-  it("pins the promote × prerelease contradiction — a stream extension riding the promotion decision (#90)", () => {
-    // issue #90: the combined intents produce a promotion-SHAPED decision
-    // (release, bump null, "promotion of the in-flight prerelease …") whose
-    // plan mints a stream extension (1.2.0-rc.3, stable null, no channel
-    // transitions). The decision's shape and its plan disagree. This pin
-    // documents the contradiction as the decide layer currently produces it;
-    // the fix commit flips it to the promotion-carrying plan (D38).
-    const combined = buildInput({
+  it("subsumes the sibling prerelease demand — the plan is exactly the promotion's (#90, D38)", () => {
+    // issue #90: the combined intents used to produce a promotion-shaped
+    // decision whose plan minted a stream extension (1.2.0-rc.3, stable
+    // null, no channel transitions) — the decision's shape and its plan
+    // named two different actions. D38: a promotion-shaped decision never
+    // carries a stream extension — the demand is subsumed, the promotion
+    // mint stands, the channels plan rides, and the record names the
+    // subsumption.
+    const base = {
       digest: DIGEST_P03,
       lines: [line("1.x", "main")],
       commits: [commit("p03-c1", "feat: the 1.2 line", { containingRefs: ["main"] })],
       refs: [ref("main", "p03-c1")],
       tags: [tag("1.2.0-rc.2", "p03-c1")],
       components: [component("release-craft", "1.2.0")],
-      intents: [
-        { kind: "promote", lineId: "1.x" },
-        { kind: "prerelease", stream: "rc", lineId: "1.x" },
-      ],
-    });
+    };
+    const single = plan(buildInput({ ...base, intents: [{ kind: "promote", lineId: "1.x" }] }));
+    const combined = plan(
+      buildInput({
+        ...base,
+        intents: [
+          { kind: "promote", lineId: "1.x" },
+          { kind: "prerelease", stream: "rc", lineId: "1.x" },
+        ],
+      }),
+    );
 
-    const outcome = plan(combined);
-    // The decision is promotion-shaped.
-    expect(decisionFor(outcome, "1.x")).toMatchObject({ kind: "release", bump: null });
-    // …while the plan extends the rc stream: no stable mint, an rc.3 entry,
-    // and no channel transitions on the plan line.
-    expect(planLineOf(outcome)).toEqual({
-      lineId: "1.x",
-      stable: null,
-      streams: [
-        {
-          identifier: "rc",
-          version: Version.parse("1.2.0-rc.3"),
-          tag: "1.2.0-rc.3",
-          seed: "0",
-          pointerBase: "1.2.0-rc.2",
-          movesPointer: true,
-        },
-      ],
-      changes: [],
-      propagation: { edges: [], order: ["release-craft"], notMoved: [] },
-      preconditions: [{ kind: "tag-absent", tag: "1.2.0-rc.3" }],
-      artifacts: ["1.2.0-rc.3"],
-    });
-    expect("channels" in planLineOf(outcome)).toBe(false);
+    // The decision stays promotion-shaped and names the subsumed demand.
+    const decision = decisionFor(combined, "1.x");
+    expect(decision).toMatchObject({ kind: "release", bump: null });
+    expect(decision.detail).toContain("subsumed");
+    expect(decision.detail).toContain("rc");
+    // The plan line is byte-identical to the single-intent promotion's: the
+    // subsumed demand changes nothing but the record's own clause. (The two
+    // planIds still differ — the intents join the inputs fingerprint, D17(7).)
+    expect(planLineOf(combined)).toEqual(planLineOf(single));
   });
 });
 

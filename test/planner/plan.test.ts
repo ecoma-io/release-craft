@@ -263,6 +263,24 @@ describe("planTargets — D17 target rules", () => {
     expect(plan.stable?.version.toString()).toBe("1.2.0");
   });
 
+  it("keeps the promotion's stable and plans no stream under a sibling prerelease demand (D38, #90)", () => {
+    // The sibling demand runs toward the promotion's own mint (bumpPatch of
+    // the pointer) — the promotion subsumes it: D17(3)'s suppression has no
+    // purchase here, and no sequence entry is planned. The single-intent
+    // suppression above is untouched: that decision carries its own content;
+    // this one inherits an empty change set (nothing to route to a stream).
+    const plan = planTargets(
+      [intent("rc")],
+      promotion(),
+      stateOf("1.2.0-rc.2", [["1.2.0", "rc", 2]]),
+      line(),
+      policy(),
+    );
+
+    expect(plan.stable?.version.toString()).toBe("1.2.0");
+    expect(plan.streams).toStrictEqual([]);
+  });
+
   it("overrides the computed stable with the first release-as version (compatibility row 2)", () => {
     const plan = planTargets(
       [{ kind: "release-as", version: "3.1.4" }],
@@ -289,6 +307,18 @@ describe("planTargets — D17 target rules", () => {
 });
 
 describe("planStreams — prerelease sequencing (§2.8)", () => {
+  it("plans no stream for a promotion-shaped decision — the promotion subsumes the demand (D38, #90)", () => {
+    const streams = planStreams(
+      [intent("rc")],
+      promotion(),
+      stateOf("1.2.0-rc.2", [["1.2.0", "rc", 2]]),
+      line(),
+      policy(),
+    );
+
+    expect(streams).toStrictEqual([]);
+  });
+
   it("continues an observed key at the next sequence: rc.3 → rc.4 (P-04/P-06 shape)", () => {
     const state = stateOf("1.2.0-rc.3", [["1.2.0", "rc", 3]]);
 

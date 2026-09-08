@@ -454,7 +454,10 @@ export type LineDecision =
 /** `decide.ts` — turns one line's attribution into its §2.9 decision:
  * release-worthy pending set → `release` with the resolved bump; a
  * `promote` intent over an in-flight prerelease → `release` with an
- * inherited (empty) change set and `bump: null` (P-03); empty → `no-op`
+ * inherited (empty) change set and `bump: null` (P-03), subsuming any
+ * sibling `prerelease` demand for the line and naming it in the record
+ * (D38 — a promotion-shaped decision never carries a stream extension);
+ * empty → `no-op`
  * enumerating ignored-by-policy commits; a `release-anyway` intent over a
  * quiet line → `forced` (S-01: recorded, never a routine release — the
  * forced mint is declared-policy territory); policy-filtered deferrals →

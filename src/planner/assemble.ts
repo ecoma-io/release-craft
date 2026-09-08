@@ -316,7 +316,11 @@ export const plan: Plan = (raw) => {
     // transitions in the plan — the declared channels' moves, the
     // promoted-from edge, the promoted stream's close. Pure plan content
     // (invariant 2.2); the execution side records it at the stage of the
-    // same name. Every other run plans no transitions. The edge's `from`
+    // same name. Every other run plans no transitions. Since D38 (#90) a
+    // promotion's stable co-mint is never suppressed by a sibling prerelease
+    // demand — a promotion-shaped decision never carries a stream extension,
+    // so the mint below always stands and the guard can no longer drop a
+    // promotion's transitions. The edge's `from`
     // is `pointerFor`'s pointer — the SAME pointer the promote decision
     // named: on a build-metadata tie (`1.2.0-rc.2+a` / `+b`) the rebuilt
     // state keeps the tie's first entry while the decision names the

@@ -167,6 +167,16 @@ promotion-slice data, fork 3). `line.streams.seed` overrides
 `policy.prereleaseSeed` for the line's fresh keys. Which posture a plan
 used is visible in its `refusedIntents` and in the streams' recorded seeds.
 
+**Promotion precedence (#90, decision-log D38).** A promotion-shaped
+decision (P-03: `release` with `bump: null` over an in-flight prerelease)
+never carries a stream extension: the sibling `prerelease` demand(s) for the
+promoted line are subsumed — the stable co-mint stands (the suppression has
+no purchase on a decision whose change set is inherited and empty), no
+stream entry is planned, the promotion carries its full channel plan
+(§2.11's amendment), and the decision record names the subsumed stream(s).
+The suppression's single-intent posture is unchanged for every other
+decision: a release decision's content still flows to the stream.
+
 ### 2.9 No-op, withheld, refused, blocked (negative outcomes are records)
 
 - empty change set → `no-op` record: cause `no-release-worthy-changes`,

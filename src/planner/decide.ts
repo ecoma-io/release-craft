@@ -24,10 +24,12 @@
  * `release-anyway` on one line is an operator contradiction; a `promote`
  * over an in-flight prerelease is the P-03 release with an inherited
  * (empty) change set and `bump: null`, and over release-worthy pending
- * changes or a pointer not held by a prerelease it refuses; a
- * `release-anyway` over a quiet line is the `forced` record — never a
- * routine release; a `release-as` demand the kernel grammar cannot parse
- * refuses regardless of the runway. Thereafter: `refused` on the remaining
+ * changes or a pointer not held by a prerelease it refuses — a sibling
+ * `prerelease` demand for the line is subsumed by the promotion (D38) and
+ * named in the record; a `release-anyway` over a quiet line is the
+ * `forced` record — never a routine release; a `release-as` demand the
+ * kernel grammar cannot parse refuses regardless of the runway. Thereafter:
+ * `refused` on the remaining
  * operator contradiction (§2.9, S-01: an explicit `release-as` demand
  * against a runway with nothing release-worthy), then the declared
  * withhold rules (D18 decision 3, PL-07): matching release-triggering
@@ -342,8 +344,12 @@ export const decideLine: DecideLine = (line, input, range) => {
   // Precedence 4 — the promotion (D17(4), P-03): over an in-flight
   // prerelease with nothing release-worthy pending, the target is the
   // pointed-at release and the change set is inherited from the stream —
-  // explicitly a release, never a no-op, despite the empty diff.
-  // Release-worthy pending changes are a contradiction: stable must contain
+  // explicitly a release, never a no-op, despite the empty diff. A sibling
+  // `prerelease` demand for the line is subsumed by the promotion (D38,
+  // #90): the streams it would extend run toward the promotion's own mint,
+  // so the promotion wins the line's posture and the record names the
+  // subsumption. Release-worthy pending changes are a contradiction: stable
+  // must contain
   // exactly what the prerelease validated, so the demand refuses instead of
   // silently absorbing them. A pointer held by a stable version — or no
   // pointer at all — refuses for the same reason: there is no in-flight
@@ -379,6 +385,19 @@ export const decideLine: DecideLine = (line, input, range) => {
           )}) — stable must contain exactly what was validated; a new prerelease sequence is required first (P-03)`,
       };
     }
+    // D38 (#90): the sibling prerelease demands this promotion subsumes, in
+    // input order, deduplicated — the record names what the pass will not
+    // mint, so a dropped demand is never silent (§2.9's records posture).
+    // The targets layer enforces the rule (plan.ts); the record makes it
+    // visible here, where the line's posture was decided.
+    const subsumedStreams: string[] = [];
+    for (const intent of intents) {
+      if (intent.kind === "prerelease" && intent.lineId === line.lineId) {
+        if (!subsumedStreams.includes(intent.stream)) {
+          subsumedStreams.push(intent.stream);
+        }
+      }
+    }
     return {
       kind: "release",
       bump: null,
@@ -386,7 +405,11 @@ export const decideLine: DecideLine = (line, input, range) => {
       lineId: line.lineId,
       range,
       policyDigest: input.policy.digest,
-      detail: `promotion of the in-flight prerelease ${pointer.toString()} — the change set is inherited from the stream, so no bump was resolved from pending (P-03)`,
+      detail:
+        `promotion of the in-flight prerelease ${pointer.toString()} — the change set is inherited from the stream, so no bump was resolved from pending (P-03)` +
+        (subsumedStreams.length === 0
+          ? ""
+          : `; the sibling prerelease demand(s) for stream(s) ${subsumedStreams.join(", ")} are subsumed by the promotion — a promotion-shaped decision never carries a stream extension (#90, D38)`),
     };
   }
 
