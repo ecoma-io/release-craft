@@ -186,24 +186,39 @@ receive a function from argv, and the same law that decides
 refused, and the CLI ships **one declared, in-repo derivation**.
 
 - `--tag-namespace <ns>` is repeatable; each value is a declared namespace
-  root. `tagFor(scope)` renders the scope's own tag inside the first
-  namespace that claims it and returns `null` outside every namespace — at
-  which point the binding's namespace door denies the acquisition exactly
-  as ADR-0009 decision 5 fixes (`ClaimDenied { refusal: "namespace" }`,
-  holder absent, a returned outcome the walk stops on). The CLI adds no
-  second derivation and never repairs a denial (phase 11 §2.3's rule,
-  carried up one surface).
-- The derivation itself is the CLI's own reviewed code, modeled on the only
-  proven mapping in the repository — the git vertical fixture's naming,
-  which derives the prerelease tag from the rendered version's own base and
-  the sequence from its `-<stream>.<n>` suffix, and the stable tag from the
-  version (verified: `test/vertical/matrix-git.ts`'s `naming`, with the
-  fixture's own warning that the mapping exists so the mint door reproduces
-  the plan's own tag, never a second opinion of one). The precise
-  rendering — prefix against filter, and whether an empty namespace root
-  is an accepted spelling (the binding's namespace door reads the empty
-  root as every tag) — is the implementation PR's to pin against the
-  fixture's model, not this contract's.
+  root. `tagFor(scope)` returns the scope's rendered tag — the plan's own
+  spelling, per the decided rendering below — when a declared root claims
+  it, and returns `null` when none does — at which point the binding's
+  namespace door denies the acquisition exactly as ADR-0009 decision 5
+  fixes (`ClaimDenied { refusal: "namespace" }`, holder absent, a returned
+  outcome the walk stops on). The CLI adds no second derivation and never
+  repairs a denial (phase 11 §2.3's rule, carried up one surface).
+- **Decided, as amended by the implementation slice's review (#119): the
+  rendering is the planner's own, over the same document's declared
+  formats.** The mint door is fail-closed by equality — it admits a mint
+  only when the naming's projection of a held claim's scope equals the
+  plan's tag (`tagFor(record.scope) === input.tag`, verified:
+  `tag-door.ts`'s held-claim walk) — and the plan's tag is rendered by the
+  planner's `formatTag` over the same world document's declared
+  `policy.tagFormats` for the scope's line (verified: `plan.ts`, the
+  `{prerelease}` token the input requires). So the CLI's `tagFor` renders
+  through the planner's own `formatTag` — exported by the planner barrel
+  for exactly this consumer — over that document's declared formats; a
+  line with no declared format renders bare, which is the planner's own
+  undeclared default. A projection that guessed at the shape would strand
+  the operator: with a bare projection where the world declares `v…`, the
+  claim stands, the walk completes its records, and the mint refuses
+  `unclaimed` — recorded evidence, nothing minted. That failure was
+  reproduced live in review; the reuse (not re-derivation) of the
+  renderer is what makes it structurally impossible rather than tested
+  away. The declared roots are a FILTER over the rendered tag: claimed
+  returns the rendered tag itself — the root is never prepended, a denial
+  is never repaired by renaming — and unclaimed returns `null`. The empty
+  namespace root is an accepted spelling and reads as every tag (the
+  binding door's own clause; the git vertical fixture's naming uses
+  exactly `namespaces: [""]`, which remains the proven model for the
+  scope's own decomposition — the rendered version's base and the
+  `-<stream>.<n>` suffix the claim scope carries).
 - What is deliberately absent: no `--naming-module`, no per-invocation code
   path, no implicit namespace. The naming is declared configuration, the
   same posture the empty declaration takes in
@@ -299,10 +314,18 @@ corrects the declared world, whose change moves the plan identity with it.
   occurrence of a ref name in document order, so the plan's range and the
   mint always evaluate one head and never two.
 - A minting line whose feed ref is absent from the document yields no
-  target — and the engine's pre-walk `refused` (verified: the git-assembly
-  fixture, which also pins `handle: null` and `drives: []` on that stop) is
-  what the process renders. The CLI adds no second validation in front of
-  it.
+  target — and through this surface the process renders the FAULT, not
+  the pre-walk `refused`. As amended by the implementation slice's review
+  (#119): the planner's own range derivation classifies first and refuses
+  an unobserved feedRef (`InvalidPlanningInputError`, exit 70 — verified:
+  `history.ts`'s `deriveRanges` throws before the engine's target check
+  can fire), so the declared-lie posture of
+  [§2.4](#24-the-world-document-where-the-planning-input-comes-from)
+  governs. The engine's pre-walk `refused` (verified: the git-assembly
+  fixture, which also pins `handle: null` and `drives: []` on that stop)
+  remains the hand-built-request path — a caller that supplies `targets`
+  itself — not a rendering this surface performs. The CLI adds no second
+  validation in front of either.
 - The memory assembly wires no tag door (verified:
   `assembleMemoryStores` wires `mint: null`), so a memory run demands no
   target and reports the plan's tag without a minted ref — the boundary's
@@ -582,10 +605,21 @@ already covers the doors; phase 11 §5).
    [§3.2](#32-the-exit-code-table) row produced through public doors and
    asserted by exit code **and** `--json` kind. `ambiguous` is pinned
    twice — as its exit code and as the value a proceeding caller would have
-   had to misread (invariant 2.6); `blocked` and `failed` pinned as
-   distinct processes; exit 70 pinned by a declared contract violation (an
-   `AssemblyConfig` that fails the assembly's structural check) asserted
-   **not** to render as `refused`.
+   had to misread (invariant 2.6); exit 70 pinned by declared contract
+   violations (an `AssemblyConfig` that fails the assembly's structural
+   check, and — as amended by the implementation slice — the two
+   planner-classified lies: an unobserved ref head and an unobserved
+   feedRef) asserted **not** to render as `refused`. The stop rows a
+   one-shot, declarations-less process cannot produce —
+   `satisfied-externally`, `resolved`, `abandoned`, `blocked`, `failed`,
+   `stale`, `escalate` — are pinned as the table's typed rows and the
+   renderers' renderings, not as subprocess runs: their subprocess
+   unreachability is the boundary's own posture (the carried-attempt law
+   of [§2.7](#27-the-doors-that-need-a-carried-attempt-the-cross-process-posture),
+   the walk's recorded-stop doors), and it is declared here so a later
+   slice that makes one reachable moves these pins as part of its own
+   obligations rather than reading the suite as under-tested against a
+   boundary that moved.
 3. **Pass-through equality — the generalization posture made executable.**
    For each fixture: the CLI's `--json` stdout, parsed, equals the direct
    `Engine`-door outcome serialized — same assembly, same world document,
