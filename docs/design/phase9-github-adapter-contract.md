@@ -110,6 +110,20 @@ listing, the release listing — carries its own outcome on the report,
 and the comparison's results live only on the `listed` outcome. Both
 listings are always requested; one listing's failure never preempts
 the other's, and each outcome describes the request the adapter made.
+**A listing is the observation of the resource's complete surface**
+(issue #68, D32): the adapter follows the listing's pagination — the
+response's `Link: <…>; rel="next"` header (RFC 8288) — from the first
+page to the provider-declared end, so a remote holding more than one
+page of tags or releases is compared in full. A listing that stops
+before the surface is complete is an **unobserved** listing (never a
+partial comparison): a page that never becomes usable on any link of
+the chain — refused, an unexpected status, a body that is not a list, a
+lying row — carries `transport-failure` for the whole listing, and the
+comparison claims nothing over the pages already read. The `listed`
+outcome records the observation's row count (`listed`) and its
+completeness (`pagination: "complete" | "truncated"`); only the
+adapter's deliberate stop produces `truncated` (none is produced
+today), and a truncated listing is never a passed comparison.
 
 - `listed` — the observation is determinate: the comparison over that
   resource ran, and its divergences (and, for tags, its verified tags)
@@ -384,3 +398,13 @@ The phase's named scenarios:
     timestamp on `rate-limited`) and claims no comparison over it. Both
     listings are always requested: a refused or failed listing never
     preempts its sibling, and each outcome stands on its own.
+17. **Reconciliation — truncated listing** (issue #68, D32) — a listing
+    that exceeds one page is followed across its pagination (the
+    response's `Link: rel="next"` headers) to the provider-declared end;
+    a page that never becomes usable on any page of the chain — refused,
+    an unexpected status, a body that is not a list, a lying row — makes
+    the **whole** listing `transport-failure`, never a partial
+    comparison, and the report claims nothing over the truncated surface.
+    The `listed` outcome carries `listed` (the row count) and
+    `pagination` (completeness); a truncated listing is never a passed
+    comparison.

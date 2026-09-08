@@ -181,6 +181,18 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
      unobserved listing is inconclusive, never clean: over an unobserved
      remote, a comparison that never ran is unrepresentable as a passed
      one.
+     Amendment proposed in #68 (D32, the implementation PR follows): the
+     listing is the observation of the resource's **complete** surface —
+     the adapter follows the listing's pagination (the response's
+     `Link: <…>; rel="next"` header, RFC 8288) from the first page to
+     the provider-declared end, so a remote past one page of tags or
+     releases is compared in full. A listing that stops before the
+     surface is complete is an unobserved listing: a page that never
+     becomes usable on any link of the chain carries `transport-failure`
+     for the whole listing, never a partial comparison over the pages
+     already read. The `listed` outcome records the observation's row
+     count (`listed`) and completeness (`pagination: "complete" |
+"truncated"`); a truncated listing is never a passed comparison.
 
 9. **Rate-limit and provider-failure semantics are documented, not
    silently swallowed.** If a GitHub API call returns a rate-limit

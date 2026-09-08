@@ -75,3 +75,25 @@ export const readFailure = (response: GitHubResponse): ReadFailure => {
   // nothing has landed, so it is the ordinary retryable failure.
   return { kind: "transport-failure" };
 };
+
+/** The API-relative path of the `Link` header's `rel="next"` target, when
+ *  one is declared (RFC 8288 §3.3). The pagination walk (issue #68; D32)
+ *  follows `next` links across pages; any other relation is a header value,
+ *  never a request. A header with no `next` link — or a malformed one —
+ *  reads as the end of the listing, and the walk stops there. The relation
+ *  may be written `rel="next"` (RFC 8288's value form) or `rel=next` (the
+ *  unquoted legacy form); both are accepted. */
+export const nextLinkPath = (headers: Readonly<Record<string, string>>): string | undefined => {
+  const link = headerValue(headers, "link");
+  if (link === undefined) {
+    return undefined;
+  }
+  for (const part of link.split(",")) {
+    const trimmed = part.trim();
+    const match = /<([^>]+)>[^,]*\brel\s*=\s*"?next"?/i.exec(trimmed);
+    if (match !== null) {
+      return match[1] ?? undefined;
+    }
+  }
+  return undefined;
+};

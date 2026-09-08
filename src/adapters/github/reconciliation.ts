@@ -29,7 +29,7 @@ import type {
   ReleasesListingOutcome,
   TagsListingOutcome,
 } from "./adapter-types.js";
-import { readFailure, type ReadFailure } from "./response.js";
+import { nextLinkPath, readFailure, type ReadFailure } from "./response.js";
 
 /** One row of either REST listing the reconciliation reads — only the
  *  fields the comparisons use, everything else unknown. */
@@ -39,11 +39,21 @@ interface RemoteRow {
   readonly tag_name?: unknown;
 }
 
+/** The first page of a resource's listing; the page chain is followed
+ *  through the `Link` header's `rel="next"` (issue #68; D32). */
 const listPath = (credentials: GitHubCredentials, resource: "tags" | "releases"): string =>
   `/repos/${credentials.owner}/${credentials.repo}/${resource}?per_page=100`;
 
-/** One listing's parse: the rows, or the read failure they carry. */
-type ParsedListing = { readonly ok: true; readonly rows: readonly unknown[] } | ReadFailure;
+/** One listing's parse: the rows and the response's headers the
+ *  pagination walk reads the next-page `Link` from (issue #68; D32), or
+ *  the read failure they carry. */
+type ParsedListing =
+  | {
+      readonly ok: true;
+      readonly rows: readonly unknown[];
+      readonly headers: Readonly<Record<string, string>>;
+    }
+  | ReadFailure;
 
 /** The listing as rows, or the read failure it carries instead: a
  *  non-200 status classifies through the one §2.3 table, and a body that
@@ -64,7 +74,7 @@ const asRows = (response: GitHubResponse): ParsedListing => {
   if (!Array.isArray(parsed)) {
     return { kind: "transport-failure" };
   }
-  return { ok: true, rows: parsed };
+  return { ok: true, rows: parsed, headers: response.headers };
 };
 
 /** The one field the comparison reads off a row, when it is the string
@@ -101,7 +111,9 @@ const byTag = (left: Divergence, right: Divergence): number =>
  *  and so is a tag at a target the binding does not record — a name
  *  matching with a target drifting is exactly the silent failure this
  *  unit exists to surface. The rows are narrowed first, whole-listing:
- *  a lying row unclaims the listing instead of comparing over it. */
+ *  a lying row unclaims the listing instead of comparing over it.
+ *  `listed` counts every observed row and pins the observation's
+ *  completeness over pagination (issue #68; D32). */
 const comparedTags = (
   rows: readonly unknown[],
   recorded: Map<string, string>,
@@ -136,13 +148,21 @@ const comparedTags = (
   // review reads the same report twice.
   divergences.sort(byTag);
   verifiedTags.sort();
-  return { state: "listed", divergences, verifiedTags };
+  return {
+    state: "listed",
+    listed: rows.length,
+    pagination: "complete",
+    divergences,
+    verifiedTags,
+  };
 };
 
 /** The release listing's comparison: the remote's releases checked
  *  against the binding's recorded tags — a release is the publication of
  *  a tag, so a release whose tag the binding holds no record of is an
- *  adopted publication over unadopted state; reported, never resolved. */
+ *  adopted publication over unadopted state; reported, never resolved.
+ *  `listed` carries the observation's row count and completeness (issue
+ *  #68; D32). */
 const comparedReleases = (
   rows: readonly unknown[],
   recorded: Map<string, string>,
@@ -163,23 +183,56 @@ const comparedReleases = (
     }
   }
   divergences.sort(byTag);
-  return { state: "listed", divergences };
+  return { state: "listed", listed: rows.length, pagination: "complete", divergences };
 };
 
-/** The observation outcome a listing's parse carries onto the report:
- *  the comparison over a usable observation, or the failure class —
- *  the refusal with its detail (decision 9's reset timestamp on
- *  `rate-limited`), the failure bare. */
-const listed = <R>(
-  parsed: ParsedListing,
-  compare: (rows: readonly unknown[]) => R,
-): R | Extract<TagsListingOutcome, { readonly state: "refused" | "transport-failure" }> => {
-  if ("ok" in parsed) {
-    return compare(parsed.rows);
+/** The observation a listing's response chain carries onto the report:
+ *  the comparison over the complete usable observation, or the failure
+ *  class — the refusal with its detail (decision 9's reset timestamp on
+ *  `rate-limited`), the failure bare. A page's failure unclaims the
+ *  *whole* listing — a partial comparison would read a truncated remote
+ *  as a passed one (issue #68; D32). */
+type ListingFailure = Extract<
+  TagsListingOutcome,
+  { readonly state: "refused" | "transport-failure" }
+>;
+
+/** The completed observation's rows, or the failure the chain carried:
+ *  the pages walk `Link: rel="next"` (RFC 8288) to the end of the
+ *  resource; a refused or unusable page — on any page of the chain —
+ *  fails the whole listing, never a partial comparison over the pages
+ *  already read. A chain that never ends without a `next` link is a
+ *  complete observation over the pages actually returned: the adapter
+ *  follows `next` until the provider declares the end. */
+const listAll = (
+  credentials: GitHubCredentials,
+  resource: "tags" | "releases",
+  transport: GitHubTransport,
+): { readonly ok: true; readonly rows: readonly unknown[] } | ListingFailure => {
+  const rows: unknown[] = [];
+  let path: string | undefined = listPath(credentials, resource);
+  while (path !== undefined) {
+    const parsed = asRows(transport.request(path));
+    if (!("ok" in parsed)) {
+      return parsed.kind === "refused"
+        ? { state: "refused", reason: parsed.reason, detail: parsed.detail }
+        : { state: "transport-failure" };
+    }
+    rows.push(...parsed.rows);
+    path = nextLinkPath(parsed.headers);
   }
-  return parsed.kind === "refused"
-    ? { state: "refused", reason: parsed.reason, detail: parsed.detail }
-    : { state: "transport-failure" };
+  return { ok: true, rows };
+};
+
+/** The listing's observation, composed over the complete page chain. */
+const listed = <R>(
+  outcome: { readonly ok: true; readonly rows: readonly unknown[] } | ListingFailure,
+  compare: (rows: readonly unknown[]) => R,
+): R | ListingFailure => {
+  if ("ok" in outcome) {
+    return compare(outcome.rows);
+  }
+  return outcome;
 };
 
 /** The reconciliation over a real binding and the caller-injected
@@ -196,10 +249,10 @@ export const GitReleaseReconciliation = (
   reconcile(): ReconciliationReport {
     const recorded = recordedTags(binding);
 
-    const tags = listed(asRows(transport.request(listPath(credentials, "tags"))), (rows) =>
+    const tags = listed(listAll(credentials, "tags", transport), (rows) =>
       comparedTags(rows, recorded),
     );
-    const releases = listed(asRows(transport.request(listPath(credentials, "releases"))), (rows) =>
+    const releases = listed(listAll(credentials, "releases", transport), (rows) =>
       comparedReleases(rows, recorded),
     );
 

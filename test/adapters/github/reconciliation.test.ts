@@ -1,11 +1,12 @@
 /**
  * The reconciliation over a real repository and a test-owned transport
- * (the Phase 9 contract §4, scenarios 10–16; ADR-0010 decision 8 as
- * amended by issue #66 / D30): the remote is compared against the
- * binding's recorded state — a matching tag is verified, an unrecorded
- * tag or release is a reported divergence, a listing that never became
- * usable claims nothing — and nothing the remote holds is ever resolved
- * into the binding (the binding is the truth).
+ * (the Phase 9 contract §4, scenarios 10–17; ADR-0010 decision 8 as
+ * amended by issues #66 / D30 and #68 / D32): the remote is compared
+ * against the binding's recorded state — a matching tag is verified, an
+ * unrecorded tag or release is a reported divergence, a listing that
+ * never became usable claims nothing, a listing is observed across its
+ * pagination to the provider-declared end — and nothing the remote
+ * holds is ever resolved into the binding (the binding is the truth).
  */
 
 import { describe, expect, it } from "vitest";
@@ -149,10 +150,17 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
       const report = fixture.reconcile(transport);
       expect(report.tags).toEqual({
         state: "listed",
+        listed: 1,
+        pagination: "complete",
         divergences: [],
         verifiedTags: ["v1.2.3"],
       });
-      expect(report.releases).toEqual({ state: "listed", divergences: [] });
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 1,
+        pagination: "complete",
+        divergences: [],
+      });
       expect(calls.map((call) => call.path)).toEqual([
         "/repos/ecoma-io/release-craft/tags?per_page=100",
         "/repos/ecoma-io/release-craft/releases?per_page=100",
@@ -173,6 +181,8 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
       const report = fixture.reconcile(transport);
       expect(report.tags).toEqual({
         state: "listed",
+        listed: 2,
+        pagination: "complete",
         verifiedTags: ["v1.2.3"],
         divergences: [
           {
@@ -182,7 +192,12 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
           },
         ],
       });
-      expect(report.releases).toEqual({ state: "listed", divergences: [] });
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+      });
     });
   });
 
@@ -196,11 +211,15 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
       const report = fixture.reconcile(transport);
       expect(report.tags).toEqual({
         state: "listed",
+        listed: 1,
+        pagination: "complete",
         divergences: [],
         verifiedTags: ["v1.2.3"],
       });
       expect(report.releases).toEqual({
         state: "listed",
+        listed: 2,
+        pagination: "complete",
         divergences: [
           {
             kind: "unadopted-release",
@@ -262,6 +281,8 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
       // failure never demotes the other's comparison.
       expect(report.releases).toEqual({
         state: "listed",
+        listed: 1,
+        pagination: "complete",
         divergences: [
           {
             kind: "unadopted-release",
@@ -283,6 +304,8 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
       const report = fixture.reconcile(transport);
       expect(report.tags).toEqual({
         state: "listed",
+        listed: 1,
+        pagination: "complete",
         divergences: [],
         verifiedTags: ["v1.2.3"],
       });
@@ -360,7 +383,12 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
         reason: "rate-limited",
         detail: expect.stringContaining("resets at 1700000000") as string,
       });
-      expect(report.releases).toEqual({ state: "listed", divergences: [] });
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+      });
     });
   });
 
@@ -372,7 +400,13 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
           : rawResponse(403, { "x-ratelimit-remaining": " 0" }, "{}"),
       );
       const report = fixture.reconcile(transport);
-      expect(report.tags).toEqual({ state: "listed", divergences: [], verifiedTags: [] });
+      expect(report.tags).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+        verifiedTags: [],
+      });
       expect(report.releases).toEqual({
         state: "refused",
         reason: "rate-limited",
@@ -387,7 +421,13 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
         call.path.includes("/tags") ? listResponse([]) : rawResponse(401, {}, "{}"),
       );
       const report = fixture.reconcile(transport);
-      expect(report.tags).toEqual({ state: "listed", divergences: [], verifiedTags: [] });
+      expect(report.tags).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+        verifiedTags: [],
+      });
       expect(report.releases).toEqual({
         state: "refused",
         reason: "auth-expired",
@@ -402,8 +442,132 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
         call.path.includes("/tags") ? listResponse([]) : listResponse([]),
       );
       const report = fixture.reconcile(transport);
-      expect(report.tags).toEqual({ state: "listed", divergences: [], verifiedTags: [] });
-      expect(report.releases).toEqual({ state: "listed", divergences: [] });
+      expect(report.tags).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+        verifiedTags: [],
+      });
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+      });
+    });
+  });
+
+  it("R-17 — a listing exceeding one page is followed across its pagination, never truncated at page one (issue #68)", () => {
+    withReconcileRepo("paginated-tags", (fixture) => {
+      const { transport, calls } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? call.path.includes("page=2")
+            ? listResponse([tagRow("v9.9.9", "cccccccccccccccccccccccccccccccccccccccc")])
+            : rawResponse(
+                200,
+                {
+                  link: `</repos/ecoma-io/release-craft/tags?per_page=100&page=2>; rel="next"`,
+                },
+                JSON.stringify([tagRow("v1.2.3", fixture.recordedTarget)]),
+              )
+          : listResponse([releaseRow("v1.2.3")]),
+      );
+      const report = fixture.reconcile(transport);
+      // Both pages of the tag listing were followed; the second page's
+      // unadopted tag is reported — never silently truncated away.
+      expect(report.tags).toEqual({
+        state: "listed",
+        listed: 2,
+        pagination: "complete",
+        verifiedTags: ["v1.2.3"],
+        divergences: [
+          {
+            kind: "unadopted-tag",
+            tag: "v9.9.9",
+            detail: expect.any(String) as string,
+          },
+        ],
+      });
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 1,
+        pagination: "complete",
+        divergences: [],
+      });
+      expect(calls.map((call) => call.path)).toContain(
+        "/repos/ecoma-io/release-craft/tags?per_page=100&page=2",
+      );
+    });
+  });
+
+  it("R-17 — a paginated release listing is followed across its pages", () => {
+    withReconcileRepo("paginated-releases", (fixture) => {
+      const { transport, calls } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([tagRow("v1.2.3", fixture.recordedTarget)])
+          : call.path.includes("page=2")
+            ? listResponse([releaseRow("v3.1.4")])
+            : rawResponse(
+                200,
+                {
+                  link: `</repos/ecoma-io/release-craft/releases?per_page=100&page=2>; rel="next"`,
+                },
+                JSON.stringify([releaseRow("v1.2.3"), releaseRow("v9.9.9")]),
+              ),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 3,
+        pagination: "complete",
+        divergences: [
+          {
+            kind: "unadopted-release",
+            tag: "v3.1.4",
+            detail: expect.any(String) as string,
+          },
+          {
+            kind: "unadopted-release",
+            tag: "v9.9.9",
+            detail: expect.any(String) as string,
+          },
+        ],
+      });
+      expect(calls.map((call) => call.path)).toContain(
+        "/repos/ecoma-io/release-craft/releases?per_page=100&page=2",
+      );
+    });
+  });
+
+  it("R-17 — a follow-up page that fails unclaims the whole listing, never a partial comparison (issue #68)", () => {
+    withReconcileRepo("fail-on-page-two", (fixture) => {
+      const { transport, calls } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? call.path.includes("page=2")
+            ? rawResponse(500, {}, "{}")
+            : rawResponse(
+                200,
+                {
+                  link: `</repos/ecoma-io/release-craft/tags?per_page=100&page=2>; rel="next"`,
+                },
+                JSON.stringify([tagRow("v1.2.3", fixture.recordedTarget)]),
+              )
+          : listResponse([releaseRow("v1.2.3")]),
+      );
+      const report = fixture.reconcile(transport);
+      // Page one matched; page two failed. The listing never became a
+      // complete usable observation — it claims nothing.
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 1,
+        pagination: "complete",
+        divergences: [],
+      });
+      expect(calls.map((call) => call.path)).toContain(
+        "/repos/ecoma-io/release-craft/tags?per_page=100&page=2",
+      );
     });
   });
 });
