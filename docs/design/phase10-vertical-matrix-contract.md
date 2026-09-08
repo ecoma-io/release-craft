@@ -184,8 +184,9 @@ caller-injected effect, recorded proofs):
 ### 3.6 The interruption windows
 
 The matrix pins one interruption per canonical stage of one line's run —
-`plan`, `claim`, `prepare`, `validate`, `commit`, `tag`, `publish`,
-`verify` — plus three hook windows by name: `hook:attest`'s failure,
+`plan`, `claim`, `prepare`, `validate`, `commit`, `tag`,
+`channel-transition`, `publish`, `verify` (ADR-0012's ninth stage included)
+— plus three hook windows by name: `hook:attest`'s failure,
 `hook:sign`'s first failure, `hook:publish`'s mid-effect crash — plus
 one window inside the artifact walk (after `sbom`, before `changelog`
 completes). Every window is `crash` except the two named failures. The

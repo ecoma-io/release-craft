@@ -117,7 +117,12 @@ export class GitLedger implements ExecutionLedger {
    * compare-and-swap commit on its attempt's stream — a pure extension of
    * the recorded history or nothing at all. */
   append(record: LedgerRecord): LedgerRecord {
-    const attemptId = record.kind === "step" ? record.record.attemptId : record.attemptId;
+    const attemptId =
+      record.kind === "step"
+        ? record.record.attemptId
+        : record.kind === "channel-transition"
+          ? record.record.attemptId
+          : record.attemptId;
     const ref = ledgerRef(attemptId);
     this.#casAppend(ref, () => canonicalJson(record));
     return deepFreeze(record) as LedgerRecord;

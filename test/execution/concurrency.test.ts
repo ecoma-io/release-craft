@@ -97,8 +97,13 @@ describe("fixture 1 — one scope, two attempts (E-07)", () => {
 
     const mutating = log
       .records()
-      .filter((record) => ["prepare", "commit", "tag", "publish"].includes(record.stepKey));
-    expect(mutating).toHaveLength(4);
+      .filter((record) =>
+        ["prepare", "commit", "tag", "channel-transition", "publish"].includes(record.stepKey),
+      );
+    // Five mutating stages — ADR-0012's channel-transition walks the same
+    // claim as the rest, its records carrying the token and the passed
+    // claim guards like every mutating record.
+    expect(mutating).toHaveLength(5);
     for (const record of mutating) {
       expect(record.claim).toBe(token);
       expect(record.guards.some((guard) => guard.guard === "claim-held" && guard.passed)).toBe(

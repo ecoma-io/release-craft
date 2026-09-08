@@ -37,9 +37,9 @@ PostconditionKind = "content-fingerprint-present" | "evidence-present"
 ```
 
 ```text
-StepKey   = StageKey | HookStepKey            // the closed eight extend
+StepKey   = StageKey | HookStepKey            // the canonical stages extend
 StageKey  = "plan" | "claim" | "prepare" | "validate"
-          | "commit" | "tag" | "publish" | "verify"
+          | "commit" | "tag" | "channel-transition" | "publish" | "verify"
 HookStepKey = `hook:${string}`                // the ledger key is hook:<id>
 ```
 
@@ -62,8 +62,9 @@ Implementation migration (the Phase 6 PR, enumerated): `ReleaseAttempt`
 gains the optional frozen `hooks` field (declared `HookStep` values,
 defaulting to empty; excluded from `attemptIdentity`); `openAttempt`
 accepts the declarations; `StepKey` widens to `StageKey | HookStepKey`
-with `StageKey` aliasing the unchanged canonical eight; every port that
-means "one of the canonical stages" (`requestStep`'s stage parameter,
+with `StageKey` aliasing the canonical stage set (now nine after
+ADR-0012's `channel-transition` insertion); every port that means "one of
+the canonical stages" (`requestStep`'s stage parameter,
 `requiresHeldClaim`) narrows to `StageKey`; `ResumeOutcome.from` widens
 to `StepKey`; `appendStart` gains an optional trailing `guard` parameter
 (the hook's declared guard name, recorded verbatim on the start record as

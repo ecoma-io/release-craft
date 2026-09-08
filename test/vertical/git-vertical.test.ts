@@ -145,10 +145,12 @@ const normalizedClaims = (
 
 /** The tail's records with the claim token labelled — the crossing-repos
  * determinism assertion. The engine records the store's token into every
- * completion of a claim-requiring stage (outcome.ts), and the git store
- * allocates random tokens; a reference run and a resumed run on their own
- * repositories agree on every field but that token. Built on the git read
- * door, exactly as every other byte read here. */
+ * completion of a claim-requiring stage (outcome.ts) — and, once the
+ * application slice appends them, into every `channel-transition` record
+ * (ADR-0012 decision 4) — and the git store allocates random tokens; a
+ * reference run and a resumed run on their own repositories agree on every
+ * field but that token. Both claim-carrying kinds are labelled here.
+ * Built on the git read door, exactly as every other byte read here. */
 const normalizedTail = (stores: GitStores, attemptId: string): readonly string[] => {
   const tokens = new Map<string, string>();
   const label = (token: string): string => {
@@ -161,12 +163,14 @@ const normalizedTail = (stores: GitStores, attemptId: string): readonly string[]
     return fresh;
   };
   return stores.ledger.tail(attemptId).map((record) => {
-    if (record.kind !== "step" || record.record.claim === undefined) {
+    const payload =
+      record.kind === "step" || record.kind === "channel-transition" ? record.record : undefined;
+    if (payload === undefined || payload.claim === undefined) {
       return JSON.stringify(record);
     }
     return JSON.stringify({
       ...record,
-      record: { ...record.record, claim: label(record.record.claim) },
+      record: { ...payload, claim: label(payload.claim) },
     });
   });
 };
@@ -244,25 +248,37 @@ describe("V2 — identity, git-backed", () => {
       expect(resumed.attempt.attemptId).toBe(stopped.attempt.attemptId);
       const tail = stopped.stores.ledger.tail(stopped.attempt.attemptId);
       for (const record of tail) {
-        const holder = record.kind === "step" ? record.record.attemptId : record.attemptId;
+        const holder =
+          record.kind === "step" || record.kind === "channel-transition"
+            ? record.record.attemptId
+            : record.attemptId;
         expect(holder).toBe(stopped.attempt.attemptId);
       }
     });
   });
 
-  it("V2 · five lines · five lines' git-ledger runs never share an attempt", () => {
-    withTempRepo("v2-five-lines", (repo) => {
-      const state = openGitState(repo);
-      const stores = gitStores(repo);
-      const world = liveWorld();
-      const main = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
-      const sides = ["4.8.x", "3.x", "2.x", "1.9-lts"].map((lineId) =>
-        runGitRelease({ state, stores, world, lineId, intents: [{ kind: "release" }] }),
-      );
-      const ids = [main, ...sides].map((run) => run.attempt.attemptId);
-      expect(new Set(ids).size).toBe(5);
-    });
-  });
+  // V2/the four heavy multi-line walks mint five lines (five full plans,
+  // claims, walks, mints) over real-git subprocesses, and the V7 windows
+  // above sit right at the 20s global edge (vitest.config.ts) under the CI
+  // runner's parallel-suite contention — so this grouping carries its own
+  // timeout too. A hang still fails the gate; this only widens the room.
+  it(
+    "V2 · five lines · five lines' git-ledger runs never share an attempt",
+    { timeout: 45_000 },
+    () => {
+      withTempRepo("v2-five-lines", (repo) => {
+        const state = openGitState(repo);
+        const stores = gitStores(repo);
+        const world = liveWorld();
+        const main = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+        const sides = ["4.8.x", "3.x", "2.x", "1.9-lts"].map((lineId) =>
+          runGitRelease({ state, stores, world, lineId, intents: [{ kind: "release" }] }),
+        );
+        const ids = [main, ...sides].map((run) => run.attempt.attemptId);
+        expect(new Set(ids).size).toBe(5);
+      });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -403,7 +419,9 @@ describe("V4 — promotion, git-backed", () => {
       }
       expect(promoteRun.scope.version).toBe("5.0.0");
       // The stable mint is recorded as a real tag; the promotion drags no
-      // pointer (the transition door is unlanded, #76).
+      // pointer yet — the kernel's channel-transition door is landed
+      // (ADR-0012, #76), and the channel-store wiring that moves the
+      // pointers is the next slice (V4 asserts the moves then).
       expect(recordedTags(state.git, naming.namespaces)).toContain("5.0.0");
       assertChannelsUnchanged(channels);
     });
@@ -446,12 +464,15 @@ describe("V7 — recovery, git-backed", () => {
     // Each window runs its uninterrupted reference on a separate repository,
     // the crash window, and the resume — real-git subprocesses throughout.
     // The global 20s testTimeout (vitest.config.ts, raised for the real-disk
-    // suites) is right at the edge of one window's cost under the CI runner's
-    // parallel-suite contention, so these windows carry a per-test timeout
-    // of their own. A hang still fails the gate — this only widens the room.
+    // suites) is far under one window's cost under contention: the CI runner
+    // (2 vCPUs beside the other suites) measures the windows at 33–39s and
+    // Moon's parallel local load pushed one past even 40s once ADR-0012's
+    // ninth canonical stage lengthened every walk — so the per-test timeout
+    // is sized from those measurements. A hang still fails the gate — this
+    // only widens the room.
     it(
       `V7 · ${stage}-window · the git-backed crash classifies from the recorded tail and the resume completes the run`,
-      { timeout: 40_000 },
+      { timeout: 60_000 },
       () => {
         withTempRepo("v7-window", (repo) => {
           const state = openGitState(repo);
@@ -488,7 +509,7 @@ describe("V7 — recovery, git-backed", () => {
 
   it(
     "V7 · artifact-window · the walk stops inside the DAG and the git resume completes changelog and the rest",
-    { timeout: 40_000 },
+    { timeout: 60_000 },
     () => {
       withTempRepo("v7-artifact", (repo) => {
         const state = openGitState(repo);
@@ -540,7 +561,7 @@ describe("V7 — recovery, git-backed", () => {
 
   it(
     "V7 · hook:announce crash · the mid-effect crash classifies and the git resume runs the effect exactly once more",
-    { timeout: 40_000 },
+    { timeout: 60_000 },
     () => {
       withTempRepo("v7-announce", (repo) => {
         const state = openGitState(repo);
@@ -779,34 +800,41 @@ describe("E-02 — replay semantics, git-backed", () => {
 // ---------------------------------------------------------------------------
 
 describe("V9 — divergence, git-backed", () => {
-  it("V9 · propagation · the carried fix mints per line, plans stay single-line and disjoint", () => {
-    withTempRepo("v9-propagation", (repo) => {
-      const state = openGitState(repo);
-      const stores = gitStores(repo);
-      const world = liveWorld();
-      const sideLines = ["4.8.x", "3.x", "2.x", "1.9-lts"] as const;
-      const carried = sideLines.map((lineId) =>
-        runGitRelease({ state, stores, world, lineId, intents: [{ kind: "release" }] }),
-      );
-      // Every side line's cut mints the golden — the carried fix on
-      // 4.8.x and 1.9-lts, the independent changes on 3.x and 2.x.
-      expect(carried.map((run) => run.mintedTag)).toStrictEqual(
-        sideLines.map((lineId) => GOLDEN.sides[lineId]),
-      );
-      // Plans are single-line (M-02) and disjoint — every attempt its own plan.
-      expect(new Set(carried.map((run) => run.attempt.planId)).size).toBe(4);
-      // No version repeats across lines; the minted tags are in the real
-      // repo (recordedTags sorts).
-      const minted = world.tags.map((tag) => tag.name);
-      expect(new Set(minted).size).toBe(minted.length);
-      expect(recordedTags(state.git, naming.namespaces)).toStrictEqual([
-        "1.9.2",
-        "2.4.1",
-        "3.3.0",
-        "4.8.7",
-      ]);
-    });
-  });
+  // The carried fix mints four side lines (four full plans, claims, walks,
+  // mints) over real-git subprocesses — the same heaviness V2's multi-line
+  // walk earned its own timeout; see the V2 comment above.
+  it(
+    "V9 · propagation · the carried fix mints per line, plans stay single-line and disjoint",
+    { timeout: 45_000 },
+    () => {
+      withTempRepo("v9-propagation", (repo) => {
+        const state = openGitState(repo);
+        const stores = gitStores(repo);
+        const world = liveWorld();
+        const sideLines = ["4.8.x", "3.x", "2.x", "1.9-lts"] as const;
+        const carried = sideLines.map((lineId) =>
+          runGitRelease({ state, stores, world, lineId, intents: [{ kind: "release" }] }),
+        );
+        // Every side line's cut mints the golden — the carried fix on
+        // 4.8.x and 1.9-lts, the independent changes on 3.x and 2.x.
+        expect(carried.map((run) => run.mintedTag)).toStrictEqual(
+          sideLines.map((lineId) => GOLDEN.sides[lineId]),
+        );
+        // Plans are single-line (M-02) and disjoint — every attempt its own plan.
+        expect(new Set(carried.map((run) => run.attempt.planId)).size).toBe(4);
+        // No version repeats across lines; the minted tags are in the real
+        // repo (recordedTags sorts).
+        const minted = world.tags.map((tag) => tag.name);
+        expect(new Set(minted).size).toBe(minted.length);
+        expect(recordedTags(state.git, naming.namespaces)).toStrictEqual([
+          "1.9.2",
+          "2.4.1",
+          "3.3.0",
+          "4.8.7",
+        ]);
+      });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -841,26 +869,35 @@ describe("V6 — immutability and determinism, git-backed", () => {
     });
   });
 
-  it("V6 · determinism · two fresh repos run the matrix identically → the ledger tails agree (tokens labelled) and the registers agree (tokens labelled)", () => {
-    const matrixTrace = (): readonly string[] => {
-      const trace: string[] = [];
-      withTempRepo("v6-determinism", (repo) => {
-        const state = openGitState(repo);
-        const stores = gitStores(repo);
-        const world = liveWorld();
-        const run1 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
-        const run2 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
-        trace.push(run1.attempt.planId);
-        trace.push(JSON.stringify(run1.mintedTag));
-        trace.push(JSON.stringify(run2.mintedTag));
-        trace.push(JSON.stringify(normalizedTail(stores, run1.attempt.attemptId)));
-        trace.push(JSON.stringify(normalizedTail(stores, run2.attempt.attemptId)));
-        trace.push(JSON.stringify(normalizedClaims(state, "main")));
-      });
-      return trace;
-    };
-    expect(matrixTrace()).toStrictEqual(matrixTrace());
-  });
+  // The determinism assertions double-run the full matrix (two full plans,
+  // claims, walks, mints, resumes) over real-git subprocesses, so they sit
+  // right at the 20s global edge (vitest.config.ts) under the CI runner's
+  // parallel-suite contention — behaviour established for the V7 windows
+  // above. A hang still fails the gate; this only widens the room.
+  it(
+    "V6 · determinism · two fresh repos run the matrix identically → the ledger tails agree (tokens labelled) and the registers agree (tokens labelled)",
+    { timeout: 45_000 },
+    () => {
+      const matrixTrace = (): readonly string[] => {
+        const trace: string[] = [];
+        withTempRepo("v6-determinism", (repo) => {
+          const state = openGitState(repo);
+          const stores = gitStores(repo);
+          const world = liveWorld();
+          const run1 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+          const run2 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+          trace.push(run1.attempt.planId);
+          trace.push(JSON.stringify(run1.mintedTag));
+          trace.push(JSON.stringify(run2.mintedTag));
+          trace.push(JSON.stringify(normalizedTail(stores, run1.attempt.attemptId)));
+          trace.push(JSON.stringify(normalizedTail(stores, run2.attempt.attemptId)));
+          trace.push(JSON.stringify(normalizedClaims(state, "main")));
+        });
+        return trace;
+      };
+      expect(matrixTrace()).toStrictEqual(matrixTrace());
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -879,30 +916,36 @@ describe("V11 — zero-config and determinism, git-backed", () => {
     });
   });
 
-  it("V11 · determinism · the binding re-runs on a fresh repo and lands identical recorded state", () => {
-    const matrixTrace = (): {
-      readonly tags: readonly string[];
-      readonly t1: readonly string[];
-      readonly t2: readonly string[];
-    } => {
-      let captured: { tags: string[]; t1: readonly string[]; t2: readonly string[] } | undefined;
-      withTempRepo("v11-determinism", (repo) => {
-        const state = openGitState(repo);
-        const stores = gitStores(repo);
-        const world = liveWorld();
-        const run1 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
-        const run2 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
-        captured = {
-          tags: world.tags.map((tag) => tag.name),
-          t1: normalizedTail(stores, run1.attempt.attemptId),
-          t2: normalizedTail(stores, run2.attempt.attemptId),
-        };
-      });
-      if (captured === undefined) {
-        throw new Error("fixture broken: no trace captured");
-      }
-      return captured;
-    };
-    expect(matrixTrace()).toStrictEqual(matrixTrace());
-  });
+  // Same double-run determinism shape as V6's: a full matrix twice over
+  // real git. See the V6 timeout comment above.
+  it(
+    "V11 · determinism · the binding re-runs on a fresh repo and lands identical recorded state",
+    { timeout: 45_000 },
+    () => {
+      const matrixTrace = (): {
+        readonly tags: readonly string[];
+        readonly t1: readonly string[];
+        readonly t2: readonly string[];
+      } => {
+        let captured: { tags: string[]; t1: readonly string[]; t2: readonly string[] } | undefined;
+        withTempRepo("v11-determinism", (repo) => {
+          const state = openGitState(repo);
+          const stores = gitStores(repo);
+          const world = liveWorld();
+          const run1 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+          const run2 = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+          captured = {
+            tags: world.tags.map((tag) => tag.name),
+            t1: normalizedTail(stores, run1.attempt.attemptId),
+            t2: normalizedTail(stores, run2.attempt.attemptId),
+          };
+        });
+        if (captured === undefined) {
+          throw new Error("fixture broken: no trace captured");
+        }
+        return captured;
+      };
+      expect(matrixTrace()).toStrictEqual(matrixTrace());
+    },
+  );
 });

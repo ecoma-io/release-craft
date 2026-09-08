@@ -63,7 +63,7 @@ describe("the memory ledger (phase 5 §2.1–§2.2)", () => {
       attribution: actor("automation"),
     };
     const stored = ledger.append(absorption);
-    if (stored.kind === "step") {
+    if (stored.kind !== "absorption") {
       throw new Error("expected an absorption record, not a step record");
     }
     expect(Object.isFrozen(stored)).toBe(true);

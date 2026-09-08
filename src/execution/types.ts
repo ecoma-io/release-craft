@@ -186,10 +186,14 @@ export interface ClaimView {
 // §2.5 — step identity and the canonical stage sequence (invariant 12)
 // ---------------------------------------------------------------------------
 
-/** The canonical eight stages (§2.5) — the model-b salvage ADR-0002
- * recorded as the default step sequence of an attempt. Closed in Phase 4:
+/** The canonical stages (§2.5; ADR-0012 decision 1) — the model-b salvage
+ * ADR-0002 recorded as the default step sequence of an attempt. Closed in
+ * Phase 4 except where a later phase's own ADR names its insertion rule:
  * hooks (Phase 6) and artifact steps (Phase 7) extend it through their own
- * ADRs, which must name their insertion rules. */
+ * ADRs, and ADR-0012's channel-transition door inserts `channel-transition`
+ * between `tag` and `publish` — the one explicit stage on which a release
+ * moves a channel pointer, recorded before the publish gate (invariant 2.8:
+ * no channel moves indirectly). */
 export const CANONICAL_STAGES: readonly [
   "plan",
   "claim",
@@ -197,12 +201,23 @@ export const CANONICAL_STAGES: readonly [
   "validate",
   "commit",
   "tag",
+  "channel-transition",
   "publish",
   "verify",
-] = ["plan", "claim", "prepare", "validate", "commit", "tag", "publish", "verify"];
+] = [
+  "plan",
+  "claim",
+  "prepare",
+  "validate",
+  "commit",
+  "tag",
+  "channel-transition",
+  "publish",
+  "verify",
+];
 
-/** One of the canonical eight stages (§2.5) — the closed order's members.
- * Every port that means "one of the canonical stages" names this type. */
+/** One of the canonical stages (§2.5) — the closed order's members. Every
+ * port that means "one of the canonical stages" names this type. */
 export type StageKey = (typeof CANONICAL_STAGES)[number];
 
 /** A hook step's ledger key space (phase 6 contract §2.1; ADR-0007
@@ -634,7 +649,8 @@ export type BlockedResolution =
  * equality proof); step records wrap the kernel's transition record
  * verbatim; absorption records adopt attributed external work
  * (`adopted-from:<sourceAttemptId>`); resolution records close the
- * blocked loop. */
+ * blocked loop; channel-transition records carry ADR-0012's durable
+ * move of one channel pointer. */
 export type LedgerRecord =
   | {
       readonly kind: "plan";
@@ -661,7 +677,45 @@ export type LedgerRecord =
       readonly resolution: BlockedResolution;
       readonly attribution: Attribution;
       readonly recordedAt?: string;
-    };
+    }
+  | { readonly kind: "channel-transition"; readonly record: ChannelTransitionRecord };
+
+/** A channel transition's durable unit (ADR-0012 decisions 3–4): the
+ * recorded move of one channel pointer, carried as the `channel-transition`
+ * ledger record's payload. Every transition names the channel, the prior
+ * target (`from`), the new target (`to`), the attribution, and the guard
+ * result; the content fingerprint over the observed prior target is the
+ * idempotency key — replaying an already-applied move is `noop`, and a move
+ * whose observed prior target no longer matches (PR-04's "expected prior
+ * state" CAS) is `conflict`, never a silent second move. `from`/`to` are
+ * `null` when the channel is hidden (PR-04: a rollback hides, never erases).
+ * A transition is a mutation step: it holds the release-line claim. */
+export interface ChannelTransitionRecord {
+  readonly attemptId: string;
+  /** The canonical `channel-transition` stage, verbatim. */
+  readonly stepKey: "channel-transition";
+  /** The channel being moved — an opaque id, never a ref name (invariant 7). */
+  readonly channelId: string;
+  /** The prior target — line + version, or `null` when the channel was hidden. */
+  readonly from: { readonly line: string; readonly version: string } | null;
+  /** The new target — line + version, or `null` when hiding. */
+  readonly to: { readonly line: string; readonly version: string } | null;
+  /** Who: attempt + actor (§2.6). */
+  readonly attribution: Attribution;
+  /** What was checked, with results — the held-and-verified claim guard. */
+  readonly guards: readonly GuardResult[];
+  /** The owned claim token (§2.9), carried like every mutating record. */
+  readonly claim?: ClaimToken;
+  /** The content fingerprint over the observed prior target — the
+   * idempotency key (ADR-0012 decision 4). Required, never optional: the
+   * observed prior target always exists (a hidden channel's sentinel
+   * fingerprint qualifies), and a record without the key could never
+   * prove replay equality — every replay of its move would conflict
+   * instead of `noop`. */
+  readonly contentFingerprint: string;
+  /** Caller-supplied timestamp: metadata, never ordering (§2.10). */
+  readonly recordedAt?: string;
+}
 
 /** The ledger port (§2.1): the durability seam Phases 6–9 bind. Write-ahead
  * at step granularity — a step's start is durable before its effect may

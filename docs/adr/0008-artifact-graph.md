@@ -116,8 +116,8 @@ used verbatim and are not re-decided.
    over an incomplete generation would mint a version identity without its
    declared artifacts (S-04's expected artifacts, AR-01's one-release
    posture). The gate is a precondition of the existing publish step, not
-   a new stage; no channel move exists anywhere in it — PR-04's
-   transitions remain the only channel door.
+   a new stage; no channel move exists anywhere in it — the only channel
+   door is ADR-0012's explicit `channel-transition` stage.
 10. **The scheduler stays classification-driven.** The artifact walk rides
     the scheduler's shape: effective-list order, replay answered by the
     ledger projection before anything is invoked, refusal or escalation

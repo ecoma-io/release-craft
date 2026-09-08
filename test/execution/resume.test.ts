@@ -271,10 +271,10 @@ describe("classifyResume (§2.3): classification over the recorded tail, never r
 
 describe("classifyCrash (§2.4): E-01's doctrine over the tail plus the caller's observations", () => {
   it("tag recorded + plan valid → complete-in-place; the remaining stages finish", () => {
-    const { attempt, ledger } = crashedAfter(6); // completed through tag
+    const { attempt, ledger } = crashedAfter(6); // completed through tag; channel-transition is next
     expect(classifyCrash(attempt, ledger, { planValid: true })).toStrictEqual({
       kind: "complete-in-place",
-      from: "publish",
+      from: "channel-transition",
     });
   });
 
@@ -428,8 +428,9 @@ describe("the amputated publication (§4 fixture 2, E-02): attempt B resumes the
     completeStages(ledger, b, 5);
     expect(classifyResume(b, ledger)).toStrictEqual({ kind: "resume", from: "tag" });
 
-    // B finishes the release: the same double-run completes it.
-    for (const stage of ["tag", "publish", "verify"] as const) {
+    // B finishes the release: the same double-run completes it (the
+    // channel-transition door between tag and publish included).
+    for (const stage of ["commit", "tag", "channel-transition", "publish", "verify"] as const) {
       ledger.appendStart(b, stage, actor(b), `content_sha256:${stage}`);
       ledger.append({
         kind: "step",

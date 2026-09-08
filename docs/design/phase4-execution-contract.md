@@ -155,13 +155,13 @@ its violation is a store bug the tests make unrepresentable.
 
 ### 2.5 Step identity and the canonical stage sequence (invariant 12)
 
-A **step** is identified by `(attemptId, stepKey)`. `stepKey` in Phase 4 is
-one of the canonical eight stages — the model-b salvage ADR-0002 already
-recorded ("the eight-stage pipeline as the default step sequence of an
-attempt"):
+A **step** is identified by `(attemptId, stepKey)`. `stepKey` is one of
+the canonical stages — the model-b salvage ADR-0002 recorded the original
+eight-stage default, and ADR-0012 inserts `channel-transition` between
+`tag` and `publish` as the ninth stage:
 
 ```text
-plan → claim → prepare → validate → commit → tag → publish → verify
+plan → claim → prepare → validate → commit → tag → channel-transition → publish → verify
 ```
 
 `plan` binds the frozen plan (fingerprint recorded, E-05); `claim` acquires

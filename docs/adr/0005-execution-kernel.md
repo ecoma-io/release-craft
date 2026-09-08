@@ -84,12 +84,15 @@ sequence }` (E-08's "(line, target, stream)"), and `release-line
    claims on one scope cannot coexist; `stable-version` and
    `prerelease-sequence` on one line coexist; `release-line` excludes every
    other claim on the line.
-6. **Steps are `(attemptId, stepKey)` over the canonical eight stages:**
-   `plan → claim → prepare → validate → commit → tag → publish → verify`
-   (the model-b salvage ADR-0002 recorded as the default step sequence). The
-   sequence is **closed in Phase 4**: hooks (Phase 6) and artifact steps
-   (Phase 7) extend it through their own ADRs, which must name their
-   insertion rules; no extension syntax is invented here. `tag` is the
+6. **Steps are `(attemptId, stepKey)` over the canonical nine stages:**
+   `plan → claim → prepare → validate → commit → tag → channel-transition
+→ publish → verify` (the model-b salvage ADR-0002 recorded as the
+   default step sequence; `channel-transition` inserted by ADR-0012, the
+   one explicit door for moving channel pointers between `tag` and
+   `publish`). The sequence is **closed in Phase 4**: hooks (Phase 6),
+   artifact steps (Phase 7), and the channel-transition stage (ADR-0012)
+   extend it through their own ADRs, which must name their insertion
+   rules; no extension syntax is invented here. `tag` is the
    **no-return boundary** (E-01): once `tag` completes, supersession can no
    longer void the attempt — it is recorded, and reconciliation
    (delete-tag vs complete-in-place) is a Phase 5 human/policy decision,
@@ -115,7 +118,8 @@ sequence }` (E-08's "(line, target, stream)"), and `release-line
    its canonicalization mechanics are Phase 5's (the ledger fills it).
 9. **No mutation before claim is enforced by the guard table, not by
    convention.** Every mutating stage (`prepare`, `commit`, `tag`,
-   `publish`) carries a held-claim guard whose failure yields
+   `channel-transition`, `publish`) carries a held-claim guard whose
+   failure yields
    `refused(mutation-without-claim)` — a record, executable by test. This
    is invariant 11's executable home; E-07, E-08 and M-11 are its stress
    set.

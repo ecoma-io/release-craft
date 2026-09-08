@@ -26,6 +26,7 @@ import {
   type HookOutcome,
   type HookStep,
   type HooksRun,
+  type LedgerRecord,
   type ReleaseAttempt,
   type StageKey,
   type StepKey,
@@ -34,7 +35,7 @@ import {
 import { artifactStepKey, hookStepKey, isHookStepKey } from "./step-keys.js";
 
 /** The attempt's effective step list (§2.1; ADR-0007 decision 3 and
- * ADR-0008 decision 3): the canonical eight with each declared extension
+ * ADR-0008 decision 3): the canonical stages with each declared extension
  * step — hook or artifact — inserted at its anchor, before or after the
  * anchored stage. Ties inside one declaration list break in declaration
  * order; because hooks and artifact steps are two declaration lists, the
@@ -76,13 +77,12 @@ export const effectiveSteps = (attempt: ReleaseAttempt): readonly StepKey[] => {
 
 /** The appended record's narrowing — `append` returns the frozen
  * `LedgerRecord`; a step write that came back anything but a step record
- * would be the ledger contradicting itself. */
-const stepRecord = (
-  appended: { readonly kind: string } & {
-    readonly record?: TransitionRecord;
-  },
-): TransitionRecord => {
-  if (appended.kind !== "step" || appended.record === undefined) {
+ * would be the ledger contradicting itself. The `channel-transition` record
+ * kind also carries a `record` payload, so the narrow must discriminate
+ * on the full `LedgerRecord` union — never a structural `kind` + `record`
+ * intersection that would conflate the two. */
+const stepRecord = (appended: LedgerRecord): TransitionRecord => {
+  if (appended.kind !== "step") {
     throw new Error("the ledger appended a hook record it cannot read back as a step record");
   }
   return appended.record;

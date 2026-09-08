@@ -1,9 +1,9 @@
 /**
  * Step identity and the canonical stage sequence (contract §2.5; ADR-0005
  * decision 6) plus the guard table (§2.9; ADR-0005 decision 9). A step is
- * identified by `(attemptId, stepKey)`; in Phase 4 a `stepKey` is one of
- * the canonical eight stages — closed here, extended only by later phases'
- * own ADRs, which must name their insertion rules. `tag` is the no-return
+ * identified by `(attemptId, stepKey)`; a `stepKey` is one of the
+ * canonical stages — closed here, extended only by later phases' own ADRs,
+ * which must name their insertion rules. `tag` is the no-return
  * boundary (E-01): once it completes, supersession records but no longer
  * voids (attempt.ts's supersedePlan reads the completion from the step
  * view).
@@ -19,11 +19,20 @@ import { CANONICAL_STAGES, type StageKey } from "./types.js";
 
 export { CANONICAL_STAGES, type StageKey, type StepState } from "./types.js";
 
-/** The mutating stages (§2.9): `prepare`, `commit`, `tag`, `publish` —
- * each requires a held, verified claim in its guard list; running one
- * without is `refused(mutation-without-claim)`, a record, never an
- * execution. */
-export const MUTATING_STAGES: readonly StageKey[] = ["prepare", "commit", "tag", "publish"];
+/** The mutating stages (§2.9; ADR-0012 decision 1): `prepare`, `commit`,
+ * `tag`, `channel-transition`, `publish` — each requires a held, verified
+ * claim in its guard list; running one without is
+ * `refused(mutation-without-claim)`, a record, never an execution. The
+ * channel-transition stage is a mutation by the same law: it repoints a
+ * consumer-facing channel pointer, and no pointer moves without the held
+ * release-line claim (invariant 2.7). */
+export const MUTATING_STAGES: readonly StageKey[] = [
+  "prepare",
+  "commit",
+  "tag",
+  "channel-transition",
+  "publish",
+];
 
 /** The sequence as a plain readonly view — the tuple in types.ts stays
  * literal so `StepKey` derives from it; `indexOf`/`includes` need the

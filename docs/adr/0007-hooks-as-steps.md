@@ -24,10 +24,12 @@ resume is a pure classification over. The trigger has fired.
 
 Phase 6 ([#33](https://github.com/ecoma-io/release-craft/issues/33),
 [contract](../design/phase6-hooks-contract.md)) lands the hook. This ADR
-exists because hooks extend closed vocabulary — the canonical eight stages
-are explicitly closed until "their own ADR names the insertion rules" — and
-because the refusal direction ("never mutate a plan") must become a
-structural property, not a hope. Terms already canonical (attempt, step,
+exists because hooks extend closed vocabulary — the canonical stages are
+explicitly closed until "their own ADR names the insertion rules" (the
+sequence was eight here and becomes nine under ADR-0012's
+`channel-transition` insertion) — and because the refusal direction ("never
+mutate a plan") must become a structural property, not a hope. Terms already
+canonical (attempt, step,
 claim, guard, evidence, ledger — ADR-0002 §4, ADR-0005, ADR-0006) are used
 verbatim and are not re-decided.
 
@@ -47,9 +49,10 @@ verbatim and are not re-decided.
    (ADR-0001) is untouched: no effect ever executes inside `core/domain/`,
    and no effect is persisted — the ledger records outcomes, not code.
 3. **Insertion rules (the closed vocabulary's named extension).** The
-   canonical eight stages gain a sibling key space: `StepKey` extends to
-   `StageKey | HookStepKey`, where `StageKey` is the unchanged canonical
-   eight and `HookStepKey` is `` `hook:${string}` `` — a hook's ledger key is
+   canonical stages gain a sibling key space: `StepKey` extends to
+   `StageKey | HookStepKey`, where `StageKey` is the canonical stage set
+   (nine after ADR-0012's `channel-transition` insertion) and
+   `HookStepKey` is `` `hook:${string}` `` — a hook's ledger key is
    `hook:<id>`, unique per attempt. A hook declaration anchors at exactly
    one canonical stage, `before` or `after` it; the attempt's **effective
    step list** is the canonical sequence with each hook inserted at its
