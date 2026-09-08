@@ -11,11 +11,11 @@ have landed: the deterministic planner (ADR-0003/0004), the execution
 kernel (ADR-0005, Phase 4), the ledger (ADR-0006, Phase 5), hooks as
 steps (ADR-0007, Phase 6), the artifact graph (ADR-0008, Phase 7), the
 git binding (ADR-0009, Phase 8), the assembled GitHub adapter
-(ADR-0010, Phase 9), and the per-line claim register (ADR-0011, #49).
-One has not: the channel transition — a release moving a channel's
-pointer, PR-04's execution half — is unlanded (no code moves a
-`Channel`), so the matrix asserts channels that never move (§3.1) and
-files the gap rather than designing it ([#76]).
+(ADR-0010, Phase 9), the per-line claim register (ADR-0011, #49), and
+the channel transition (ADR-0012's `channel-transition` canonical stage
+with the channel store's compare-and-set — PR-04's execution half, the
+gap [#76] filed, landed since). The matrix drives the promote's planned
+moves through the store door and asserts what moved (§3.1, V4).
 The phase's deliverable is proof: one complex release scenario, carried
 vertically through the stack one layer at a time, re-proving the phase
 contracts' guarantees where their failures actually hide — between
@@ -86,11 +86,13 @@ a golden the engine produced is a mirror, not an expectation.
 Channels are the `Channel` domain value's named pointers, five of them:
 `stable`, `beta`, `rc`, `next`, `lts`. Each fixture fixes a seeded
 target — `stable` at `4.9.2`, `lts` at the `1.9-lts` cut, the rest at
-the matrix's declared pointers. The engine never moves a channel — the
-transition door is the unlanded PR-04 half ([#76]) — so every
-checkpoint asserts every channel unchanged: the promotion on `main`
-drags no pointer, and the unchanged reading is the assertion, not an
-absence of one.
+the matrix's declared pointers. A channel moves only through the
+transition door ADR-0012 landed: the `channel-transition` canonical
+stage writing through the channel store's compare-and-set. Every run
+that plans no move asserts every channel unchanged at its seed; the
+promote run on `main` moves exactly the channels its plan names —
+`stable` and `next` to the promoted stable (V4) — and never a channel
+its plan does not name.
 
 ### 3.2 The prerelease ladder and the stable cut
 
@@ -105,10 +107,12 @@ On `main`, four runs in order, one release line policy throughout:
    rc scopes coexist, so nothing denies across them.
 4. `5.0.0` — the promote door: empty change set, `bump: null`, and the
    stable version mints as a record (ADR-0009 decision 4, phase 8
-   §2.3). The run's transition half — the promoted-from record, the rc
-   stream close, the channel move — is unlanded ([#76]); the matrix
-   pins the planner half and the unchanged surroundings, never the
-   absent mechanisms.
+   §2.3). The run's transition half is the plan's channel content
+   (ADR-0012 decision 2): the `stable` and `next` moves in declaration
+   order, then the promoted-from edge, then the rc stream close. The
+   matrix pins the planner surface and the executed outcome — the
+   store's moved pointers, the ledger's channel-transition records
+   keyed by what the store observed deciding (V4).
 
 The E-08 staging is same-scope: two attempts demand the same stream's
 next version through one register, the loser's denial carries the
@@ -279,19 +283,19 @@ numbered here, not in the kernel's list (Phase 4 §3 names the kernel's
 own); where both speak, the kernel's reading is the definition and this
 section names the steps that carry it upward.
 
-| #   | Invariant           | Statement                                                                                                                                                                                                                                       | Carried by |
-| --- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| V1  | Plan integrity      | Same inputs plan identically (the plan fingerprint, E-05 / ADR-0006 decision 4); the executed steps are exactly the planned canonical sequence; content fingerprints verify (E-03).                                                             | 10.2–10.5  |
-| V2  | Identity            | `attemptIdentity` is stable across resume and crash; step identity `(attemptId, stepKey)` is unique per run; five lines' runs never share an attempt.                                                                                           | 10.2–10.5  |
-| V3  | Prerelease sequence | The ladder advances per stream §3.2; only the demanded stream moves; a same-scope denial carries the winner's sequence as the retry base (E-08), and beta and rc coexist.                                                                       | 10.2–10.5  |
-| V4  | Promotion           | The promote run lands the promote decision (empty change set, `bump: null`) and the stable `5.0.0` record; every channel reads unchanged around it (§3.1 — the transition half is unlanded, [#76]).                                             | 10.2–10.5  |
-| V5  | Supersession        | An abandoned target's `supersedes` relation records; the abandoned attempt's claims release by token; no channel points at an abandoned version (D19(4), E-09).                                                                                 | 10.2–10.5  |
-| V6  | Immutability        | Every recorded tail is append-only across the whole matrix; each record reads back byte-identical at every later checkpoint.                                                                                                                    | 10.3–10.5  |
-| V7  | Recovery            | Every §3.6 window classifies and resumes from the recorded tail — no completed step re-executes, no uncompleted step skips, and the resumed run's classifications and completions equal the uninterrupted run's (phase 5 §2.3, phase 8 §2.2.3). | 10.2–10.5  |
-| V8  | Concurrency         | No two attempts hold excluding claims on one line (ADR-0011 decision 2), through the vertical's own claim path; a lost CAS re-evaluates and lands or denies, never both-accepts.                                                                | 10.2–10.5  |
-| V9  | Divergence          | Lines sharing a fix mint their own versions (§3.3); propagation never merges line identity; a two-lines-one-tag plan refuses naming both (M-09, M-11).                                                                                          | 10.2–10.5  |
-| V10 | Reconciliation      | The remote surface derives from recorded evidence alone and reconciles per R-10..R-12 under D30's per-listing outcomes; an out-of-band mutation is detected.                                                                                    | 10.5       |
-| V11 | Zero-config         | Each slice's construction takes only its layer's inputs (§5's last two laws); no ambient environment, clock, or configuration surface appears.                                                                                                  | 10.2–10.5  |
+| #   | Invariant           | Statement                                                                                                                                                                                                                                                                                                                                 | Carried by |
+| --- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| V1  | Plan integrity      | Same inputs plan identically (the plan fingerprint, E-05 / ADR-0006 decision 4); the executed steps are exactly the planned canonical sequence; content fingerprints verify (E-03).                                                                                                                                                       | 10.2–10.5  |
+| V2  | Identity            | `attemptIdentity` is stable across resume and crash; step identity `(attemptId, stepKey)` is unique per run; five lines' runs never share an attempt.                                                                                                                                                                                     | 10.2–10.5  |
+| V3  | Prerelease sequence | The ladder advances per stream §3.2; only the demanded stream moves; a same-scope denial carries the winner's sequence as the retry base (E-08), and beta and rc coexist.                                                                                                                                                                 | 10.2–10.5  |
+| V4  | Promotion           | The promote run lands the promote decision (empty change set, `bump: null`) and the stable `5.0.0` record; the channels move exactly as the plan records them — `stable` and `next` to the promoted stable, the untouched channels standing (§3.1) — and the replay classifies every move noop, never moving twice (ADR-0012 decision 4). | 10.2–10.5  |
+| V5  | Supersession        | An abandoned target's `supersedes` relation records; the abandoned attempt's claims release by token; no channel points at an abandoned version (D19(4), E-09).                                                                                                                                                                           | 10.2–10.5  |
+| V6  | Immutability        | Every recorded tail is append-only across the whole matrix; each record reads back byte-identical at every later checkpoint.                                                                                                                                                                                                              | 10.3–10.5  |
+| V7  | Recovery            | Every §3.6 window classifies and resumes from the recorded tail — no completed step re-executes, no uncompleted step skips, and the resumed run's classifications and completions equal the uninterrupted run's (phase 5 §2.3, phase 8 §2.2.3).                                                                                           | 10.2–10.5  |
+| V8  | Concurrency         | No two attempts hold excluding claims on one line (ADR-0011 decision 2), through the vertical's own claim path; a lost CAS re-evaluates and lands or denies, never both-accepts.                                                                                                                                                          | 10.2–10.5  |
+| V9  | Divergence          | Lines sharing a fix mint their own versions (§3.3); propagation never merges line identity; a two-lines-one-tag plan refuses naming both (M-09, M-11).                                                                                                                                                                                    | 10.2–10.5  |
+| V10 | Reconciliation      | The remote surface derives from recorded evidence alone and reconciles per R-10..R-12 under D30's per-listing outcomes; an out-of-band mutation is detected.                                                                                                                                                                              | 10.5       |
+| V11 | Zero-config         | Each slice's construction takes only its layer's inputs (§5's last two laws); no ambient environment, clock, or configuration surface appears.                                                                                                                                                                                            | 10.2–10.5  |
 
 A slice's PR body enumerates its rows with the test names that pin them;
 a row without a test in some slice is either not that slice's row (the

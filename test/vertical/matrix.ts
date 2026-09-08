@@ -11,6 +11,7 @@ import { Channel, Version } from "@ecoma-io/release-craft/domain";
 import {
   CANONICAL_STAGES,
   MemoryAttemptRegister,
+  MemoryChannelStore,
   MemoryClaimStore,
   MemoryLedger,
   MemoryTransitionLog,
@@ -23,8 +24,12 @@ import {
   type ArtifactProducer,
   type ArtifactStep,
   type Attribution,
+  type ChannelApplyOutcome,
+  type ChannelState,
+  type ChannelStore,
   type Claim,
   type ClaimScope,
+  type ExecutionLedger,
   type HookEffect,
   type HookStep,
   type ReleaseAttempt,
@@ -32,10 +37,12 @@ import {
 } from "../../src/execution/index.js";
 import { plan } from "../../src/planner/assemble.js";
 import type {
+  ChannelObservation,
   CommitObservation,
   LineConfig,
   OperatorIntent,
   PlanLine,
+  PlannedChannelMove,
   PlannedStream,
   PlanningInput,
   PlanningOutcome,
@@ -183,8 +190,9 @@ export const GOLDEN = {
   /** The side lines' own cuts: the maintenance/propagation patches and the
    * independent minor and patch (§3.2 beside-the-ladder, §3.3). */
   sides: { "4.8.x": "4.8.7", "3.x": "3.3.0", "2.x": "2.4.1", "1.9-lts": "1.9.2" },
-  /** §3.1's five seeded channel targets — asserted unchanged at every
-   * checkpoint (the transition door is unlanded, #76). */
+  /** §3.1's five seeded channel targets — the standing state every fixture's
+   * channel store seeds, and what every non-promoting run must leave
+   * untouched (only the promote run's own plan names moves). */
   channels: {
     stable: { line: "main", version: "4.9.2" },
     beta: { line: "main", version: "4.9.1" },
@@ -206,6 +214,35 @@ export function matrixChannels(): readonly Channel[] {
   );
 }
 
+/** A standing channel state — the §3.1 seeds are all pointed, so the
+ * fixture's states carry a non-null target (the store's `ChannelState`
+ * widens it to include the hidden state a fresh channel starts in). */
+export interface StandingChannelState {
+  readonly id: string;
+  readonly target: { readonly line: string; readonly version: string };
+}
+
+/** The standing channel states in the store's own serialized shape, in
+ * declaration order — what every fixture's channel store is seeded with
+ * (§3.1), and the expectation every checkpoint reads against. */
+export function standingChannelStates(): readonly StandingChannelState[] {
+  return (
+    Object.entries(GOLDEN.channels) as readonly (readonly [
+      string,
+      { readonly line: string; readonly version: string },
+    ])[]
+  ).map(([id, target]) => ({ id, target: { line: target.line, version: target.version } }));
+}
+
+/** §3.1's five standing channels as the planner's declared registry — the
+ * closed §2.1 input's `channels` field, in declaration order. */
+export function matrixChannelRegistry(): readonly ChannelObservation[] {
+  return standingChannelStates().map((channel) => ({
+    id: channel.id,
+    target: { line: channel.target.line, version: channel.target.version },
+  }));
+}
+
 /** §3.1's checkpoint: every channel reads exactly its seeded target. */
 export function assertChannelsUnchanged(channels: readonly Channel[]): void {
   const seeded: Record<string, { readonly line: string; readonly version: string } | undefined> =
@@ -218,6 +255,32 @@ export function assertChannelsUnchanged(channels: readonly Channel[]): void {
     if (!channel.pointsAt(target.line, Version.parse(target.version))) {
       throw new Error(
         `channel ${channel.id} moved off ${target.line}@${target.version} — the engine has no transition door (#76): channels never move`,
+      );
+    }
+  }
+}
+
+/** §3.1's checkpoint over a channel store: every standing channel reads
+ * exactly its seeded target, and the store holds exactly the five matrix
+ * channels — the assertion every run that plans no moves must satisfy. */
+export function assertStoreChannelsStanding(store: ChannelStore): void {
+  const standing = standingChannelStates();
+  const listed = store.list();
+  if (listed.length !== standing.length) {
+    throw new Error(
+      `the channel store holds ${String(listed.length)} channels, the matrix stands five`,
+    );
+  }
+  for (const expected of standing) {
+    const observed = store.read(expected.id);
+    if (
+      observed.target === null ||
+      observed.target.line !== expected.target.line ||
+      observed.target.version !== expected.target.version
+    ) {
+      throw new Error(
+        `channel ${expected.id} reads ${JSON.stringify(observed.target)}, the matrix stands ` +
+          `${expected.target.line}@${expected.target.version} — a run moved a channel its plan never named`,
       );
     }
   }
@@ -339,6 +402,11 @@ export interface Stores {
   readonly ledger: MemoryLedger;
   readonly claims: MemoryClaimStore;
   readonly log: MemoryTransitionLog;
+  /** The channel store (ADR-0012 decision 6's reference implementation),
+   * seeded with §3.1's standing channels — the deliverability pointers the
+   * application layer moves at the `channel-transition` stage. The kernel
+   * never consumes it (invariant 2.1). */
+  readonly channels: MemoryChannelStore;
 }
 
 /** Zero-config per layer (§5): the stores construct from nothing — no
@@ -349,6 +417,7 @@ export function freshStores(): Stores {
     ledger: new MemoryLedger(),
     claims: new MemoryClaimStore(),
     log: new MemoryTransitionLog(),
+    channels: new MemoryChannelStore({ channels: standingChannelStates() }),
   };
 }
 
@@ -399,6 +468,11 @@ export function runInput(
     lines: [line],
     components: [{ name: "app", manifestVersion: "4.9.2", paths: ["package.json"] }],
     intents,
+    // §3.1's five standing channels are part of the declared world: the
+    // registry is the planner's channel content source (ADR-0012 decision 2),
+    // and every non-promote run leaves the plan's `channels` absent — absent
+    // is byte-identical to the pre-ADR-0012 plan.
+    channels: matrixChannelRegistry(),
   };
 }
 
@@ -460,6 +534,95 @@ export function driveStage(
     stores.ledger.append({ kind: "step", record: outcome.record });
   }
   return { stepKey: stage, outcome };
+}
+
+// ---------------------------------------------------------------------------
+// The channel-transition stage's application half (ADR-0012 decisions 3–6)
+// ---------------------------------------------------------------------------
+
+/** One decided channel move as the application drove it: the channel, the
+ * store's outcome, and the prior target the store's own read observed (the
+ * record's `from`). */
+export interface AppliedChannelMove {
+  readonly channelId: string;
+  readonly from: ChannelState["target"];
+  readonly outcome: ChannelApplyOutcome;
+}
+
+/** The application half of the `channel-transition` stage — the vertical's
+ * stand-in for the application layer ADR-0012 decision 6 wires to the store
+ * (invariant 2.1: the kernel never consumes the channel store; it names the
+ * stage and the application executes the recorded plan's moves through it).
+ *
+ * The plan's `channel-move`s run in declaration order through the store's
+ * compare-and-set: the move assumes the prior target the store's own read
+ * observes — never a trusted `from` from the plan (ADR-0012 decision 2: the
+ * plan names `to`, never `from`). `applied` proceeds; `noop` is the replay
+ * case (the move already stands, ADR-0012 decision 4); `conflict` and
+ * `ambiguous` fail loudly — a half-moved promotion is never reported green
+ * (invariants 2.5/2.6). Every decided move appends one `channel-transition`
+ * ledger record whose `contentFingerprint` is the store outcome's — the
+ * record's idempotency key is what the store observed deciding, never what
+ * the plan assumed (decision 4). A plan that names no moves records
+ * nothing: the stage is byte-identical to its pre-V4 behavior for every
+ * non-promoting run.
+ *
+ * The `promoted-from` edge and the stream close ride the same decision as
+ * recorded plan content — they are line-level facts, independent of any
+ * channel, and no store move exists for a channel that was never declared.
+ */
+export function applyPlannedChannelTransitions(application: {
+  readonly attempt: ReleaseAttempt;
+  readonly planLine: PlanLine;
+  /** The held claim token the stage's guards verified — carried like every
+   * mutating record (§2.9). */
+  readonly claim?: string;
+  readonly channels: ChannelStore;
+  readonly ledger: ExecutionLedger;
+}): readonly AppliedChannelMove[] {
+  const moves = (application.planLine.channels ?? []).filter(
+    (planned): planned is PlannedChannelMove => planned.kind === "channel-move",
+  );
+  const applied: AppliedChannelMove[] = [];
+  for (const move of moves) {
+    const observed = application.channels.read(move.channelId);
+    const to = { line: move.to.line, version: move.to.version };
+    const outcome = application.channels.applyTransition({
+      channelId: move.channelId,
+      from: observed.target,
+      to,
+    });
+    if (outcome.kind === "conflict") {
+      throw new Error(
+        `the channel store refused the planned move of ${JSON.stringify(move.channelId)}: the ` +
+          `observed prior target ${JSON.stringify(outcome.observed)} matches neither the move's ` +
+          `prior nor its target — a divergent promotion fails closed (invariant 2.5)`,
+      );
+    }
+    if (outcome.kind === "ambiguous") {
+      throw new Error(
+        `the channel store cannot determine whether the move of ${JSON.stringify(move.channelId)} ` +
+          `landed: ${outcome.detail} — the promotion does not race forward on uncertainty ` +
+          `(invariant 2.6, ADR-0012 decision 7)`,
+      );
+    }
+    applied.push({ channelId: move.channelId, from: observed.target, outcome });
+    application.ledger.append({
+      kind: "channel-transition",
+      record: {
+        attemptId: application.attempt.attemptId,
+        stepKey: "channel-transition",
+        channelId: move.channelId,
+        from: observed.target,
+        to,
+        attribution: actor(application.attempt),
+        guards: [{ guard: "claim-held", passed: true }],
+        ...(application.claim === undefined ? {} : { claim: application.claim }),
+        contentFingerprint: outcome.contentFingerprint,
+      },
+    });
+  }
+  return applied;
 }
 
 /** The deterministic effects: each observation carries the postcondition
@@ -546,11 +709,15 @@ export interface RunResult {
 }
 
 /** The walk's mutable attempt cell — schedulers and stages return the
- * successor attempt, and the walk carries it forward. */
+ * successor attempt, and the walk carries it forward. `token` is the held
+ * claim the run acquired; the channel-transition application carries it on
+ * its records (optional: a resume rebuilt without it still walks — no run
+ * that plans moves resumes without it in these suites). */
 export interface WalkContext {
   stores: Stores;
   attempt: ReleaseAttempt;
   planLine: PlanLine;
+  token?: string;
   hooks?: readonly HookStep[];
   artifacts?: readonly ArtifactStep[];
   hookEffects?: ReadonlyMap<string, HookEffect>;
@@ -687,6 +854,19 @@ export function walkStages(
       // its completion never happened (E-01/E-02) — the driver dies here.
       return stage;
     }
+    if (stage === "channel-transition") {
+      // ADR-0012 decision 3's order, exactly: the write-ahead start is
+      // durable above; the application executes the recorded plan's moves
+      // through the channel store here; the kernel's completion appends
+      // below. A plan that names no moves records nothing.
+      applyPlannedChannelTransitions({
+        attempt: ctx.attempt,
+        planLine: ctx.planLine,
+        ...(ctx.token === undefined ? {} : { claim: ctx.token }),
+        channels: ctx.stores.channels,
+        ledger: ctx.stores.ledger,
+      });
+    }
     const drive = driveStage(ctx.attempt, stage, ctx.stores, preconditions);
     drives.push(drive);
     if (drive.outcome.kind !== "advance") {
@@ -733,6 +913,7 @@ export function runRelease(opts: RunOptions, observeWorld = true): RunResult {
   const scope = scopeFor(assembled, opts.lineId);
   const settled = stores.claims.acquire(scope, ctx.attempt.attemptId);
   const token = asClaim(settled).token;
+  ctx.token = token;
   const drives: StepDrive[] = [];
   const stoppedAt = walkStages(ctx, "plan", opts, drives);
   let attempt = ctx.attempt;

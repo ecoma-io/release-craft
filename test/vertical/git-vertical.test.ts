@@ -24,10 +24,12 @@ import { describe, expect, it } from "vitest";
 import { plan } from "../../src/planner/assemble.js";
 import {
   CANONICAL_STAGES,
+  channelStateFingerprint,
   classifyResume,
   ledgerRequestStep,
   openAttempt,
   start,
+  type ChannelTransitionRecord,
   type Claim,
   type ClaimDenied,
   type ClaimScope,
@@ -35,20 +37,25 @@ import {
 import {
   GOLDEN,
   actor,
+  applyPlannedChannelTransitions,
   artifactProducers,
-  assertChannelsUnchanged,
+  assertStoreChannelsStanding,
   copyWorld,
   hookEffects,
   liveWorld,
   matrixArtifacts,
-  matrixChannels,
   matrixHooks,
   plannedOf,
   runInput,
   snapshot,
 } from "./matrix.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
-import { GitClaimStore, claimRegisterRefFor, readRef } from "../../src/adapters/git/index.js";
+import {
+  GitClaimStore,
+  claimRegisterRefFor,
+  openGitBinding,
+  readRef,
+} from "../../src/adapters/git/index.js";
 import {
   buildShim,
   claimView,
@@ -394,38 +401,130 @@ describe("V3 — prerelease sequence, git-backed", () => {
 // ---------------------------------------------------------------------------
 
 describe("V4 — promotion, git-backed", () => {
-  it("V4 · ladder run 4 · the promote decision lands the stable record and every channel reads unchanged", () => {
-    withTempRepo("v4-promote", (repo) => {
-      const state = openGitState(repo);
-      const stores = gitStores(repo);
-      const world = liveWorld();
-      const channels = matrixChannels();
-      runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
-      runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
-      runGitRelease({ state, stores, world, lineId: "main", intents: [rc] });
-      assertChannelsUnchanged(channels);
-      const promoteRun = runGitRelease({
-        state,
-        stores,
-        world,
-        lineId: "main",
-        intents: [promote],
+  // Headroom, not a hang mask: the git V4 writes four real ref
+  // transactions (two channel moves plus two noop-replay appends) on top of
+  // the ladder's four runs — under full-suite parallel load it can brush the
+  // default timeout, and the brief sanctions explicit headroom for genuinely
+  // slow git-window tests.
+  it(
+    "V4 · ladder run 4 · the promote run moves the planned channels into recorded refs and a fresh binding reloads them",
+    { timeout: 40_000 },
+    () => {
+      withTempRepo("v4-promote", (repo) => {
+        const state = openGitState(repo);
+        const stores = gitStores(repo);
+        const world = liveWorld();
+        // The standing channels are RECORDED refs (the fixture seeded them
+        // through the binding's own CAS, never a hand-written ref) — the
+        // binding's read door proves them before any run.
+        assertStoreChannelsStanding(state.binding.channels);
+        runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+        runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+        runGitRelease({ state, stores, world, lineId: "main", intents: [rc] });
+        // No pre-promote run plans a move: the pointers stand.
+        assertStoreChannelsStanding(state.binding.channels);
+        const promoteRun = runGitRelease({
+          state,
+          stores,
+          world,
+          lineId: "main",
+          intents: [promote],
+        });
+        expect(promoteRun.mintedTag).toBe(GOLDEN.ladder[3]);
+        expect(promoteRun.planLine.stable?.tag).toBe("5.0.0");
+        expect(promoteRun.scope.kind).toBe("stable-version");
+        if (promoteRun.scope.kind !== "stable-version") {
+          throw new Error("fixture broken: the promote scope is not a stable-version record");
+        }
+        expect(promoteRun.scope.version).toBe("5.0.0");
+        // The stable mint is recorded as a real tag.
+        expect(recordedTags(state.git, naming.namespaces)).toContain("5.0.0");
+        // The plan's channel content (ADR-0012 decision 2): the §3.1 declared
+        // moves in declaration order, then the promoted-from edge, then the rc
+        // stream close.
+        expect(promoteRun.planLine.channels).toStrictEqual([
+          { kind: "channel-move", channelId: "stable", to: { line: "main", version: "5.0.0" } },
+          { kind: "channel-move", channelId: "next", to: { line: "main", version: "5.0.0" } },
+          { kind: "promoted-from", from: "5.0.0-rc.1", to: { line: "main", version: "5.0.0" } },
+          { kind: "stream-close", stream: "rc", target: "5.0.0" },
+        ]);
+        // The executed outcome through the same binding: stable and next read
+        // the promoted stable; beta, rc, and lts stand at §3.1's seeds.
+        expect(state.binding.channels.read("stable")).toStrictEqual({
+          id: "stable",
+          target: { line: "main", version: "5.0.0" },
+        });
+        expect(state.binding.channels.read("next")).toStrictEqual({
+          id: "next",
+          target: { line: "main", version: "5.0.0" },
+        });
+        expect(state.binding.channels.read("beta")).toStrictEqual({
+          id: "beta",
+          target: { line: "main", version: "4.9.1" },
+        });
+        expect(state.binding.channels.read("rc")).toStrictEqual({
+          id: "rc",
+          target: { line: "main", version: "4.9.1" },
+        });
+        expect(state.binding.channels.read("lts")).toStrictEqual({
+          id: "lts",
+          target: { line: "1.9-lts", version: "1.9.1" },
+        });
+        // The store holds exactly the matrix's five channels — the git store
+        // enumerates recorded refs, so the fixture pins the set, not a
+        // ref-derivation order (the memory stores pin declaration order).
+        expect(
+          state.binding.channels
+            .list()
+            .map((channel) => channel.id)
+            .sort(),
+        ).toStrictEqual(["beta", "lts", "next", "rc", "stable"]);
+        // Durability: a FRESH binding on the same repository reloads the moved
+        // pointers exactly — the moves live in recorded refs, not in process
+        // memory.
+        const reloaded = openGitBinding({ repo, tagNaming: naming });
+        expect(reloaded.channels.read("stable")).toStrictEqual({
+          id: "stable",
+          target: { line: "main", version: "5.0.0" },
+        });
+        expect(reloaded.channels.read("next")).toStrictEqual({
+          id: "next",
+          target: { line: "main", version: "5.0.0" },
+        });
+        // The reloaded ledger carries the two transition records, keyed by the
+        // store-computed fingerprints (ADR-0012 decision 4).
+        const transitions: ChannelTransitionRecord[] = [];
+        for (const record of reloaded.ledger.tail(promoteRun.attempt.attemptId)) {
+          if (record.kind === "channel-transition") {
+            transitions.push(record.record);
+          }
+        }
+        expect(transitions.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
+        for (const record of transitions) {
+          expect(record.from).toStrictEqual({ line: "main", version: "4.9.2" });
+          expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+          expect(record.contentFingerprint).toBe(
+            channelStateFingerprint({
+              id: record.channelId,
+              target: { line: "main", version: "4.9.2" },
+            }),
+          );
+          expect(record.claim).toBe(promoteRun.token);
+        }
+        // The replay: re-driving the application over the reloaded store
+        // classifies every move noop — the recorded pointers are never moved
+        // twice (ADR-0012 decision 4).
+        const replay = applyPlannedChannelTransitions({
+          attempt: promoteRun.attempt,
+          planLine: promoteRun.planLine,
+          claim: promoteRun.token,
+          channels: reloaded.channels,
+          ledger: reloaded.ledger,
+        });
+        expect(replay.map((move) => move.outcome.kind)).toStrictEqual(["noop", "noop"]);
       });
-      expect(promoteRun.mintedTag).toBe(GOLDEN.ladder[3]);
-      expect(promoteRun.planLine.stable?.tag).toBe("5.0.0");
-      expect(promoteRun.scope.kind).toBe("stable-version");
-      if (promoteRun.scope.kind !== "stable-version") {
-        throw new Error("fixture broken: the promote scope is not a stable-version record");
-      }
-      expect(promoteRun.scope.version).toBe("5.0.0");
-      // The stable mint is recorded as a real tag; the promotion drags no
-      // pointer yet — the kernel's channel-transition door is landed
-      // (ADR-0012, #76), and the channel-store wiring that moves the
-      // pointers is the next slice (V4 asserts the moves then).
-      expect(recordedTags(state.git, naming.namespaces)).toContain("5.0.0");
-      assertChannelsUnchanged(channels);
-    });
-  });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
