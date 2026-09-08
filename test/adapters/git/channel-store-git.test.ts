@@ -1,6 +1,6 @@
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
@@ -11,6 +11,7 @@ import {
   CHANNEL_REF_NAMESPACE,
   channelRefFor,
   commitRecord,
+  GitFaultError,
   openGitBinding,
   readRef,
 } from "../../../src/adapters/git/index.js";
@@ -124,6 +125,41 @@ const withHostilePath = (dir: string, fn: () => void): void => {
       process.env.PATH = previous;
     }
   }
+};
+
+/**
+ * The hostile `git` for the land-fault pin: a PATH shim whose `update-ref`
+ * on the channel ref always dies (exit 128, a lock failure on stderr) and
+ * delegates everything else to the real git — so the store's read succeeds
+ * and the fault lands exactly on the compare-and-set's write, the one
+ * window `ambiguous` exists for (ADR-0012 decision 7).
+ */
+const buildLandFaultShim = (spec: { readonly ref: string }) => {
+  const dir = mkdtempSync(join(tmpdir(), "release-craft-channel-landfault-"));
+  const found = spawnSync("which", ["git"], { encoding: "utf8" });
+  const real = found.stdout.trim();
+  if (real === "") {
+    rmSync(dir, { recursive: true, force: true });
+    throw new Error(`the fixture needs a real git to delegate to: ${found.stderr}`);
+  }
+  const script = [
+    "#!/bin/sh",
+    `if [ "$1" = "update-ref" ] && [ "$2" = "${spec.ref}" ]; then`,
+    `  echo "fatal: cannot lock ref '${spec.ref}': hostile land fault" >&2`,
+    "  exit 128",
+    "fi",
+    `exec "${real}" "$@"`,
+    "",
+  ].join("\n");
+  const shim = join(dir, "git");
+  writeFileSync(shim, script);
+  chmodSync(shim, 0o755);
+  return {
+    dir,
+    cleanup: () => {
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
 };
 
 describe("the git-backed channel store (ADR-0012 decision 6)", () => {
@@ -250,6 +286,66 @@ describe("the git-backed channel store (ADR-0012 decision 6)", () => {
       const store = new GitChannelStore(repo);
       expect(() => store.read("stable")).toThrow(/one channel per ref/);
       expect(() => store.list()).toThrow(/one channel per ref/);
+    });
+  });
+
+  it("a ref git cannot read refuses loudly — never the hidden channel, never a false replay (#95)", () => {
+    withTempRepo("channel-broken-ref", (repo) => {
+      const store = new GitChannelStore(repo);
+      store.applyTransition(move("stable", null, pointed("1.2.0")));
+      // The loose ref file is overwritten with garbage: git's own
+      // `rev-parse --verify --quiet` exits 1 with a warning on stderr —
+      // the absence shape (exit 1, empty stderr) it is not.
+      const refPath = join(
+        repo,
+        ".git",
+        "refs",
+        "ecoma",
+        "channels",
+        channelRefFor("stable").slice(CHANNEL_REF_NAMESPACE.length),
+      );
+      mkdirSync(dirname(refPath), { recursive: true });
+      writeFileSync(refPath, "not-a-commit\n");
+      // The read faults instead of reporting the hidden channel.
+      expect(() => store.read("stable")).toThrow(GitFaultError);
+      expect(() => store.read("stable")).toThrow(/broken ref/);
+      // The hide-move replay refuses too — pre-fix it read the corrupt
+      // pointer as the already-hidden channel and classified the move
+      // `noop` over the hidden state's fingerprint.
+      expect(() => store.applyTransition(move("stable", pointed("1.2.0"), null))).toThrow(
+        GitFaultError,
+      );
+      // The pointed move from hidden refuses at its read as well: the
+      // corruption surfaces before any move is attempted (pre-fix the
+      // phantom hidden read reached the land and classified `ambiguous` —
+      // the land-fault contract below is where that outcome belongs).
+      expect(() => store.applyTransition(move("stable", null, pointed("1.2.0")))).toThrow(
+        GitFaultError,
+      );
+      // `list()` walks `for-each-ref`, and git's enumeration skips a
+      // broken ref silently: the broken channel is omitted, never read as
+      // a hidden state — the loud path is the directly-addressed read (D39
+      // records the reach boundary).
+      expect(store.list()).toEqual([]);
+    });
+  });
+
+  it("a land fault stays ambiguous — the read discrimination never swallows the CAS write either", () => {
+    withTempRepo("channel-land-fault", (repo) => {
+      // The read succeeds over an absent ref (real git delegates), the
+      // land dies under the hostile lock: the outcome is `ambiguous`, the
+      // fail-closed land-fault class the broken-ref read must not reach.
+      const shim = buildLandFaultShim({ ref: channelRefFor("stable") });
+      try {
+        withHostilePath(shim.dir, () => {
+          const store = new GitChannelStore(repo);
+          expect(store.applyTransition(move("stable", null, pointed("1.2.0"))).kind).toBe(
+            "ambiguous",
+          );
+        });
+      } finally {
+        shim.cleanup();
+      }
     });
   });
 

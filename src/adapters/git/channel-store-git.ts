@@ -21,13 +21,14 @@
  * uncertainty (invariant 2.6; ADR-0012 decision 7), and a resume
  * re-executes against whatever the recorded state proves, converging
  * either way. Read-side faults stay throws — every fault the substrate
- * reports refuses loudly: a corrupted blob is not the hidden state, and a
+ * reports refuses loudly: a corrupted blob is not the hidden state, a
  * state whose id does not map back onto its own ref is refused at the
- * read boundary (no writer of the canonical form produces one). The one
- * gap lives below the store: `readRef` swallows every git fault as
- * absence, so a ref git cannot read (a broken ref file) also reads as the
- * hidden channel — the substrate's absence-vs-fault discrimination is
- * tracked in #95 and shared with the claim register.
+ * read boundary (no writer of the canonical form produces one), and — the
+ * substrate's absence-vs-fault discrimination (#95, shared with the claim
+ * register; D39) — a ref git cannot read (a broken ref file) throws like
+ * any other read-side fault: `readRef` reports absence only for exit 1
+ * with empty stderr, so a corrupt pointer can no longer read as the
+ * hidden channel and `ambiguous` stays the land-fault outcome alone.
  */
 
 import { createHash } from "node:crypto";

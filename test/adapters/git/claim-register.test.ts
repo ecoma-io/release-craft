@@ -1,16 +1,19 @@
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  CLAIM_REF_NAMESPACE,
   claimRegisterRefFor,
   commitRecord,
   type ClaimRecord,
   GitClaimStore,
+  GitFaultError,
   readRef,
+  readRegister,
   type GitRun,
 } from "../../../src/adapters/git/index.js";
 import {
@@ -535,6 +538,40 @@ describe("the per-line claim register (ADR-0011)", () => {
           '{"claims":[{"kind":"claim","scope":{"kind":"release-line","lineId":"line-main"},"token":"t","holder":"h","extra":1}]}',
         );
         expect(() => store.verify("any-token")).toThrow(TypeError);
+      });
+    });
+
+    it("a register git cannot read refuses loudly — never reads as an unclaimed line (#95)", () => {
+      withTempRepo("register-broken-ref", (repo, git) => {
+        // The register ref's loose file holds garbage: git's own
+        // `rev-parse --verify --quiet` exits 1 with a warning on stderr —
+        // the absence shape (exit 1, empty stderr) it is not.
+        const ref = claimRegisterRefFor("line-broken");
+        const refPath = join(
+          repo,
+          ".git",
+          "refs",
+          "ecoma",
+          "claims",
+          ref.slice(CLAIM_REF_NAMESPACE.length),
+        );
+        mkdirSync(dirname(refPath), { recursive: true });
+        writeFileSync(refPath, "not-a-commit\n");
+        // The read boundary faults instead of reporting the empty set.
+        expect(() => readRegister(git, ref)).toThrow(GitFaultError);
+        expect(() => readRegister(git, ref)).toThrow(/broken ref/);
+        // The store's opening read faults with it: an acquire over the
+        // line cannot read the corrupt register as an unclaimed one and
+        // mint a claim over it.
+        const store = new GitClaimStore(repo);
+        expect(() => store.acquire(releaseLine("line-broken"), "attempt_broken")).toThrow(
+          GitFaultError,
+        );
+        // The all-register walk is a `for-each-ref`, and git's enumeration
+        // skips a broken ref silently: verify reports the token lost rather
+        // than faulting — the loud path is direct addressing (D39 records
+        // the reach boundary).
+        expect(store.verify("any-token")).toEqual({ kind: "lost" });
       });
     });
   });

@@ -256,9 +256,10 @@ computing the content fingerprint over the state it observed; the
 outcomes are `applied` | `noop` | `conflict`
 (naming the observed target) | `ambiguous` — the land-fault outcome,
 decision 7's fail-closed law (read-side faults the substrate reports
-stay throws; the substrate's `readRef` cannot yet distinguish an absent
-ref from a ref git cannot read — #95 — so the loud read boundary is the
-blob and identity checks). The port's
+stay throws: the substrate's `readRef` distinguishes an absent ref —
+exit 1 with empty stderr, still the hidden channel, the total read —
+from a ref git cannot read, which throws like a corrupted blob — #95,
+D39). The port's
 vocabulary is the serialized `ChannelState` (id + line + canonical
 version string, or `null`), string-shaped like every record target; the
 deterministic reference implementation (`MemoryChannelStore`) and the
