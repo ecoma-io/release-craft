@@ -16,21 +16,24 @@ const ZERO_OID = "0".repeat(40);
 
 /**
  * Reads a ref's tip, or null when the ref is absent. `--verify --quiet`
- * reports absence by a non-zero exit with empty stderr, so the runner raises
- * GitFaultError either way and this is the one place the binding swallows
- * it: absence is a value here, not a fault.
- *
- * Note (#95): the catch swallows every GitFaultError, not just that absence
- * shape — a ref git cannot read (a broken ref file faults with a warning
- * on stderr) also reads as absent. The discrimination is unimplemented;
- * the consuming scopes' corrupted-state refusals (blob shape, envelope
- * identity) are the loud boundary that remains.
+ * reports absence by exit 1 with empty stderr, so the runner raises
+ * GitFaultError either way and this is the one place the binding reports a
+ * fault as a value — and the discrimination is exact (#95): only that
+ * shape is absence. Every other fault a ref read can produce — a ref git
+ * cannot read (a broken ref file, empty or holding garbage, exits 1 with
+ * a warning on stderr), an unexpected exit status, a spawn failure —
+ * propagates, so each consuming scope's own fault contract applies to it:
+ * a broken ref is never read as an absent one. The discrimination reaches
+ * exactly as far as git can spell: a ref file the process cannot read (a
+ * permission denial) and a directory sitting at the ref's path produce the
+ * same exit 1 with empty stderr as absence and still read as absent — no
+ * rev-parse spelling separates them, and D39 records the residual.
  */
 export function readRef(git: GitRun, ref: string): string | null {
   try {
     return git(["rev-parse", "--verify", "--quiet", ref]).trim();
   } catch (error) {
-    if (error instanceof GitFaultError) {
+    if (error instanceof GitFaultError && error.status === 1 && error.stderr === "") {
       return null;
     }
     throw error;

@@ -231,38 +231,46 @@ describe("V1 — plan integrity, git-backed", () => {
 // ---------------------------------------------------------------------------
 
 describe("V2 — identity, git-backed", () => {
-  it("V2 · commit-window · the identity is stable across the crash and its git-backed resume", () => {
-    withTempRepo("v2-identity", (repo) => {
-      const state = openGitState(repo);
-      const stores = gitStores(repo);
-      const world = liveWorld();
-      const declaration = fullDeclaration();
-      const base: RunOptions = {
-        state,
-        stores,
-        world,
-        lineId: "main",
-        intents: [beta],
-        declarations: declaration,
-      };
-      const stopped = runGitRelease({ ...base, crashAfterStartOf: "commit" }, false);
-      if (stopped.stoppedAt !== "commit") {
-        throw new Error(`fixture broken: the walk stopped at ${String(stopped.stoppedAt)}`);
-      }
-      // Resume over the SAME repo — a fresh binding reloads the recorded
-      // tail and the identity is stable.
-      const resumed = runGitRelease(base, false);
-      expect(resumed.attempt.attemptId).toBe(stopped.attempt.attemptId);
-      const tail = stopped.stores.ledger.tail(stopped.attempt.attemptId);
-      for (const record of tail) {
-        const holder =
-          record.kind === "step" || record.kind === "channel-transition"
-            ? record.record.attemptId
-            : record.attemptId;
-        expect(holder).toBe(stopped.attempt.attemptId);
-      }
-    });
-  });
+  it(
+    "V2 · commit-window · the identity is stable across the crash and its git-backed resume",
+    // This window sits at the 20s global edge under the CI runner's
+    // parallel-suite contention (observed 22.7s there, red twice on CI) —
+    // the heavy-walk grouping below carries its own timeouts for the same
+    // reason. A hang still fails the gate; this only widens the room.
+    { timeout: 45_000 },
+    () => {
+      withTempRepo("v2-identity", (repo) => {
+        const state = openGitState(repo);
+        const stores = gitStores(repo);
+        const world = liveWorld();
+        const declaration = fullDeclaration();
+        const base: RunOptions = {
+          state,
+          stores,
+          world,
+          lineId: "main",
+          intents: [beta],
+          declarations: declaration,
+        };
+        const stopped = runGitRelease({ ...base, crashAfterStartOf: "commit" }, false);
+        if (stopped.stoppedAt !== "commit") {
+          throw new Error(`fixture broken: the walk stopped at ${String(stopped.stoppedAt)}`);
+        }
+        // Resume over the SAME repo — a fresh binding reloads the recorded
+        // tail and the identity is stable.
+        const resumed = runGitRelease(base, false);
+        expect(resumed.attempt.attemptId).toBe(stopped.attempt.attemptId);
+        const tail = stopped.stores.ledger.tail(stopped.attempt.attemptId);
+        for (const record of tail) {
+          const holder =
+            record.kind === "step" || record.kind === "channel-transition"
+              ? record.record.attemptId
+              : record.attemptId;
+          expect(holder).toBe(stopped.attempt.attemptId);
+        }
+      });
+    },
+  );
 
   // V2/the four heavy multi-line walks mint five lines (five full plans,
   // claims, walks, mints) over real-git subprocesses, and the V7 windows

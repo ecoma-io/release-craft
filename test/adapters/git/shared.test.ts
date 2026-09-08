@@ -66,6 +66,55 @@ describe("the git binding's shared surface", () => {
     });
   });
 
+  it("reads absence alone as null — a ref git cannot read faults (#95)", () => {
+    withRepo((git, repo) => {
+      const ref = "refs/heads/discriminate";
+      const head = readRef(git, "HEAD");
+      if (head === null) {
+        throw new Error("the fixture's root commit is missing");
+      }
+      // The valid ref reads as its tip.
+      casCreateRef(git, ref, head);
+      expect(readRef(git, ref)).toBe(head);
+      // The absence shape is the value: exit 1 with empty stderr reads as
+      // null, and the total-read consumers report absence with it.
+      expect(readRef(git, "refs/heads/never-written")).toBeNull();
+      expect(refExists(git, "refs/heads/never-written")).toBe(false);
+      expect(firstParentHistory(git, "refs/heads/never-written")).toStrictEqual([]);
+      // The same exit 1 with a warning on stderr — a broken ref file — is
+      // not absence: the fault propagates instead of reading as null.
+      writeFileSync(join(repo, ".git", "refs", "heads", "discriminate"), "not-a-commit\n");
+      let fault: GitFaultError | undefined;
+      try {
+        readRef(git, ref);
+      } catch (error) {
+        fault = asFault(error);
+      }
+      if (fault === undefined) {
+        throw new Error("expected the broken ref to fault, not read as absent");
+      }
+      expect(fault.status).toBe(1);
+      expect(fault.stderr).toContain("broken ref");
+      // Every read-shaped primitive over the ref faults with it.
+      expect(() => refExists(git, ref)).toThrow(GitFaultError);
+      expect(() => firstParentHistory(git, ref)).toThrow(GitFaultError);
+    });
+  });
+
+  it("stays silent under a leaked GIT_TRACE export — the absence shape survives the ambient env (#95)", () => {
+    process.env.GIT_TRACE = "1";
+    try {
+      withRepo((git) => {
+        // A trace export puts ~100 bytes of diagnostics on the stderr of
+        // every invocation; the hermetic floor strips it, so the absent ref
+        // still reads as the one shape absence is — exit 1, empty stderr.
+        expect(readRef(git, "refs/heads/never-written")).toBeNull();
+      });
+    } finally {
+      delete process.env.GIT_TRACE;
+    }
+  });
+
   it("appends root and chained commits, and returns the loser outcome on a stale base", () => {
     withRepo((git) => {
       const ref = "refs/heads/scope";
