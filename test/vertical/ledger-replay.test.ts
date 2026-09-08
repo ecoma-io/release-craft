@@ -20,13 +20,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   CANONICAL_STAGES,
+  channelStateFingerprint,
   MemoryLedger,
   classifyResume,
   ledgerRequestStep,
+  type ChannelTransitionRecord,
 } from "../../src/index.js";
-import { actor, liveWorld, matrixChannels, snapshot } from "./matrix.js";
+import { actor, applyPlannedChannelTransitions, liveWorld, snapshot } from "./matrix.js";
 import {
-  assertChannelsUnchanged,
   freshStores,
   fullDeclaration,
   runLedgerRelease,
@@ -302,20 +303,95 @@ describe("V3/V4 — the ladder and the cut, replayed", () => {
     expect(world.tags.slice(-2).map((t) => t.name)).toStrictEqual(["5.0.0-beta.1", "5.0.0-beta.2"]);
   });
 
-  it("V4 · ladder run 4 · the promote decision lands the stable record and every channel reads unchanged", () => {
+  it("V4 · ladder run 4 · the promote run moves the planned channels on the carried store, and the replay classifies noop", () => {
     const world = liveWorld();
     const stores = freshStores();
-    for (const intent of [beta, beta, rc, promote] as const) {
+    for (const intent of [beta, beta, rc] as const) {
       runLedgerRelease({ stores, world, lineId: "main", intents: [intent] });
     }
+    // The carried store rides every replayed run — and no pre-promote run
+    // plans a move, so it still stands at §3.1's seeds.
+    expect(stores.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "4.9.2" },
+    });
+    const promoteRun = runLedgerRelease({ stores, world, lineId: "main", intents: [promote] });
+    expect(promoteRun.mintedTag).toBe("5.0.0");
     expect(world.tags.slice(-4).map((t) => t.name)).toStrictEqual([
       "5.0.0-beta.1",
       "5.0.0-beta.2",
       "5.0.0-rc.1",
       "5.0.0",
     ]);
-    const channels = matrixChannels();
-    assertChannelsUnchanged(channels);
+    // The executed outcome on the CARRIED store: stable and next read the
+    // promoted stable; beta, rc, and lts stand at §3.1's seeds.
+    expect(stores.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "5.0.0" },
+    });
+    expect(stores.channels.read("next")).toStrictEqual({
+      id: "next",
+      target: { line: "main", version: "5.0.0" },
+    });
+    expect(stores.channels.read("beta")).toStrictEqual({
+      id: "beta",
+      target: { line: "main", version: "4.9.1" },
+    });
+    expect(stores.channels.read("rc")).toStrictEqual({
+      id: "rc",
+      target: { line: "main", version: "4.9.1" },
+    });
+    expect(stores.channels.read("lts")).toStrictEqual({
+      id: "lts",
+      target: { line: "1.9-lts", version: "1.9.1" },
+    });
+    expect(stores.channels.list().map((channel) => channel.id)).toStrictEqual([
+      "stable",
+      "beta",
+      "rc",
+      "next",
+      "lts",
+    ]);
+    // The durable evidence on the replayed tail: one channel-transition
+    // record per executed move, keyed by the store-computed fingerprints.
+    const transitions: ChannelTransitionRecord[] = [];
+    for (const record of stores.ledger.tail(promoteRun.attempt.attemptId)) {
+      if (record.kind === "channel-transition") {
+        transitions.push(record.record);
+      }
+    }
+    expect(transitions.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
+    for (const record of transitions) {
+      expect(record.attemptId).toBe(promoteRun.attempt.attemptId);
+      expect(record.from).toStrictEqual({ line: "main", version: "4.9.2" });
+      expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.contentFingerprint).toBe(
+        channelStateFingerprint({
+          id: record.channelId,
+          target: { line: "main", version: "4.9.2" },
+        }),
+      );
+      expect(record.claim).toBe(promoteRun.token);
+    }
+
+    // The replay half of V4: re-driving the application over the SAME
+    // recorded plan and the moved store classifies every move noop — the
+    // promotion never moves twice (ADR-0012 decision 4).
+    const settled = stores.channels.list();
+    const replay = applyPlannedChannelTransitions({
+      attempt: promoteRun.attempt,
+      planLine: promoteRun.planLine,
+      claim: promoteRun.token,
+      channels: stores.channels,
+      ledger: stores.ledger,
+    });
+    expect(replay.map((move) => move.channelId)).toStrictEqual(["stable", "next"]);
+    for (const move of replay) {
+      expect(move.outcome.kind).toBe("noop");
+      // The noop observed the MOVED target — from equals to.
+      expect(move.from).toStrictEqual({ line: "main", version: "5.0.0" });
+    }
+    expect(stores.channels.list()).toStrictEqual(settled);
   });
 
   it("V3 · side cut · 4.8.x mints 4.8.7 beside the ladder", () => {

@@ -10,7 +10,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   CANONICAL_STAGES,
+  channelStateFingerprint,
   classifyResume,
+  MemoryChannelStore,
   openAttempt,
   resolveBlocked,
   resume,
@@ -18,6 +20,7 @@ import {
   start,
   supersedePlan,
   transition,
+  type ChannelTransitionRecord,
   type Claim,
   type ClaimDenied,
   type ClaimScope,
@@ -26,8 +29,10 @@ import {
 import { plan } from "../../src/planner/assemble.js";
 import {
   actor,
+  applyPlannedChannelTransitions,
   artifactProducers,
   assertChannelsUnchanged,
+  assertStoreChannelsStanding,
   COMMITTED_AT,
   copyWorld,
   freshStores,
@@ -37,10 +42,13 @@ import {
   matrixArtifacts,
   matrixChannels,
   matrixHooks,
+  planLineFor,
   plannedOf,
   runInput,
   runRelease,
+  scopeFor,
   snapshot,
+  standingChannelStates,
   walkStages,
   type LiveWorld,
   type RunOptions,
@@ -302,8 +310,7 @@ describe("V3 — prerelease sequence", () => {
 // ---------------------------------------------------------------------------
 
 describe("V4 — promotion", () => {
-  it("V4 · ladder run 4 · the promote decision lands the stable record and every channel reads unchanged", () => {
-    const channels = matrixChannels();
+  it("V4 · ladder run 4 · the promote run moves exactly the planned channels and records what the store observed", () => {
     const world = liveWorld();
     runLadder(world, 2);
     const rc = runRelease({
@@ -312,7 +319,9 @@ describe("V4 — promotion", () => {
       intents: [{ kind: "prerelease", stream: "rc", lineId: "main" }],
     });
     expect(rc.mintedTag).toBe(GOLDEN.ladder[2]);
-    assertChannelsUnchanged(channels);
+    // No run before the promote plans a channel move: the §3.1 standing
+    // channels read unchanged through the run's own store.
+    assertStoreChannelsStanding(rc.stores.channels);
 
     const promote = runRelease({
       world,
@@ -330,9 +339,173 @@ describe("V4 — promotion", () => {
       throw new Error("fixture broken: the promote scope is not a stable-version record");
     }
     expect(promote.scope.version).toBe("5.0.0");
-    // The promotion drags no pointer — the transition door is unlanded (#76),
-    // and the unchanged reading is the assertion, not an absence of one.
-    assertChannelsUnchanged(channels);
+    // The plan's channel content (ADR-0012 decision 2): the §3.1 declared
+    // moves in declaration order, then the promoted-from edge, then the rc
+    // stream close — the promote names its moves, it never improvises them.
+    expect(promote.planLine.channels).toStrictEqual([
+      {
+        kind: "channel-move",
+        channelId: "stable",
+        to: { line: "main", version: "5.0.0" },
+      },
+      {
+        kind: "channel-move",
+        channelId: "next",
+        to: { line: "main", version: "5.0.0" },
+      },
+      {
+        kind: "promoted-from",
+        from: "5.0.0-rc.1",
+        to: { line: "main", version: "5.0.0" },
+      },
+      { kind: "stream-close", stream: "rc", target: "5.0.0" },
+    ]);
+    // The executed outcome: stable and next read the promoted stable; beta,
+    // rc, and lts stand exactly where §3.1 seeded them.
+    const channels = promote.stores.channels;
+    expect(channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "5.0.0" },
+    });
+    expect(channels.read("next")).toStrictEqual({
+      id: "next",
+      target: { line: "main", version: "5.0.0" },
+    });
+    expect(channels.read("beta")).toStrictEqual({
+      id: "beta",
+      target: { line: "main", version: "4.9.1" },
+    });
+    expect(channels.read("rc")).toStrictEqual({
+      id: "rc",
+      target: { line: "main", version: "4.9.1" },
+    });
+    expect(channels.read("lts")).toStrictEqual({
+      id: "lts",
+      target: { line: "1.9-lts", version: "1.9.1" },
+    });
+    expect(channels.list()).toStrictEqual([
+      { id: "stable", target: { line: "main", version: "5.0.0" } },
+      { id: "beta", target: { line: "main", version: "4.9.1" } },
+      { id: "rc", target: { line: "main", version: "4.9.1" } },
+      { id: "next", target: { line: "main", version: "5.0.0" } },
+      { id: "lts", target: { line: "1.9-lts", version: "1.9.1" } },
+    ]);
+    // The durable evidence: one channel-transition record per executed move,
+    // in declaration order, keyed by what the store observed deciding — the
+    // standing prior target's fingerprint, never a plan-derived digest
+    // (ADR-0012 decision 4).
+    const transitions: ChannelTransitionRecord[] = [];
+    for (const record of promote.stores.ledger.tail(promote.attempt.attemptId)) {
+      if (record.kind === "channel-transition") {
+        transitions.push(record.record);
+      }
+    }
+    expect(transitions.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
+    expect(transitions.map((record) => record.attemptId)).toStrictEqual([
+      promote.attempt.attemptId,
+      promote.attempt.attemptId,
+    ]);
+    for (const record of transitions) {
+      expect(record.stepKey).toBe("channel-transition");
+      expect(record.from).toStrictEqual({ line: "main", version: "4.9.2" });
+      expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.contentFingerprint).toBe(
+        channelStateFingerprint({
+          id: record.channelId,
+          target: { line: "main", version: "4.9.2" },
+        }),
+      );
+      expect(record.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
+      expect(record.claim).toBe(promote.token);
+    }
+  });
+
+  it("V4 · replay · re-applying the recorded plan classifies noop and moves nothing twice", () => {
+    const world = liveWorld();
+    runLadder(world, 2);
+    runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "main" }],
+    });
+    const promote = runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "promote", lineId: "main" }],
+    });
+    const settled = promote.stores.channels.list();
+    // The application re-driven over the SAME recorded plan and the moved
+    // store: every move classifies noop (ADR-0012 decision 4) — the replay
+    // is decided by the store's classification, not by hoping the plan never
+    // re-runs.
+    const replay = applyPlannedChannelTransitions({
+      attempt: promote.attempt,
+      planLine: promote.planLine,
+      claim: promote.token,
+      channels: promote.stores.channels,
+      ledger: promote.stores.ledger,
+    });
+    expect(replay.map((move) => move.channelId)).toStrictEqual(["stable", "next"]);
+    for (const move of replay) {
+      expect(move.outcome.kind).toBe("noop");
+      // The noop observed the MOVED target — from equals to, and the record
+      // keys exactly that state.
+      expect(move.from).toStrictEqual({ line: "main", version: "5.0.0" });
+    }
+    // No duplicate move: the pointers stand exactly where the promote left
+    // them.
+    expect(promote.stores.channels.list()).toStrictEqual(settled);
+  });
+
+  it("V4 · ambiguity · an unprovable land fails the run loudly and moves nothing (invariant 2.6)", () => {
+    const world = liveWorld();
+    runLadder(world, 2);
+    runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "main" }],
+    });
+    const input = runInput(snapshot(world), "main", [{ kind: "promote", lineId: "main" }]);
+    const assembled = plannedOf(plan(input)).plan;
+    // A store seeded with the §3.1 standings PLUS ADR-0012 decision 7's
+    // fault: the next applyTransition cannot be proven landed. The promote's
+    // walk drives against it — the ambiguous classification must fail the
+    // run at the door, never skip the move.
+    const stores = {
+      ...freshStores(),
+      channels: new MemoryChannelStore({
+        channels: standingChannelStates(),
+        ambiguousNext: "the channel ref's land could not be proven",
+      }),
+    };
+    const attempt = start(
+      openAttempt(stores.register, {
+        planId: assembled.planId,
+        planFingerprint: assembled.planId,
+      }),
+    );
+    const settled = stores.claims.acquire(scopeFor(assembled, "main"), attempt.attemptId);
+    if (settled.kind !== "claim") {
+      throw new Error(`fixture broken: the claim store denied ${attempt.attemptId}`);
+    }
+    const ctx: WalkContext = {
+      stores,
+      attempt,
+      planLine: planLineFor(assembled, "main"),
+      token: settled.token,
+    };
+    expect(() =>
+      walkStages(ctx, "plan", { world: copyWorld(world), lineId: "main", intents: [] }, []),
+    ).toThrow(/cannot determine whether the move/);
+    // Fail closed: the first move stood still and the second never ran.
+    expect(stores.channels.read("stable").target).toStrictEqual({
+      line: "main",
+      version: "4.9.2",
+    });
+    expect(stores.channels.read("next").target).toStrictEqual({
+      line: "main",
+      version: "4.9.2",
+    });
   });
 });
 

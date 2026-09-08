@@ -20,6 +20,7 @@
 import {
   CANONICAL_STAGES,
   MemoryAttemptRegister,
+  MemoryChannelStore,
   MemoryClaimStore,
   MemoryLedger,
   MemoryTransitionLog,
@@ -48,6 +49,7 @@ import type {
 } from "../../src/planner/types.js";
 import {
   actor,
+  applyPlannedChannelTransitions,
   artifactProducers,
   GOLDEN,
   hookEffects,
@@ -58,10 +60,11 @@ import {
   plannedOf,
   runInput,
   scopeFor,
+  standingChannelStates,
 } from "./matrix.js";
 import type { LiveWorld, World } from "./matrix.js";
 
-export { GOLDEN, matrixChannels, matrixHooks };
+export { GOLDEN, matrixChannels, matrixHooks, standingChannelStates };
 
 // ---------------------------------------------------------------------------
 // The persisted tail — one ledger per line's run (the only "process memory"
@@ -73,6 +76,11 @@ export interface Stores {
   readonly claims: MemoryClaimStore;
   readonly log: MemoryTransitionLog;
   readonly register: MemoryAttemptRegister;
+  /** The channel store (ADR-0012 decision 6's reference implementation),
+   * seeded with §3.1's standing channels — carried across runs like the
+   * ledger, so the store is the durable pointer registry the replay
+   * consumes (the kernel never consumes it, invariant 2.1). */
+  readonly channels: MemoryChannelStore;
   /** The plans' attempts — durable store state like the ledger, carried
    * across calls, keyed by planId. A plan's first run allocates its attempt
    * (that plan's ordinal 1, ADR-0011's per-line register); a resume
@@ -95,6 +103,7 @@ export function freshStores(): Stores {
     claims: new MemoryClaimStore(),
     log: new MemoryTransitionLog(),
     register: new MemoryAttemptRegister(),
+    channels: new MemoryChannelStore({ channels: standingChannelStates() }),
     attempts,
     rearm: (attempt) => {
       attempts.set(attempt.planId, attempt);
@@ -173,6 +182,9 @@ export interface RunResult {
   readonly attempt: ReleaseAttempt;
   readonly planLine: PlanLine;
   readonly scope: ClaimScope;
+  /** The claim token the run acquired — the channel-transition application
+   * carries it on its records. */
+  readonly token: string;
   readonly mintedTag: string | null;
   /** The step-by-step outcomes — a mutable build array the walk appends to;
    * read-only to callers of the completed result. */
@@ -188,6 +200,9 @@ export interface Ctx {
   attempt: ReleaseAttempt;
   planLine: PlanLine;
   stores: Stores;
+  /** The claim token the run acquired — set after the acquisition lands;
+   * the channel-transition application carries it on its records. */
+  token?: string;
   hooks?: readonly HookStep[];
   artifacts?: readonly ArtifactStep[];
   hookEffects?: ReadonlyMap<string, HookEffect>;
@@ -312,6 +327,19 @@ export function walkStages(
     if (opts.crashAfterStartOf === stage) {
       return stage;
     }
+    if (stage === "channel-transition") {
+      // ADR-0012 decision 3's order, exactly: the write-ahead start is
+      // durable above; the application executes the recorded plan's moves
+      // through the channel store here; the kernel's completion appends
+      // below. A plan that names no moves records nothing.
+      applyPlannedChannelTransitions({
+        attempt: ctx.attempt,
+        planLine: ctx.planLine,
+        ...(ctx.token === undefined ? {} : { claim: ctx.token }),
+        channels: ctx.stores.channels,
+        ledger: ctx.stores.ledger,
+      });
+    }
     const outcome = ledgerRequestStep(
       ctx.attempt,
       {
@@ -404,6 +432,7 @@ export function runLedgerRelease(opts: RunOptions, observeWorld = true): RunResu
       `fixture broken: the claim store denied ${ctx.attempt.attemptId} — the replay owns the scope`,
     );
   }
+  ctx.token = settled.token;
   // Resume over the recorded tail (§2.3): a run whose stores already carry
   // this plan's attempt continues from the classification's `from` — the
   // first effective step the ledger does not record completed — and re-runs
@@ -450,7 +479,16 @@ export function runLedgerRelease(opts: RunOptions, observeWorld = true): RunResu
       }
     }
   }
-  return { stores, attempt: ctx.attempt, planLine, scope, mintedTag, drives, stoppedAt };
+  return {
+    stores,
+    attempt: ctx.attempt,
+    planLine,
+    scope,
+    token: settled.token,
+    mintedTag,
+    drives,
+    stoppedAt,
+  };
 }
 
 /** The reference run every window's resume must classification-match: the

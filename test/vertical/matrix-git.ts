@@ -68,6 +68,7 @@ import {
 } from "../../src/adapters/git/index.js";
 import {
   actor,
+  applyPlannedChannelTransitions,
   GOLDEN,
   artifactProducers,
   hookEffects,
@@ -77,10 +78,11 @@ import {
   planLineFor,
   plannedOf,
   runInput,
+  standingChannelStates,
 } from "./matrix.js";
 import type { LiveWorld } from "./matrix.js";
 
-export { GOLDEN, matrixChannels };
+export { GOLDEN, matrixChannels, standingChannelStates };
 
 // ---------------------------------------------------------------------------
 // The repository seeding — the real refs the mint door targets
@@ -172,7 +174,24 @@ export interface GitState {
 export function openGitState(repo: string): GitState {
   const git = openGitRun(repo);
   const binding = openGitBinding({ repo, tagNaming: naming });
-  return { repo, binding, git, lineHeads: seedLineHeads(git) };
+  const lineHeads = seedLineHeads(git);
+  // §3.1's standing channels are RECORDED into the repository the same way
+  // the store itself records them — the CAS moves each channel out of the
+  // hidden state, never a hand-written ref (ADR-0012 decision 6). A fresh
+  // repository's channels all read hidden, so every move applies.
+  for (const channel of standingChannelStates()) {
+    const outcome = binding.channels.applyTransition({
+      channelId: channel.id,
+      from: null,
+      to: { line: channel.target.line, version: channel.target.version },
+    });
+    if (outcome.kind !== "applied") {
+      throw new Error(
+        `fixture broken: seeding channel ${channel.id} got ${outcome.kind} — a fresh repository's channels are hidden`,
+      );
+    }
+  }
+  return { repo, binding, git, lineHeads };
 }
 
 /** The port's claims — the binding's wrapper (already namespace-gated). */
@@ -497,6 +516,19 @@ export function walkStages(
     }
     if (opts.crashAfterStartOf === stage) {
       return stage;
+    }
+    if (stage === "channel-transition") {
+      // ADR-0012 decision 3's order, exactly: the write-ahead start is
+      // durable above; the application executes the recorded plan's moves
+      // through the binding's channel store here; the kernel's completion
+      // appends below. A plan that names no moves records nothing.
+      applyPlannedChannelTransitions({
+        attempt: ctx.attempt,
+        planLine: ctx.planLine,
+        ...(ctx.token === "" ? {} : { claim: ctx.token }),
+        channels: ctx.state.binding.channels,
+        ledger: ctx.stores.ledger,
+      });
     }
     const outcome = ledgerRequestStep(
       ctx.attempt,
