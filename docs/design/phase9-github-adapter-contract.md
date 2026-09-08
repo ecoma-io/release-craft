@@ -286,7 +286,10 @@ not a body door: the binding's public surface gains `GitBinding.content`
 - `content.file(digest, path)` — one file out of the recorded tree the
   digest names (`git-tree:<oid>` is the binding's own scheme; the binding
   interprets it). Recorded content only — never the working tree, never
-  `HEAD`.
+  `HEAD`. The tree holding no such path reads as `null` — and only
+  git's own absence spelling produces that null (#108; D40): every
+  other fault the read can produce, a broken object store behind a live
+  tree entry included, propagates.
 
 The adapter derives the projection — it owns the GitHub semantics, the
 binding stays generic: the tag → its minting claim (the recorded claim

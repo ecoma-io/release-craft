@@ -3,15 +3,21 @@
  * §2.8; D27): the claim records a register ref holds, the declared
  * naming's derivation, the attempt's recorded stream, and one file out
  * of the recorded tree a digest names — each resolved from recorded
- * state only, and each absent path a null rather than a fault.
+ * state only, and each absent path a null rather than a fault. The null
+ * rides only git's own absence spelling (#108; D40): both byte-exact
+ * messages an absent path produces — plain, and with git's "exists on
+ * disk" aside when a same-named file sits in the working tree the
+ * binding never reads — while a broken object store behind a live tree
+ * entry propagates as the GitFaultError it is.
  */
 
-import { writeFileSync } from "node:fs";
+import { chmodSync, truncateSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  GitFaultError,
   openGitBinding,
   type GitBinding,
   type GitTagNaming,
@@ -113,6 +119,44 @@ describe("the content read seam (§2.8; D27)", () => {
       const digest = `git-tree:${git(["rev-parse", "HEAD^{tree}"]).trim()}`;
       expect(binding.content.file(digest, "CHANGELOG.md")).toBe("# v1.2.3\n\n- recorded\n");
       expect(binding.content.file(digest, "no-such-file.md")).toBeNull();
+    });
+  });
+
+  it("reads the on-disk absence spelling as a null too — the working tree is not the recorded tree (#108)", () => {
+    withTempRepo("file-on-disk-absence", (_repo, git) => {
+      const binding = bindingOn(_repo);
+      // The recorded tree holds only the README; a file of the asked-for
+      // name sits in the repository's working tree, untracked. git spells
+      // this absence with
+      // its second message (`exists on disk, but not in`) — the same
+      // null, since the binding reads recorded objects, never the
+      // working tree (ADR-0009 decision 4).
+      writeFileSync(join(_repo, "CHANGELOG.md"), "# unrecorded\n");
+      writeFileSync(join(_repo, "README.md"), "fixture\n");
+      git(["add", "README.md"]);
+      git(["commit", "-m", "fixture: a tree without the changelog"]);
+      const digest = `git-tree:${git(["rev-parse", "HEAD^{tree}"]).trim()}`;
+      expect(binding.content.file(digest, "CHANGELOG.md")).toBeNull();
+    });
+  });
+
+  it("faults a broken object store instead of reading it as an absent path (#108)", () => {
+    withTempRepo("file-corrupt-store", (_repo, git) => {
+      const binding = bindingOn(_repo);
+      writeFileSync(join(_repo, "CHANGELOG.md"), "# v1.2.3\n\n- recorded\n");
+      git(["add", "CHANGELOG.md"]);
+      git(["commit", "-m", "fixture: the recorded content"]);
+      const digest = `git-tree:${git(["rev-parse", "HEAD^{tree}"]).trim()}`;
+      // The blob the recorded tree holds at the path is truncated on
+      // disk (git writes loose objects read-only): git exits 128 with
+      // `loose object <oid> … is corrupt` — the object store is broken,
+      // never the tree silent about the path, so the read throws.
+      const blob = git(["rev-parse", "HEAD:CHANGELOG.md"]).trim();
+      const object = join(_repo, ".git", "objects", blob.slice(0, 2), blob.slice(2));
+      chmodSync(object, 0o644);
+      truncateSync(object, 4);
+      expect(() => binding.content.file(digest, "CHANGELOG.md")).toThrow(GitFaultError);
+      expect(() => binding.content.file(digest, "CHANGELOG.md")).toThrow(/is corrupt/);
     });
   });
 
