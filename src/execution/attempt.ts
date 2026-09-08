@@ -234,7 +234,7 @@ export const supersedePlan = (input: {
 
 /** The declared hooks' protocol validation (phase 6 contract §2.1): ids
  * non-empty and unique (the ledger key is `hook:<id>`), anchors on the
- * canonical eight, postcondition kinds from the closed pair, guard names
+ * canonical stages, postcondition kinds from the closed pair, guard names
  * non-empty. Returns the list frozen to the attempt's depth — the attempt
  * value never mutates, so neither may its declarations. */
 const validateHooks = (hooks: readonly HookStep[]): readonly HookStep[] => {
@@ -253,7 +253,7 @@ const validateHooks = (hooks: readonly HookStep[]): readonly HookStep[] => {
     seen.add(hook.id);
     if (!CANONICAL_STAGES.includes(hook.anchor.stage)) {
       throw new InvalidExecutionTransitionError(
-        `hook "${hook.id}" anchors at "${hook.anchor.stage}", which is not one of the canonical eight (contract §2.1)`,
+        `hook "${hook.id}" anchors at "${hook.anchor.stage}", which is not one of the canonical stages (contract §2.1)`,
       );
     }
     if (!ANCHOR_POSITIONS.includes(hook.anchor.position)) {
@@ -287,7 +287,7 @@ const validateHooks = (hooks: readonly HookStep[]): readonly HookStep[] => {
 
 /** The declared artifacts' protocol validation (phase 7 contract §2.1):
  * the hook rules plus the artifact door's own — ids non-empty and unique
- * (the ledger key is `artifact:<id>`), anchors on the canonical eight,
+ * (the ledger key is `artifact:<id>`), anchors on the canonical stages,
  * postcondition kinds from the closed pair, guard names non-empty,
  * `kind` and `coordinates` opaque non-empty unpadded (the domain artifact
  * door's rule, quoted not imported), and the declared `dependsOn` a
@@ -320,7 +320,7 @@ const validateArtifacts = (artifacts: readonly ArtifactStep[]): readonly Artifac
     }
     if (!CANONICAL_STAGES.includes(artifact.anchor.stage)) {
       throw new InvalidExecutionTransitionError(
-        `artifact "${artifact.id}" anchors at "${artifact.anchor.stage}", which is not one of the canonical eight (contract §2.1)`,
+        `artifact "${artifact.id}" anchors at "${artifact.anchor.stage}", which is not one of the canonical stages (contract §2.1)`,
       );
     }
     if (!ANCHOR_POSITIONS.includes(artifact.anchor.position)) {

@@ -137,7 +137,7 @@ const failedOutcome = (
   return failed;
 };
 
-describe("effectiveSteps (§2.1): the insertion rules the closed eight named their ADR for", () => {
+describe("effectiveSteps (§2.1): the insertion rules the canonical stages named their ADR for", () => {
   it("interleaves hooks at their anchors, declaration order breaking same-anchor ties", () => {
     const attempt = executing([
       hookDecl("double", "validate", "before"),
@@ -154,6 +154,7 @@ describe("effectiveSteps (§2.1): the insertion rules the closed eight named the
       "commit",
       "tag",
       "hook:receipt",
+      "channel-transition",
       "hook:scan",
       "publish",
       "hook:notify",
@@ -182,7 +183,7 @@ describe("effectiveSteps (§2.1): the insertion rules the closed eight named the
           postconditions: [],
         },
       ]),
-    ).toThrow(/not one of the canonical eight/);
+    ).toThrow(/not one of the canonical stages/);
     expect(() =>
       openAttempt(new MemoryAttemptRegister(), PLAN, [
         {
@@ -348,7 +349,7 @@ describe("postcondition failure (§2.5): fail-closed, in the existing vocabulary
     const verdict = classifyResume(run.attempt, ledger);
     expect(verdict.kind).toBe("resume");
     if (verdict.kind !== "resume") throw new Error("expected a resume verdict");
-    expect(verdict.from).toBe("hook:scan");
+    expect(verdict.from).toBe("channel-transition");
   });
 
   it("keeps the append-only tail resumable after the resolution loop re-arms it (§2.5)", () => {
@@ -388,7 +389,7 @@ describe("postcondition failure (§2.5): fail-closed, in the existing vocabulary
     // A later classification (the crash stopped past the hook) reads the
     // resolved history as resumable — from the stage after the hook.
     const verdict = classifyResume(back, ledger);
-    expect(verdict).toStrictEqual({ kind: "resume", from: "publish" });
+    expect(verdict).toStrictEqual({ kind: "resume", from: "channel-transition" });
   });
 
   it("escalates when the only resolution record answers a different key (§2.5)", () => {

@@ -26,6 +26,7 @@ import {
   type Attribution,
   type ClaimView,
   type ExecutionLedger,
+  type LedgerRecord,
   type ReleaseAttempt,
   type StepKey,
   type TransitionRecord,
@@ -77,13 +78,9 @@ export const recordedArtifact = (
 /** The appended record's narrowing — `append` returns the frozen
  * `LedgerRecord`; a step write that came back anything but a step record
  * would be the ledger contradicting itself. */
-const stepRecord = (
-  appended: { readonly kind: string } & {
-    readonly record?: TransitionRecord;
-  },
-): TransitionRecord => {
-  if (appended.kind !== "step" || appended.record === undefined) {
-    throw new Error("the ledger appended an artifact record it cannot read back as a step record");
+const stepRecord = (appended: LedgerRecord): TransitionRecord => {
+  if (appended.kind !== "step") {
+    throw new Error("the ledger appended a record it cannot read back as a step record");
   }
   return appended.record;
 };

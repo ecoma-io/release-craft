@@ -172,6 +172,7 @@ describe("fixture 4 — supersession and the tag boundary (E-01)", () => {
     expect(outcome.pastTag[0]?.state).toBe("executing");
     expect(outcome.superseded).toHaveLength(0);
 
+    expect(run(attempt, "channel-transition", store, log).kind).toBe("advance");
     expect(run(attempt, "publish", store, log).kind).toBe("advance");
     expect(run(attempt, "verify", store, log).kind).toBe("advance");
     expect(transition(attempt, "published").state).toBe("published");

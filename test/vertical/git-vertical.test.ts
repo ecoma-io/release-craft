@@ -244,7 +244,10 @@ describe("V2 — identity, git-backed", () => {
       expect(resumed.attempt.attemptId).toBe(stopped.attempt.attemptId);
       const tail = stopped.stores.ledger.tail(stopped.attempt.attemptId);
       for (const record of tail) {
-        const holder = record.kind === "step" ? record.record.attemptId : record.attemptId;
+        const holder =
+          record.kind === "step" || record.kind === "channel-transition"
+            ? record.record.attemptId
+            : record.attemptId;
         expect(holder).toBe(stopped.attempt.attemptId);
       }
     });

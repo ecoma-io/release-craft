@@ -141,7 +141,7 @@ describe("V1 — plan integrity", () => {
     const run = runRelease({ world, lineId: "main", intents: [beta] });
     expect(run.assembled.planId).toBe(first.planId);
     // The executed steps are exactly the planned canonical sequence — no
-    // declarations, so the effective list is the canonical eight alone.
+    // declarations, so the effective list is the canonical stages alone.
     expect(completedKeys(run)).toStrictEqual([...CANONICAL_STAGES]);
   });
 
@@ -177,7 +177,10 @@ describe("V2 — identity", () => {
     // One identity end to end: the resumed tail is the same attempt's.
     expect(final.attemptId).toBe(stopped.attempt.attemptId);
     for (const record of stopped.stores.ledger.tail(final.attemptId)) {
-      const holder = record.kind === "step" ? record.record.attemptId : record.attemptId;
+      const holder =
+        record.kind === "step" || record.kind === "channel-transition"
+          ? record.record.attemptId
+          : record.attemptId;
       expect(holder).toBe(stopped.attempt.attemptId);
     }
   });

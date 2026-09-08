@@ -150,7 +150,11 @@ export class MemoryLedger {
 }
 
 const tailAttemptId = (record: LedgerRecord): string =>
-  record.kind === "step" ? record.record.attemptId : record.attemptId;
+  record.kind === "step"
+    ? record.record.attemptId
+    : record.kind === "channel-transition"
+      ? record.record.attemptId
+      : record.attemptId;
 
 const deepFreezeRecord = (record: LedgerRecord): LedgerRecord => {
   if (record.kind === "step") {
@@ -173,6 +177,21 @@ const deepFreezeRecord = (record: LedgerRecord): LedgerRecord => {
                 record.record.dependsOn.map((edge) => Object.freeze({ ...edge })),
               ),
             }),
+      }),
+    });
+  }
+  if (record.kind === "channel-transition") {
+    // The channel transition's payload is recorded data like any other:
+    // the guard list and attribution freeze with the record (ADR-0012
+    // decision 4's durable unit is as immutable as every other tail member).
+    return Object.freeze({
+      ...record,
+      record: Object.freeze({
+        ...record.record,
+        guards: Object.freeze(record.record.guards.map((guard) => Object.freeze({ ...guard }))),
+        attribution: Object.freeze({ ...record.record.attribution }),
+        ...(record.record.from === null ? {} : { from: Object.freeze({ ...record.record.from }) }),
+        ...(record.record.to === null ? {} : { to: Object.freeze({ ...record.record.to }) }),
       }),
     });
   }

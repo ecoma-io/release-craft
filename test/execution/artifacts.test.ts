@@ -192,6 +192,7 @@ describe("attachment and ordering (§2.1, fixture 1): the closed three and the n
       "commit",
       "tag",
       "hook:receipt",
+      "channel-transition",
       "hook:scan",
       "artifact:bundle",
       "publish",
@@ -227,7 +228,7 @@ describe("attachment and ordering (§2.1, fixture 1): the closed three and the n
           postconditions: [],
         },
       ]),
-    ).toThrow(/not one of the canonical eight/);
+    ).toThrow(/not one of the canonical stages/);
     expect(() =>
       openAttempt(new MemoryAttemptRegister(), PLAN, undefined, [
         {
@@ -507,7 +508,15 @@ describe("the publish gate and fail-closed (§2.5, fixture 5)", () => {
   it("refuses publish over an incomplete generation at the request door itself", () => {
     const attempt = executing(undefined, [artifactDecl("bundle", "publish", "after")]);
     const ledger = new MemoryLedger();
-    for (const stage of ["plan", "claim", "prepare", "validate", "commit", "tag"] as const) {
+    for (const stage of [
+      "plan",
+      "claim",
+      "prepare",
+      "validate",
+      "commit",
+      "tag",
+      "channel-transition",
+    ] as const) {
       completeStage(ledger, attempt, stage);
     }
     const outcome = requestStep(
@@ -525,7 +534,15 @@ describe("the publish gate and fail-closed (§2.5, fixture 5)", () => {
   it("advances publish once the generation stands, the guard row on the record", () => {
     const attempt = executing(undefined, [artifactDecl("bundle", "publish", "after")]);
     const ledger = new MemoryLedger();
-    for (const stage of ["plan", "claim", "prepare", "validate", "commit", "tag"] as const) {
+    for (const stage of [
+      "plan",
+      "claim",
+      "prepare",
+      "validate",
+      "commit",
+      "tag",
+      "channel-transition",
+    ] as const) {
       completeStage(ledger, attempt, stage);
     }
     scheduleArtifacts(
@@ -580,6 +597,7 @@ describe("the publish gate and fail-closed (§2.5, fixture 5)", () => {
       "validate",
       "commit",
       "tag",
+      "channel-transition",
       "publish",
     ] as const) {
       completeStage(ledger, attempt, stage);
@@ -739,7 +757,15 @@ describe("integration through the public doors: adoption, the gate's own evidenc
     const ledger = new MemoryLedger();
     // Publish stays uncompleted: the request must hit the generation
     // gate, not the replay door.
-    for (const stage of ["plan", "claim", "prepare", "validate", "commit", "tag"] as const) {
+    for (const stage of [
+      "plan",
+      "claim",
+      "prepare",
+      "validate",
+      "commit",
+      "tag",
+      "channel-transition",
+    ] as const) {
       completeStage(ledger, attempt, stage);
     }
     recordArtifact(ledger, attempt, "bundle", "digest_sha256:first");
@@ -776,7 +802,15 @@ describe("integration through the public doors: adoption, the gate's own evidenc
     const ledger = new MemoryLedger();
     // Publish stays uncompleted: the request must hit the generation
     // gate, not the replay door.
-    for (const stage of ["plan", "claim", "prepare", "validate", "commit", "tag"] as const) {
+    for (const stage of [
+      "plan",
+      "claim",
+      "prepare",
+      "validate",
+      "commit",
+      "tag",
+      "channel-transition",
+    ] as const) {
       completeStage(ledger, attempt, stage);
     }
     ledger.appendStart(attempt, "artifact:bundle", actor(attempt));
@@ -815,6 +849,7 @@ describe("integration through the public doors: adoption, the gate's own evidenc
       "validate",
       "commit",
       "tag",
+      "channel-transition",
       "publish",
     ] as const) {
       completeStage(ledger, attempt, stage);
