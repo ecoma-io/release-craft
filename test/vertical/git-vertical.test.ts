@@ -234,9 +234,8 @@ describe("V2 — identity, git-backed", () => {
   it(
     "V2 · commit-window · the identity is stable across the crash and its git-backed resume",
     // This window sits at the 20s global edge under the CI runner's
-    // parallel-suite contention (observed 22.7s there, red twice on CI) —
-    // the heavy-walk grouping below carries its own timeouts for the same
-    // reason. A hang still fails the gate; this only widens the room.
+    // parallel-suite contention (observed 22.7s there) — the grouping
+    // comment below covers its siblings; this one earns its own override.
     { timeout: 45_000 },
     () => {
       withTempRepo("v2-identity", (repo) => {
@@ -978,32 +977,40 @@ describe("V9 — divergence, git-backed", () => {
 // ---------------------------------------------------------------------------
 
 describe("V6 — immutability and determinism, git-backed", () => {
-  it("V6 · reload · a fresh binding on the same repo reads the tail byte-identical and the register value reads back", () => {
-    withTempRepo("v6-reload", (repo) => {
-      const state = openGitState(repo);
-      const stores = gitStores(repo);
-      const world = liveWorld();
-      const declaration = fullDeclaration();
-      const run = runGitRelease({
-        state,
-        stores,
-        world,
-        lineId: "main",
-        intents: [beta],
-        declarations: declaration,
+  it(
+    "V6 · reload · a fresh binding on the same repo reads the tail byte-identical and the register value reads back",
+    // The reload walk re-reads the whole recorded repo through real git and
+    // sat at the 20s global edge under parallel-suite contention (observed
+    // red once there, green in isolation and on CI) — a hang still fails
+    // the gate; this only widens the room.
+    { timeout: 45_000 },
+    () => {
+      withTempRepo("v6-reload", (repo) => {
+        const state = openGitState(repo);
+        const stores = gitStores(repo);
+        const world = liveWorld();
+        const declaration = fullDeclaration();
+        const run = runGitRelease({
+          state,
+          stores,
+          world,
+          lineId: "main",
+          intents: [beta],
+          declarations: declaration,
+        });
+        const attemptId = run.attempt.attemptId;
+        const bytes = tailBytes(run.stores.ledger, attemptId);
+        expect(bytes.length).toBeGreaterThan(0);
+        // A fresh binding on the same repo (a reload) reads the same bytes.
+        const reloaded = gitStores(repo).ledger;
+        expect(tailBytes(reloaded, attemptId)).toStrictEqual(bytes);
+        // The register reads back the claim record for the run's scope.
+        const register = claimsAtLine(state, "main");
+        expect(register).toHaveLength(1);
+        expect(register[0]?.scope).toStrictEqual(run.scope);
       });
-      const attemptId = run.attempt.attemptId;
-      const bytes = tailBytes(run.stores.ledger, attemptId);
-      expect(bytes.length).toBeGreaterThan(0);
-      // A fresh binding on the same repo (a reload) reads the same bytes.
-      const reloaded = gitStores(repo).ledger;
-      expect(tailBytes(reloaded, attemptId)).toStrictEqual(bytes);
-      // The register reads back the claim record for the run's scope.
-      const register = claimsAtLine(state, "main");
-      expect(register).toHaveLength(1);
-      expect(register[0]?.scope).toStrictEqual(run.scope);
-    });
-  });
+    },
+  );
 
   // The determinism assertions double-run the full matrix (two full plans,
   // claims, walks, mints, resumes) over real-git subprocesses, so they sit

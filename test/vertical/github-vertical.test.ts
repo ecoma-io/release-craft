@@ -31,6 +31,7 @@ import {
   channelStateFingerprint,
   classifyResume,
   openAttempt,
+  retrySequence,
   start,
   supersedePlan,
   type ChannelTransitionRecord,
@@ -236,24 +237,28 @@ const seedRemote = (vertical: GitHubVerticalState): ReturnType<typeof openFakeRe
 // ---------------------------------------------------------------------------
 
 describe("V1 — plan integrity, github-backed", () => {
-  it("V1 · main beta run · the same inputs re-plan identically and the walk executes the planned canonical sequence", () => {
-    withGitHubVertical("v1-plan", (vertical) => {
-      const input = runInput(snapshot(liveWorld()), "main", [beta]);
-      const first = plannedOf(plan(input)).plan;
-      const second = plannedOf(plan(input)).plan;
-      expect(second.planId).toBe(first.planId);
+  it(
+    "V1 · main beta run · the same inputs re-plan identically and the walk executes the planned canonical sequence",
+    { timeout: 80_000 }, // one real-git walk — headroom, not a hang mask
+    () => {
+      withGitHubVertical("v1-plan", (vertical) => {
+        const input = runInput(snapshot(liveWorld()), "main", [beta]);
+        const first = plannedOf(plan(input)).plan;
+        const second = plannedOf(plan(input)).plan;
+        expect(second.planId).toBe(first.planId);
 
-      const run = runGitRelease({
-        state: vertical.state,
-        stores: gitStores(vertical.repo),
-        world: liveWorld(),
-        lineId: "main",
-        intents: [beta],
+        const run = runGitRelease({
+          state: vertical.state,
+          stores: gitStores(vertical.repo),
+          world: liveWorld(),
+          lineId: "main",
+          intents: [beta],
+        });
+        expect(run.attempt.planId).toBe(first.planId);
+        expect(completedKeys(run)).toStrictEqual([...CANONICAL_STAGES]);
       });
-      expect(run.attempt.planId).toBe(first.planId);
-      expect(completedKeys(run)).toStrictEqual([...CANONICAL_STAGES]);
-    });
-  });
+    },
+  );
 
   it(
     "V1 · content fingerprints · every canonical completion verifies its fingerprint and the publication body reads back the recorded bytes",
@@ -912,6 +917,14 @@ describe("V8 — concurrency, github-backed (the hostile transport)", () => {
           vertical.state.binding.claims.acquire(run.scope, attemptB.attemptId),
         );
         expect(denial.holder).toBe(run.attempt.attemptId);
+        // E-08 at this layer too: the denial carries the winner's recorded
+        // sequence, and the bounded retry recomputes from it — the base the
+        // re-plan consumes, never a max.
+        expect(denial.holderSequence).toBe(1);
+        expect(retrySequence(denial, 0, { maxRetries: 1 })).toStrictEqual({
+          kind: "retry",
+          sequence: 2,
+        });
         expect(readClaimsAt(vertical.state, claimRegisterRefFor("main"))).toHaveLength(1);
       });
     },
