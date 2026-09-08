@@ -318,6 +318,63 @@ describe("decideLine — D17(4)(5) intent routing", () => {
     expect(decision.detail).toContain("promot");
   });
 
+  it("names the sibling prerelease demand its promotion subsumes — never a stream extension (D38, #90)", () => {
+    const decision = decideLine(
+      attribution("main", [], ["chg:rc1"]),
+      prereleaseLineInput([
+        { kind: "promote", lineId: "main" },
+        { kind: "prerelease", stream: "rc", lineId: "main" },
+      ]),
+      range("sha-c1"),
+    );
+
+    expect(decision.kind).toBe("release");
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    expect(decision.bump).toBeNull();
+    // The record names what the pass will not mint (§2.9: a dropped demand
+    // is never silent) — the sibling demand is subsumed by the promotion.
+    expect(decision.detail).toContain("subsumed");
+    expect(decision.detail).toContain("rc");
+  });
+
+  it("names every subsumed stream in input order, deduplicated (D38, #90)", () => {
+    const decision = decideLine(
+      attribution("main", [], ["chg:rc1"]),
+      prereleaseLineInput([
+        { kind: "prerelease", stream: "beta", lineId: "main" },
+        { kind: "promote", lineId: "main" },
+        { kind: "prerelease", stream: "rc", lineId: "main" },
+        { kind: "prerelease", stream: "beta", lineId: "main" },
+      ]),
+      range("sha-c1"),
+    );
+
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    expect(decision.bump).toBeNull();
+    expect(decision.detail).toContain("beta, rc");
+  });
+
+  it("keeps the promotion record unchanged when no sibling prerelease demand exists", () => {
+    const decision = decideLine(
+      attribution("main", [], ["chg:rc1"]),
+      prereleaseLineInput([{ kind: "promote", lineId: "main" }]),
+      range("sha-c1"),
+    );
+
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    // D38's subsumption clause rides only a combined-intent input — the
+    // single-intent promotion record is byte-identical to its pre-D38 shape.
+    expect(decision.detail).toBe(
+      "promotion of the in-flight prerelease 1.2.0-rc.1 — the change set is inherited from the stream, so no bump was resolved from pending (P-03)",
+    );
+  });
+
   it("refuses a promotion with release-worthy changes pending — never a silent absorb (P-03's failure mode)", () => {
     const decision = decideLine(
       attribution("main", [parsed("sha-fix-1", "fix", "chg:f1")], ["chg:rc1"]),

@@ -331,12 +331,17 @@ describe("plan — the promote over an in-flight rc with a declared channel regi
     });
   });
 
-  it("plans no transitions when a sibling prerelease intent suppresses the stable co-mint", () => {
-    // The promote decision stands (release, bump null), but D17(3)'s
-    // suppression nulls the stable target — the run mints on the stream,
-    // moves nothing, closes nothing. The field stays absent: there is no
-    // minted stable target to name.
-    const suppressed = buildInput({
+  it("carries its full channels plan when a sibling prerelease intent demands the same stream (#90)", () => {
+    // #90/D38: a promotion-shaped decision never carries a stream extension.
+    // This world used to pin the opposite (#89's review finding F2): the
+    // sibling prerelease demand suppressed the stable co-mint (D17(3)), so
+    // the run minted on the stream and carried no `channels` key. That
+    // scenario is unreachable since D38 — a promotion's stable co-mint is
+    // never suppressed, because D17(3) has no purchase on a decision whose
+    // change set is inherited and empty (nothing to route to a stream). The
+    // demand is subsumed: the promotion mint stands, the rc stream closes
+    // instead of extending, and the full transitions ride the plan.
+    const combined = buildInput({
       lines: [line("1.x", "main")],
       commits: [commit("p03-c1", "feat: the 1.2 line", { containingRefs: ["main"] })],
       refs: [ref("main", "p03-c1")],
@@ -349,9 +354,17 @@ describe("plan — the promote over an in-flight rc with a declared channel regi
       channels: registry,
     });
 
-    const outcome = plan(suppressed);
+    const outcome = plan(combined);
     expect(decisionFor(outcome, "1.x")).toMatchObject({ kind: "release", bump: null });
-    expect("channels" in planLineOf(outcome)).toBe(false);
+    const planLine = planLineOf(outcome);
+    expect(planLine.stable).toStrictEqual({ version: "1.2.0", tag: "1.2.0" });
+    expect(planLine.streams).toStrictEqual([]);
+    expect(planLine.channels).toStrictEqual([
+      { kind: "channel-move", channelId: "stable", to: { line: "1.x", version: "1.2.0" } },
+      { kind: "channel-move", channelId: "next", to: { line: "1.x", version: "1.2.0" } },
+      { kind: "promoted-from", from: "1.2.0-rc.2", to: { line: "1.x", version: "1.2.0" } },
+      { kind: "stream-close", stream: "rc", target: "1.2.0" },
+    ]);
   });
 });
 

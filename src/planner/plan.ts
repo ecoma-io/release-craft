@@ -27,7 +27,15 @@
  * line suppresses the stable co-mint (D17(3)) — the streams carry the target
  * — so `planStreams` reads the would-be target through `stableTarget` (never
  * suppressed) and falls back to the §2.8 pointer patch when the line does not
- * release.
+ * release. A promotion-shaped decision never carries a stream extension
+ * (D38, #90): the P-03 promotion resolves the very stream a prerelease
+ * demand would extend — the streams run toward the promotion's own mint — so
+ * the sibling demands for the line are subsumed: the stable co-mint stands
+ * and no sequence entry is planned, and the decision record names the
+ * subsumption. D17(3)'s suppression keeps its single-intent posture — a
+ * release decision's content flows to the stream; a promotion is subsumed
+ * by rule (D38), not by content: the demand names the stream the promotion
+ * performs.
  *
  * Streams are keyed by (target, identifier) over the rebuilt `LineState`
  * (§2.13): an observed key continues at `sequence + 1`; a fresh key — a new
@@ -88,6 +96,19 @@ type PrereleaseIntent = Extract<OperatorIntent, { readonly kind: "prerelease" }>
 /** A release-as intent — the exact-version override (compatibility row 2). */
 type ReleaseAsIntent = Extract<OperatorIntent, { readonly kind: "release-as" }>;
 
+/**
+ * The promotion shape (P-03): a release decision whose change set is the
+ * stream's — `bump: null`. D38 (#90): such a decision never carries a stream
+ * extension. The sibling prerelease demands for the line are subsumed by the
+ * promotion — the streams they would extend run toward the promotion's own
+ * mint (`stableTarget`'s P-03 branch) — so the stable co-mint stands and no
+ * sequence entry is planned. `decideLine`'s promotion record names the
+ * subsumed demand(s); this layer enforces the rule.
+ */
+function isPromotion(decision: LineDecision): boolean {
+  return decision.kind === "release" && decision.bump === null;
+}
+
 /** Line birth's implicit base (§2.7): a null pointer or null stable base bumps from zero. */
 const BIRTH_BASE = Version.parse("0.0.0");
 
@@ -102,7 +123,10 @@ const BIRTH_BASE = Version.parse("0.0.0");
  * carry the target, the stable stays `null`. A refused demand does not
  * suppress (§2.8, D18) — the stable-only line still releases its own change
  * set (M-08's stable half), while assemble composes the `refusedIntents`
- * record from the same predicate (`isStreamAllowed`).
+ * record from the same predicate (`isStreamAllowed`). A promotion-shaped
+ * decision suppresses nothing (D38, #90): its own mint is the target the
+ * streams would run toward, so the sibling demands are subsumed — the stable
+ * stands and no stream is planned.
  */
 export const planTargets: PlanTargets = (intents, decision, state, line, policy) => {
   if (decision.kind === "release" && state.pointer === null) {
@@ -118,13 +142,19 @@ export const planTargets: PlanTargets = (intents, decision, state, line, policy)
   }
   // D17(3)'s suppression keys on an admissible demand (§2.8, D18): a
   // refused demand leaves the stable target standing — the stable-only
-  // line still releases its own change set (M-08's stable half).
-  const suppressed = intents.some(
-    (candidate) =>
-      candidate.kind === "prerelease" &&
-      candidate.lineId === line.id &&
-      isStreamAllowed(line, candidate.stream),
-  );
+  // line still releases its own change set (M-08's stable half). A
+  // promotion-shaped decision suppresses nothing (D38, #90): the stream it
+  // would release through is resolved by the promotion itself, never
+  // extended — the sibling demand is subsumed and the mint stands.
+  const promotion = isPromotion(decision);
+  const suppressed =
+    !promotion &&
+    intents.some(
+      (candidate) =>
+        candidate.kind === "prerelease" &&
+        candidate.lineId === line.id &&
+        isStreamAllowed(line, candidate.stream),
+    );
   return {
     stable: suppressed ? null : stableTarget(intents, decision, state, line, policy),
     streams: planStreams(intents, decision, state, line, policy),
@@ -159,7 +189,9 @@ export const isStreamAllowed = (line: LineConfig, identifier: string): boolean =
  * documented convention.
  * A demanded identifier the line's declared posture refuses (§2.8, D18) is
  * not minted and not an error — it is omitted here; assemble composes the
- * refusal record from the same predicate (`isStreamAllowed`).
+ * refusal record from the same predicate (`isStreamAllowed`). A
+ * promotion-shaped decision plans no stream at all (D38, #90): the sibling
+ * prerelease demands are subsumed by the promotion.
  */
 export const planStreams = (
   intents: readonly OperatorIntent[],
@@ -172,10 +204,15 @@ export const planStreams = (
   const target = stable !== null ? stable.version : (state.pointer ?? BIRTH_BASE).bumpPatch();
   const pointerBase = state.pointer?.toString() ?? null;
 
+  // D38 (#90): a promotion-shaped decision never carries a stream extension —
+  // the sibling prerelease demands are subsumed by the promotion, so the
+  // demand filter never admits one for it.
+  const promotion = isPromotion(decision);
   const demands = intents.filter(
     (candidate): candidate is PrereleaseIntent =>
       candidate.kind === "prerelease" &&
       candidate.lineId === line.id &&
+      !promotion &&
       isStreamAllowed(line, candidate.stream),
   );
   // Input order — the plan's stream list is stable for identical input.

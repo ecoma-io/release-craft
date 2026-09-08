@@ -1136,6 +1136,46 @@ describe("P-03 through the door — the promote intent over the in-flight rc", (
     // §2.14: the door is pure — identical inputs, identical whole outcome.
     expect(plan(input())).toEqual(outcome);
   });
+
+  it("subsumes the sibling prerelease demand — the plan is exactly the promotion's (#90, D38)", () => {
+    // issue #90: the combined intents used to produce a promotion-shaped
+    // decision whose plan minted a stream extension (1.2.0-rc.3, stable
+    // null, no channel transitions) — the decision's shape and its plan
+    // named two different actions. D38: a promotion-shaped decision never
+    // carries a stream extension — the demand is subsumed, the promotion
+    // mint stands, the channels plan rides, and the record names the
+    // subsumption.
+    const base = {
+      digest: DIGEST_P03,
+      lines: [line("1.x", "main")],
+      commits: [commit("p03-c1", "feat: the 1.2 line", { containingRefs: ["main"] })],
+      refs: [ref("main", "p03-c1")],
+      tags: [tag("1.2.0-rc.2", "p03-c1")],
+      components: [component("release-craft", "1.2.0")],
+    };
+    const single = plan(buildInput({ ...base, intents: [{ kind: "promote", lineId: "1.x" }] }));
+    const combined = plan(
+      buildInput({
+        ...base,
+        intents: [
+          { kind: "promote", lineId: "1.x" },
+          { kind: "prerelease", stream: "rc", lineId: "1.x" },
+        ],
+      }),
+    );
+
+    // The decision stays promotion-shaped and names the subsumed demand.
+    const decision = decisionFor(combined, "1.x");
+    expect(decision).toMatchObject({ kind: "release", bump: null });
+    expect(decision.detail).toContain("subsumed");
+    expect(decision.detail).toContain("rc");
+    // The plan line is byte-identical to the single-intent promotion's: the
+    // subsumed demand changes nothing but the record's own clause.
+    expect(planLineOf(combined)).toEqual(planLineOf(single));
+    // The planIds still differ — the intents join the inputs fingerprint,
+    // D17(7); identical lines do not mean an identical plan.
+    expect(plannedOf(combined).plan.planId).not.toBe(plannedOf(single).plan.planId);
+  });
 });
 
 // ---------------------------------------------------------------------------
