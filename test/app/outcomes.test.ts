@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 import {
   InvalidExecutionTransitionError,
   assembleMemoryStores,
+  attemptIdentity,
+  MemoryAttemptRegister,
   plan,
   type RunDeclarations,
   type RunOutcome,
@@ -35,6 +37,7 @@ import {
   freshAssembly,
   fullDeclaration,
   promote,
+  rc,
   runRequest,
 } from "./harness.js";
 import { claimScopeForLine } from "../../src/index.js";
@@ -421,8 +424,12 @@ describe("§2.8 — terminal is terminal: the kernel's violations throw through 
     expect(observation.state).toBe("abandoned");
     expect(observation.terminalReason).toBe("the release was withdrawn");
     // The kernel's own violations, rethrown verbatim (E-09): terminal is
-    // terminal — a second abort, and a carried run over the terminal
-    // attempt, both throw the state machine's named error.
+    // terminal — a second abort throws the state machine's named error,
+    // and a carried run over the aborted attempt throws through the
+    // classification, whose abandonment check now fires first (ADR-0013
+    // decision 3): the refusal names the recorded evidence, and the
+    // terminal-state guard beneath it is pinned directly in
+    // test/execution/resume.test.ts.
     expect(() => engine.abort(handle, "human", "again")).toThrow(InvalidExecutionTransitionError);
     expect(() => engine.run(runRequest(liveWorld(), "main", [beta]))).toThrow(
       InvalidExecutionTransitionError,
@@ -494,5 +501,182 @@ describe("§2.8 — the engine never invents user code: a declared extension wit
     expect(() =>
       assembly.engine.run(runRequest(liveWorld(), "main", [beta], { artifacts: [artifact] })),
     ).toThrow(/no producer injected for the declared artifact/);
+  });
+});
+
+describe("the durable abandonment — restart visibility (issue #111; ADR-0013 decisions 2–4)", () => {
+  /** Assembly 1 runs the beta line into the attest block and aborts it —
+   * the human's recorded word, carried by whatever survives the process. */
+  function abortedAssembly(): {
+    stores: ReturnType<typeof freshAssembly>["stores"];
+    handle: NonNullable<RunOutcome["handle"]>;
+    planId: string;
+  } {
+    const assembly = freshAssembly();
+    const stopped = assembly.engine.run(
+      runRequest(liveWorld(), "main", [beta], attestDeclaration()),
+    );
+    if (stopped.kind !== "blocked" || stopped.handle === null || stopped.planId === null) {
+      throw new Error("expected a blocked outcome");
+    }
+    const abandoned = assembly.engine.abort(stopped.handle, "human:maintainer", ABORT_REASON);
+    expect(abandoned.kind).toBe("abandoned");
+    return { stores: assembly.stores, handle: stopped.handle, planId: stopped.planId };
+  }
+
+  const ABORT_REASON = "the release was withdrawn";
+
+  it("abort appends the record verbatim — reason and attribution, frozen on append", () => {
+    const { stores, handle } = abortedAssembly();
+    const record = stores.ledger.tail(handle.attemptId).at(-1);
+    if (record === undefined || record.kind !== "abandonment") {
+      throw new Error(`expected a recorded abandonment, got ${record?.kind ?? "nothing"}`);
+    }
+    expect(record.reason).toBe(ABORT_REASON);
+    expect(record.attribution).toStrictEqual({
+      attemptId: handle.attemptId,
+      actor: "human:maintainer",
+    });
+    expect(Object.isFrozen(record)).toBe(true);
+    expect(Object.isFrozen(record.attribution)).toBe(true);
+  });
+
+  it("a restarted assembly over the same stores reads the record and refuses — resume and re-run", () => {
+    const aborted = abortedAssembly();
+    // The restart: a NEW engine process over the same durable stores —
+    // nothing process-local survives, the stores carry everything.
+    const restarted = freshAssembly({
+      register: aborted.stores.register,
+      ledger: aborted.stores.ledger,
+      claims: aborted.stores.claims,
+    });
+
+    // The resume refuses first: the fresh process carries no attempt, and
+    // the door says so instead of inventing one (§2.7 — bookkeeping, not
+    // authority).
+    const resumed = restarted.engine.resume(
+      aborted.handle,
+      runRequest(liveWorld(), "main", [beta]),
+    );
+    expect(resumed.kind).toBe("refused");
+    if (resumed.kind !== "refused") throw new Error("expected a refused outcome");
+    expect(resumed.detail).toContain("unknown attempt");
+
+    // The fresh run refuses quoting the recorded evidence — a new ordinal
+    // never silently re-executes over the human's abort (E-09).
+    const rerun = restarted.engine.run(runRequest(liveWorld(), "main", [beta]));
+    expect(rerun.kind).toBe("refused");
+    if (rerun.kind !== "refused") throw new Error("expected a refused outcome");
+    expect(rerun.detail).toContain("human:maintainer");
+    expect(rerun.detail).toContain(ABORT_REASON);
+    expect(rerun.detail).toContain(aborted.handle.attemptId);
+    expect(rerun.drives).toStrictEqual([]);
+
+    // Nothing was written: the fresh attempt's own tail is still empty —
+    // the refusal happened before claim acquisition and the walk. The read
+    // goes to the SHARED ledger (the one the engine wired), not the
+    // restarted assembly's fresh default.
+    expect(aborted.stores.ledger.tail(attemptIdentity(aborted.planId, 2))).toStrictEqual([]);
+  });
+
+  it("a fresh assembly sharing only the durable ledger still refuses — the scan covers the fresh attempt's own tail", () => {
+    const aborted = abortedAssembly();
+    // The harshest restart: a fresh register allocates the SAME ordinal the
+    // aborted attempt used, so the fresh attempt's identity is the aborted
+    // attempt's identity — the refusal must come from that tail itself.
+    const restarted = freshAssembly({ ledger: aborted.stores.ledger });
+    const before = aborted.stores.ledger.tail(aborted.handle.attemptId).length;
+
+    const rerun = restarted.engine.run(runRequest(liveWorld(), "main", [beta]));
+    expect(rerun.kind).toBe("refused");
+    if (rerun.kind !== "refused") throw new Error("expected a refused outcome");
+    expect(rerun.detail).toContain("human:maintainer");
+    expect(rerun.detail).toContain(ABORT_REASON);
+    expect(rerun.drives).toStrictEqual([]);
+
+    // The tail is exactly what assembly 1 recorded — same length, the
+    // abandonment still last (read from the shared ledger).
+    const after = aborted.stores.ledger.tail(aborted.handle.attemptId);
+    expect(after).toHaveLength(before);
+    expect(after.at(-1)?.kind).toBe("abandonment");
+  });
+
+  it("the refusal answers EVERY fresh run — quoted again, each run its own burned ordinal", () => {
+    const aborted = abortedAssembly();
+    const restarted = freshAssembly({
+      register: aborted.stores.register,
+      ledger: aborted.stores.ledger,
+      claims: aborted.stores.claims,
+    });
+    // No phantom entry: a refused fresh run leaves the attempt store
+    // untouched (§2.7 — bookkeeping, never authority), so the next run
+    // allocates the following ordinal, re-scans, and quotes the SAME
+    // recorded word — the evidence refusal is not first-refusal-per-
+    // process, and the burned ordinals count the refusals.
+    for (const burned of [2, 3]) {
+      const rerun = restarted.engine.run(runRequest(liveWorld(), "main", [beta]));
+      expect(rerun.kind).toBe("refused");
+      if (rerun.kind !== "refused") throw new Error("expected a refused outcome");
+      expect(rerun.detail).toContain("human:maintainer");
+      expect(rerun.detail).toContain(ABORT_REASON);
+      expect(rerun.detail).toContain(aborted.handle.attemptId);
+      expect(rerun.drives).toStrictEqual([]);
+      expect(aborted.stores.ledger.tail(attemptIdentity(aborted.planId, burned))).toStrictEqual([]);
+    }
+    // The register's only door allocates — which is why this final
+    // allocation is the proof: the aborted run held ordinal 1 and the two
+    // refused runs burned exactly ordinals 2 and 3, so the next is 4.
+    expect(aborted.stores.register.nextOrdinal(aborted.planId)).toBe(4);
+  });
+
+  it("a fresh run over a different plan proceeds — the evidence is the plan's word, not the world's", () => {
+    const aborted = abortedAssembly();
+    const restarted = freshAssembly({
+      register: aborted.stores.register,
+      ledger: aborted.stores.ledger,
+      claims: aborted.stores.claims,
+    });
+    // The rc plan is a different plan id, and its tails carry no
+    // abandonment: the scan is keyed by THIS run's plan id, so the walk
+    // STARTS (the same attest block suspends it) — a suspension from the
+    // plan's own evidence, never the abandonment refusal.
+    const other = restarted.engine.run(runRequest(liveWorld(), "main", [rc], attestDeclaration()));
+    expect(other.kind).toBe("blocked");
+    if (other.kind !== "blocked" || other.planId === null || other.handle === null) {
+      throw new Error("expected the rc plan's run to walk into its attest block");
+    }
+    expect(other.planId).not.toBe(aborted.planId);
+    expect(other.handle.attemptId).not.toBe(aborted.handle.attemptId);
+  });
+
+  it("several recorded abandonments quote the LOWEST ordinal — the first word stands", () => {
+    const aborted = abortedAssembly();
+    // A restart whose register has already allocated through the aborted
+    // ordinal, plus a second, later abandonment recorded on the NEXT one:
+    // two recorded words over the same plan.
+    const restarted = freshAssembly({
+      register: new MemoryAttemptRegister({ ordinals: { [aborted.planId]: 1 } }),
+      ledger: aborted.stores.ledger,
+      claims: aborted.stores.claims,
+    });
+    const later = attemptIdentity(aborted.planId, 2);
+    aborted.stores.ledger.append({
+      kind: "abandonment",
+      attemptId: later,
+      reason: "the later withdrawal",
+      attribution: { attemptId: later, actor: "human:later" },
+    });
+    // The fresh ordinal is 2, the scan covers ordinals 1..2, and the quote
+    // must be ordinal 1's — the first recorded abandonment, never the
+    // latest one.
+    const rerun = restarted.engine.run(runRequest(liveWorld(), "main", [beta]));
+    expect(rerun.kind).toBe("refused");
+    if (rerun.kind !== "refused") throw new Error("expected a refused outcome");
+    expect(rerun.detail).toContain("human:maintainer");
+    expect(rerun.detail).toContain(ABORT_REASON);
+    expect(rerun.detail).toContain(aborted.handle.attemptId);
+    expect(rerun.detail).not.toContain("human:later");
+    expect(rerun.detail).not.toContain("the later withdrawal");
+    expect(rerun.drives).toStrictEqual([]);
   });
 });

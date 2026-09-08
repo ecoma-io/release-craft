@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 
 import { assembleGitBinding } from "../../src/index.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
-import { liveWorld } from "../vertical/matrix.js";
-import { openGitState } from "../vertical/matrix-git.js";
+import { liveWorld, matrixHooks } from "../vertical/matrix.js";
+import { naming, openGitBinding, openGitState } from "../vertical/matrix-git.js";
 import { beta, fullDeclaration, runRequest } from "./harness.js";
 
 describe("§2.2 — assembleGitBinding over an opened binding", () => {
@@ -72,3 +72,66 @@ describe("§2.2 — assembleGitBinding over an opened binding", () => {
     },
   );
 });
+
+describe("the durable abandonment over the binding — restart visibility (ADR-0013 decision 4)", () => {
+  it(
+    "abort, then a fresh binding over the same repository: the fresh run refuses the recorded evidence",
+    { timeout: 60_000 },
+    () => {
+      withTempRepo("app-git-abandonment-restart", (repo) => {
+        const state = openGitState(repo);
+        const engine = assembleGitBinding(state.binding, { maxRetries: 2 });
+        const target = state.lineHeads.main;
+        if (target === undefined) {
+          throw new Error("fixture broken: no recorded head for main");
+        }
+        // The attest hook fails with no evidence: the walk blocks, and the
+        // human aborts it — the abandonment record lands in the binding's
+        // own ledger.
+        const hooks = matrixHooks();
+        const stopped = engine.run({
+          ...runRequest(liveWorld(), "main", [beta], {
+            hooks: [hooks.attest],
+            hookEffects: new Map([
+              [
+                hooks.attest.id,
+                (input) => ({ attribution: { attemptId: input.attemptId, actor: "automation" } }),
+              ],
+            ]),
+          }),
+          targets: { main: target },
+        });
+        expect(stopped.kind).toBe("blocked");
+        if (stopped.kind !== "blocked" || stopped.handle === null) {
+          throw new Error("expected a blocked outcome");
+        }
+        const abandoned = engine.abort(stopped.handle, "human:maintainer", ABORT_REASON);
+        expect(abandoned.kind).toBe("abandoned");
+
+        // The restart: a FRESH binding over the same repository — nothing
+        // process-local survives, only the git refs carry the story. The
+        // fresh run (target supplied, so the mint rule is satisfied) must
+        // refuse quoting the recorded evidence before the walk.
+        const restartedEngine = assembleGitBinding(openGitBinding({ repo, tagNaming: naming }), {
+          maxRetries: 2,
+        });
+        const rerun = restartedEngine.run({
+          ...runRequest(liveWorld(), "main", [beta]),
+          targets: { main: target },
+        });
+        expect(rerun.kind).toBe("refused");
+        if (rerun.kind !== "refused") {
+          throw new Error(`expected a refused outcome, got ${rerun.kind}`);
+        }
+        expect(rerun.detail).toContain("human:maintainer");
+        expect(rerun.detail).toContain(ABORT_REASON);
+        expect(rerun.detail).toContain(stopped.handle.attemptId);
+        expect(rerun.drives).toStrictEqual([]);
+        // The refusal minted nothing: the walk never started.
+        expect(state.binding.refs.tags()).toStrictEqual([]);
+      });
+    },
+  );
+});
+
+const ABORT_REASON = "the release was withdrawn";
