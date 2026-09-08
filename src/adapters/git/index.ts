@@ -6,6 +6,7 @@
  */
 export * from "./binding-types.js";
 export * from "./binding.js";
+export * from "./channel-store-git.js";
 export * from "./claim-store-git.js";
 export * from "./content-read.js";
 export * from "./freeze.js";

@@ -23,6 +23,25 @@ export const attemptIdentity = (planId: string, ordinal: number): string => {
 };
 
 /**
+ * The fingerprint over an observed channel state (ADR-0012 decision 4) —
+ * the channel-transition ledger record's idempotency key:
+ * `content_sha256:<hex>` over the state's canonical fields, the same
+ * derivation every step content fingerprint uses. The hidden state
+ * fingerprints as the `hidden` sentinel — a value no serialized target can
+ * take, so a hidden prior is never confused with a pointed one (a hidden
+ * channel's sentinel fingerprint qualifies). Shared by both channel store
+ * implementations, so they fingerprint identically.
+ */
+export const channelStateFingerprint = (state: {
+  readonly id: string;
+  readonly target: { readonly line: string; readonly version: string } | null;
+}): string =>
+  contentFingerprint({
+    channelId: state.id,
+    target: state.target === null ? "hidden" : canonicalJson(state.target),
+  });
+
+/**
  * The content fingerprint (phase 5 contract §2.6; ADR-0006 decision 8):
  * `content_sha256:<hex>` over the canonical JSON of the step's declared
  * content inputs — the same canonicalizer as the attempt id, no clock, no

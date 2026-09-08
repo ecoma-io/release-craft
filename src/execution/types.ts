@@ -717,6 +717,84 @@ export interface ChannelTransitionRecord {
   readonly recordedAt?: string;
 }
 
+// ---------------------------------------------------------------------------
+// ADR-0012 decision 6 — the channel store port (the application layer's seam)
+// ---------------------------------------------------------------------------
+
+/** One channel move as the channel store consumes it (ADR-0012 decisions 3
+ * and 6): the channel, the prior target the move assumes, and the target it
+ * lands. The target shapes are the ledger record's own — line + canonical
+ * version string, or `null` for the hidden state (hiding is `to: null`; a
+ * move out of the hidden state is `from: null`; PR-04: a rollback hides,
+ * never erases). */
+export interface ChannelMove {
+  readonly channelId: string;
+  readonly from: { readonly line: string; readonly version: string } | null;
+  readonly to: { readonly line: string; readonly version: string } | null;
+}
+
+/** `applyTransition`'s outcomes (ADR-0012 decisions 4, 6, 7) — returned
+ * values, never exceptions; everything a race or the world can cause
+ * classifies here. Every decided outcome carries the `contentFingerprint`
+ * over the state the store actually observed when deciding — the ledger
+ * record's idempotency key (decision 4) is tied to what the store saw,
+ * never to what the plan assumed. */
+export type ChannelApplyOutcome =
+  | { readonly kind: "applied"; readonly contentFingerprint: string }
+  | { readonly kind: "noop"; readonly contentFingerprint: string }
+  | {
+      readonly kind: "conflict";
+      readonly contentFingerprint: string;
+      /** The observed prior target the move did not expect — line +
+       * canonical version string, or `null` for the hidden state. */
+      readonly observed: { readonly line: string; readonly version: string } | null;
+    }
+  | {
+      /** The store cannot determine whether the move landed — a
+       * transport-level failure on the backing store. The transition
+       * records `ambiguous`, never `completed`: the promotion does not
+       * race forward on uncertainty (invariant 2.6; ADR-0012 decision 7). */
+      readonly kind: "ambiguous";
+      readonly detail: string;
+    };
+
+/** The serialized `Channel` value (ADR-0012 decision 6): the channel's id
+ * plus the target it points at — line + canonical version string — or
+ * `null` for the hidden state. The store's persisted form and its read
+ * shape alike; the domain value is the core `Channel`, rehydrated by
+ * whoever needs the class. String-shaped like every record target: the
+ * kernel's vocabulary carries canonical version strings, never parsed
+ * values (§2.11). */
+export interface ChannelState {
+  readonly id: string;
+  readonly target: { readonly line: string; readonly version: string } | null;
+}
+
+/** The channel store port (ADR-0012 decision 6) — the deliverability
+ * pointer's durable half. Reads are total: a channel the store holds no
+ * record of reads as the hidden channel (S-02: it exists before its first
+ * binding), never as an error and never guessed from a plan. The kernel
+ * never consumes this port (invariant 2.1): it names the
+ * `channel-transition` stage and records its moves; the application layer
+ * executes the recorded plan's moves through this store. The reference
+ * implementation is an in-memory value (channel-store-memory.ts); the
+ * physical half is the Phase 8 adapter's binding (the git channel store,
+ * `refs/ecoma/channels/<sha256 of the channel id>`). */
+export interface ChannelStore {
+  /** The channel's current state — `target` is `null` for the hidden
+   *  state, including a channel the store holds no record of. */
+  read(channelId: string): ChannelState;
+  /** Every channel the store holds a record of, in store order. */
+  list(): readonly ChannelState[];
+  /** The compare-and-set the move runs as (ADR-0012 decision 6): the
+   *  store reads its recorded state, and — observed === `from` — lands
+   *  `to`; observed === `to` — the move already stands, `noop`; anything
+   *  else — `conflict` naming the observed target. A concurrent writer
+   *  between the read and the land re-reads and re-evaluates; the store
+   *  never adjudicates against stale state. */
+  applyTransition(move: ChannelMove): ChannelApplyOutcome;
+}
+
 /** The ledger port (§2.1): the durability seam Phases 6–9 bind. Write-ahead
  * at step granularity — a step's start is durable before its effect may
  * run. The persistence binding is the Phase 8 adapter's (fork 16 open). */
