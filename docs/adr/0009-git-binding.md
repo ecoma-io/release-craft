@@ -200,6 +200,7 @@ job is to express that discipline over git, not to invent a second one.
   store never sets, and no engine module changes behavior.
 - What this ADR deliberately does not decide: the GitHub adapter's API
   surface and any E2E flows (Phase 9, ADR-0010), artifact freshness rules
-  (PR-03, carried), channel semantics (PR-04's door), and any remote
+  (PR-03, carried), channel semantics (ADR-0012's `channel-transition`
+  door), and any remote
   synchronization of the persisted scopes beyond git's own push/fetch
   semantics.

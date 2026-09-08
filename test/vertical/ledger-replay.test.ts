@@ -77,7 +77,7 @@ describe("V1 — plan integrity, replayed", () => {
     expect(run.mintedTag).toBe("5.0.0-beta.1");
     // The replay executes exactly the planned sequence — the ledger's
     // completed records alone capture what the walk ran, and they equal the
-    // same-declaration uninterrupted run's (the canonical eight PLUS their
+    // same-declaration uninterrupted run's (the canonical nine PLUS their
     // extension steps at the anchors §3.4/§3.5 declare — never fewer,
     // never out of the declared order).
     expect(completedKeys(run)).toStrictEqual(

@@ -145,10 +145,12 @@ const normalizedClaims = (
 
 /** The tail's records with the claim token labelled — the crossing-repos
  * determinism assertion. The engine records the store's token into every
- * completion of a claim-requiring stage (outcome.ts), and the git store
- * allocates random tokens; a reference run and a resumed run on their own
- * repositories agree on every field but that token. Built on the git read
- * door, exactly as every other byte read here. */
+ * completion of a claim-requiring stage (outcome.ts) — and, once the
+ * application slice appends them, into every `channel-transition` record
+ * (ADR-0012 decision 4) — and the git store allocates random tokens; a
+ * reference run and a resumed run on their own repositories agree on every
+ * field but that token. Both claim-carrying kinds are labelled here.
+ * Built on the git read door, exactly as every other byte read here. */
 const normalizedTail = (stores: GitStores, attemptId: string): readonly string[] => {
   const tokens = new Map<string, string>();
   const label = (token: string): string => {
@@ -161,12 +163,14 @@ const normalizedTail = (stores: GitStores, attemptId: string): readonly string[]
     return fresh;
   };
   return stores.ledger.tail(attemptId).map((record) => {
-    if (record.kind !== "step" || record.record.claim === undefined) {
+    const payload =
+      record.kind === "step" || record.kind === "channel-transition" ? record.record : undefined;
+    if (payload === undefined || payload.claim === undefined) {
       return JSON.stringify(record);
     }
     return JSON.stringify({
       ...record,
-      record: { ...record.record, claim: label(record.record.claim) },
+      record: { ...payload, claim: label(payload.claim) },
     });
   });
 };
@@ -415,7 +419,9 @@ describe("V4 — promotion, git-backed", () => {
       }
       expect(promoteRun.scope.version).toBe("5.0.0");
       // The stable mint is recorded as a real tag; the promotion drags no
-      // pointer (the transition door is unlanded, #76).
+      // pointer yet — the kernel's channel-transition door is landed
+      // (ADR-0012, #76), and the channel-store wiring that moves the
+      // pointers is the next slice (V4 asserts the moves then).
       expect(recordedTags(state.git, naming.namespaces)).toContain("5.0.0");
       assertChannelsUnchanged(channels);
     });

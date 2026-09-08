@@ -34,7 +34,7 @@ Non-goals:
   source of truth; the remote is a projection (ADR-0010 decision 3).
 - Release-please compatibility. The baseline's compatibility boundary
   (release-model.md §18) is unchanged.
-- Promotion or channel semantics (PR-04's door).
+- Promotion or channel semantics (ADR-0012's `channel-transition` door).
 - The per-line lock redesign. The claim store's cross-scope exclusion is
   serial-only under the one-ref mapping (issue #47). The redesign is
   tracked in issue #49 and lands through its own ADR.

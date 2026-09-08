@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CANONICAL_STAGES,
   type Claim,
   type ClaimDenied,
   MemoryAttemptRegister,
   MemoryClaimStore,
   MemoryTransitionLog,
+  MUTATING_STAGES,
   openAttempt,
   requestStep,
   start,
@@ -120,6 +122,34 @@ describe("fixture 6 — no mutation before claim", () => {
     expect(log.records()).toEqual(before);
   });
 
+  it("refuses every MUTATING_STAGES member with no claim held — the guard table, swept", () => {
+    // The sweep runs against the exported table, walking each stage to its
+    // own position in the canonical order (the kernel refuses an
+    // out-of-sequence request outright), then dropping the claim before
+    // the target's request. A stage that quietly leaves `MUTATING_STAGES`
+    // — or loses its `requiresHeldClaim` row — advances here instead of
+    // refusing, and the sweep fails. ADR-0012's channel-transition stage
+    // is a mutation by the same law: it repoints a consumer-facing
+    // pointer, and no pointer moves claimlessly.
+    for (const stage of MUTATING_STAGES) {
+      const store = new MemoryClaimStore();
+      const log = new MemoryTransitionLog();
+      const attempt = open();
+      expect(run(attempt, "plan", store, log).kind).toBe("advance");
+      const token = asClaim(store.acquire(LEASE_SCOPE, attempt.attemptId)).token;
+      const previous = CANONICAL_STAGES.slice(1, CANONICAL_STAGES.indexOf(stage));
+      for (const stepKey of previous) {
+        expect(run(attempt, stepKey, store, log).kind).toBe("advance");
+      }
+      store.release(token);
+      expect(run(attempt, stage, store, log)).toEqual({
+        kind: "refused",
+        stepKey: stage,
+        detail: "mutation-without-claim",
+      });
+    }
+  });
+
   it("advances with the claim recorded once ownership is acquired", () => {
     const store = new MemoryClaimStore();
     const log = new MemoryTransitionLog();
@@ -184,5 +214,41 @@ describe("fixture 6 — no mutation before claim", () => {
       detail: "the held claim no longer verifies — the loser path (§2.4)",
     });
     expect(log.records().some((record) => record.stepKey === "commit")).toBe(false);
+  });
+
+  it("cuts off the channel-transition stage when the held claim stops verifying (§2.4)", () => {
+    // ADR-0012's door is a mutation step like any other: the loser path
+    // applies to it through the shared guard, not a stage-specific rule.
+    // The lease scope is the one a release can actually sever — releasing
+    // a stable-version record is a no-op, so it proves nothing here.
+    const store = new MemoryClaimStore();
+    const log = new MemoryTransitionLog();
+    const attempt = executingWithoutClaim(store, log);
+    const token = asClaim(store.acquire(LEASE_SCOPE, attempt.attemptId)).token;
+    expect(run(attempt, "claim", store, log).kind).toBe("advance");
+    expect(run(attempt, "prepare", store, log).kind).toBe("advance");
+    expect(run(attempt, "validate", store, log).kind).toBe("advance");
+    expect(run(attempt, "commit", store, log).kind).toBe("advance");
+    expect(run(attempt, "tag", store, log).kind).toBe("advance");
+
+    const staleView = store.viewFor(attempt.attemptId);
+    store.release(token);
+
+    const outcome = requestStep(
+      attempt,
+      {
+        stepKey: "channel-transition",
+        attribution: { attemptId: attempt.attemptId, actor: "automation" },
+        contentFingerprint: "content:channel-transition",
+      },
+      staleView,
+      log.stepView(),
+    );
+    expect(outcome).toEqual({
+      kind: "claim-lost",
+      stepKey: "channel-transition",
+      detail: "the held claim no longer verifies — the loser path (§2.4)",
+    });
+    expect(log.records().some((record) => record.stepKey === "channel-transition")).toBe(false);
   });
 });

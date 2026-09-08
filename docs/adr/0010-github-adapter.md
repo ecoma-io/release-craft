@@ -226,9 +226,9 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
   The baseline's release-please compatibility boundary
   ([release-model.md §18](../design/release-model.md#release-please-compatibility-boundary))
   is unchanged.
-- **Promotion or channel semantics.** PR-04's door (channels, promotion)
-  is not implemented here — the adapter pushes and creates releases for
-  the binding's recorded state only.
+- **Promotion or channel semantics.** The channel-transition door
+  (ADR-0012) is not implemented here — the adapter pushes and creates
+  releases for the binding's recorded state only.
 - **The per-line lock redesign.** The claim store's cross-scope exclusion
   is serial-only under the one-ref mapping (issue #47). The per-line lock
   redesign is tracked in issue #49 and lands through its own ADR, not

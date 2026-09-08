@@ -20,7 +20,8 @@ Non-goals: real digest computation or registry/filesystem interaction (the
 producer is caller-injected — Phase 8/9 adapter territory, ADR-0008
 decision 12); evidence freshness rules (PR-03 — carried); persistence
 beyond the in-memory ledger (fork 16, Phase 8's binding); channels and
-promotion (PR-04's transitions remain the only channel door); the
+promotion (the only channel door is ADR-0012's explicit
+`channel-transition` stage, landed in phase 4's kernel — not here); the
 Release value's joins (lifecycle state, channel memberships — later
 integration, not a drive-by).
 
@@ -186,8 +187,8 @@ artifact-side).
   generation, publish takes the kernel's recorded refusal — a version
   identity is never minted with artifacts missing (S-04, AR-01). The
   gate is a precondition of the existing publish step; it is not a new
-  stage, and it moves no channel — PR-04's transitions remain the only
-  channel door.
+  stage, and it moves no channel — the only channel door is ADR-0012's
+  explicit `channel-transition` stage.
 - No new attempt state, no new ledger record kind, no silent pass.
 
 ## 3. Laws

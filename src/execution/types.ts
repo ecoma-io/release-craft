@@ -649,7 +649,8 @@ export type BlockedResolution =
  * equality proof); step records wrap the kernel's transition record
  * verbatim; absorption records adopt attributed external work
  * (`adopted-from:<sourceAttemptId>`); resolution records close the
- * blocked loop. */
+ * blocked loop; channel-transition records carry ADR-0012's durable
+ * move of one channel pointer. */
 export type LedgerRecord =
   | {
       readonly kind: "plan";
@@ -706,8 +707,12 @@ export interface ChannelTransitionRecord {
   /** The owned claim token (§2.9), carried like every mutating record. */
   readonly claim?: ClaimToken;
   /** The content fingerprint over the observed prior target — the
-   * idempotency key (ADR-0012 decision 4). */
-  readonly contentFingerprint?: string;
+   * idempotency key (ADR-0012 decision 4). Required, never optional: the
+   * observed prior target always exists (a hidden channel's sentinel
+   * fingerprint qualifies), and a record without the key could never
+   * prove replay equality — every replay of its move would conflict
+   * instead of `noop`. */
+  readonly contentFingerprint: string;
   /** Caller-supplied timestamp: metadata, never ordering (§2.10). */
   readonly recordedAt?: string;
 }

@@ -21,7 +21,9 @@ repositories.
 Non-goals: the GitHub adapter and any API/network behavior (Phase 9,
 [ADR-0010](../adr/0010-github-adapter.md),
 [phase9-github-adapter-contract.md](phase9-github-adapter-contract.md)); evidence
-freshness rules (PR-03 — carried); channels and promotion (PR-04's door); any
+freshness rules (PR-03 — carried); channels and promotion (ADR-0012's
+`channel-transition` door; the binding's `channels` store port is that
+ADR's decision 6, its own slice); any
 change to `src/execution/`'s shapes (the in-memory references stay as the test
 seam; if an implementation needs a port widened, that is its own reviewed
 change, not a drive-by); authentication, remote synchronization, or anything
