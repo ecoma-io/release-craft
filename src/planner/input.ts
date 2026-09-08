@@ -162,6 +162,13 @@ function validate(raw: PlanningInput, out: InputViolation[]): void {
     else out.push({ field: "components", problem: "must be an array of component metadata" });
   }
 
+  const channels: unknown = raw.channels;
+  if (channels !== undefined) {
+    if (isArray(channels)) checkChannels(channels, out);
+    else
+      out.push({ field: "channels", problem: "must be an array of declared channel observations" });
+  }
+
   const bootstrap: unknown = raw.bootstrap;
   if (bootstrap === undefined) {
     // S-02: absence is legal at this boundary — demanding the recorded
@@ -498,6 +505,47 @@ function checkLines(
     const publishes: unknown = line.publishes;
     if (publishes !== undefined) {
       checkLinePublishes(`lines[${String(i)}].publishes`, publishes, declaredComponents, out);
+    }
+  }
+}
+
+/** Channel-registry validation (ADR-0012 decision 2): each entry names a
+ * channel id and the line+version it currently points at. Every declared
+ * id is unique — a registry naming one channel twice has no deterministic
+ * observation order — and every target version parses through the kernel
+ * grammar (the same posture as the bootstrap version: an unparseable
+ * declaration can never be repaired downstream). */
+function checkChannels(channels: readonly unknown[], out: InputViolation[]): void {
+  const seen = new Set<string>();
+  for (const [i, channel] of channels.entries()) {
+    const field = `channels[${String(i)}]`;
+    if (!isObject(channel)) {
+      out.push({ field, problem: "must be a channel observation (id + target)" });
+      continue;
+    }
+    if (!nonEmpty(channel.id)) {
+      out.push({ field: `${field}.id`, problem: "must be a non-empty channel id" });
+    } else if (seen.has(channel.id)) {
+      out.push({
+        field: `${field}.id`,
+        problem: `duplicates channel ${JSON.stringify(channel.id)} — a declared registry names each channel once`,
+      });
+    } else {
+      seen.add(channel.id);
+    }
+    const target: unknown = channel.target;
+    if (!isObject(target)) {
+      out.push({ field: `${field}.target`, problem: "must be a target (line + version)" });
+      continue;
+    }
+    if (!nonEmpty(target.line)) {
+      out.push({ field: `${field}.target.line`, problem: "must be a non-empty line id" });
+    }
+    if (!parsesAsVersion(target.version)) {
+      out.push({
+        field: `${field}.target.version`,
+        problem: `must parse as a kernel Version — ${JSON.stringify(target.version)} does not (strict SemVer 2.0.0)`,
+      });
     }
   }
 }

@@ -145,6 +145,18 @@ export interface BootstrapDecision {
   readonly when: string;
 }
 
+/** ADR-0012 decision 2 — a declared channel observation: the channel's id
+ * and the target (line id + version string) it currently points at, as
+ * observed input data. The planner reads this registry to name the planned
+ * channel moves (invariant 2.2: it never mutates a channel); execution's
+ * channel store (ADR-0012 decision 6) re-observes the prior target at
+ * transition time through its own compare-and-set door — the observation
+ * here is planning evidence, never the CAS's expected value. */
+export interface ChannelObservation {
+  readonly id: string;
+  readonly target: { readonly line: string; readonly version: string };
+}
+
 /** Operator intents that must be recorded when exercised (§2.1): an
  * "release anyway" is an operator-forced record, never a routine release
  * (S-01); `Release-As` semantics per the compatibility boundary row 2; a
@@ -172,6 +184,11 @@ export interface PlanningInput {
   readonly components?: readonly ComponentMeta[];
   readonly bootstrap?: BootstrapDecision;
   readonly intents?: readonly OperatorIntent[];
+  /** ADR-0012 decision 2 — the declared channel registry the planner reads
+   * when it names planned channel moves. Absent = no channels declared: a
+   * promote still plans its promoted-from edge and stream close, but no
+   * channel move can be named for an undeclared registry. */
+  readonly channels?: readonly ChannelObservation[];
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +610,47 @@ export type PlanPropagation = (
  * plan executes. */
 export type PlanPrecondition = { readonly kind: "tag-absent"; readonly tag: string };
 
+/** ADR-0012 decision 2 — one planned channel move: the named channel's new
+ * target. Pure plan content; the execution side records it at the
+ * `channel-transition` stage through the channel store's CAS door, which
+ * re-observes the prior target itself (the plan names `to`, never a
+ * trusted `from`). */
+export interface PlannedChannelMove {
+  readonly kind: "channel-move";
+  readonly channelId: string;
+  readonly to: { readonly line: string; readonly version: string };
+}
+
+/** The promoted-from edge (release-model.md's Promotion row, PR-05's
+ * graph-with-timeline vocabulary): the recorded relation "this stable was
+ * promoted from that prerelease" — one per promotion, line-level,
+ * independent of any channel. */
+export interface PlannedPromotedFrom {
+  readonly kind: "promoted-from";
+  /** The in-flight prerelease the promotion came from — the pointer's
+   * version string at planning time, e.g. `5.0.0-rc.1`. */
+  readonly from: string;
+  readonly to: { readonly line: string; readonly version: string };
+}
+
+/** The promoted prerelease stream's close (PR-01: "the rc stream closes"):
+ * the stream stops being in flight — no further sequence mints on its key.
+ * A close is recorded content like a move (ADR-0012's walk: "stream close
+ * + promoted-from recorded the same way"), never a deletion. */
+export interface PlannedStreamClose {
+  readonly kind: "stream-close";
+  /** The closing stream's identifier — the pointer's leading prerelease
+   * identifier (state.ts's own destructuring rule). */
+  readonly stream: string;
+  /** The stream's target — the promoted stable the promotion consumed. */
+  readonly target: string;
+}
+
+/** The planned channel-transition content (ADR-0012 decision 2): a channel
+ * move, the promoted-from edge, or the promoted stream's close. */
+export type PlannedChannelTransition =
+  PlannedChannelMove | PlannedPromotedFrom | PlannedStreamClose;
+
 /** One line's entry in a plan (§2.11's closed tuple): the line id, the
  * target the plan mints (stable, streams), the change set that produced it
  * (members with id, lineage, type, bump — the decided inputs), the stream
@@ -611,6 +669,14 @@ export interface PlanLine {
   readonly propagation: PropagationPlan;
   readonly preconditions: readonly PlanPrecondition[];
   readonly artifacts: readonly string[];
+  /** ADR-0012 decision 2 — the planned channel transitions this line's run
+   * records at the `channel-transition` stage. Present when the run
+   * promotes an in-flight prerelease to a minted stable target (P-03): the
+   * declared channels' moves (PR-01: "`next`/`stable` move"), the
+   * promoted-from edge, and the promoted stream's close. Absent for every
+   * other run — absent is byte-identical to the pre-ADR-0012 plan, so
+   * plans that name no transitions fingerprint exactly as before. */
+  readonly channels?: readonly PlannedChannelTransition[];
 }
 
 /** The release plan (§2.11): content-fingerprinted (`planId`), persistable,
