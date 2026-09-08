@@ -170,8 +170,8 @@ used is visible in its `refusedIntents` and in the streams' recorded seeds.
 **Promotion precedence (#90, decision-log D38).** A promotion-shaped
 decision (P-03: `release` with `bump: null` over an in-flight prerelease)
 never carries a stream extension: the sibling `prerelease` demand(s) for the
-promoted line are subsumed — the stable co-mint stands (the suppression has
-no purchase on a decision whose change set is inherited and empty), no
+promoted line are subsumed — the stable co-mint stands (D38 decides the
+suppression does not bind a promotion), no
 stream entry is planned, the promotion carries its full channel plan
 (§2.11's amendment), and the decision record names the subsumed stream(s).
 The suppression's single-intent posture is unchanged for every other

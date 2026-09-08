@@ -1170,9 +1170,11 @@ describe("P-03 through the door — the promote intent over the in-flight rc", (
     expect(decision.detail).toContain("subsumed");
     expect(decision.detail).toContain("rc");
     // The plan line is byte-identical to the single-intent promotion's: the
-    // subsumed demand changes nothing but the record's own clause. (The two
-    // planIds still differ — the intents join the inputs fingerprint, D17(7).)
+    // subsumed demand changes nothing but the record's own clause.
     expect(planLineOf(combined)).toEqual(planLineOf(single));
+    // The planIds still differ — the intents join the inputs fingerprint,
+    // D17(7); identical lines do not mean an identical plan.
+    expect(plannedOf(combined).plan.planId).not.toBe(plannedOf(single).plan.planId);
   });
 });
 

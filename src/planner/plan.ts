@@ -33,8 +33,9 @@
  * the sibling demands for the line are subsumed: the stable co-mint stands
  * and no sequence entry is planned, and the decision record names the
  * subsumption. D17(3)'s suppression keeps its single-intent posture — a
- * release decision's content flows to the stream; a promotion has no content
- * to route (its change set is inherited and empty by definition).
+ * release decision's content flows to the stream; a promotion is subsumed
+ * by rule (D38), not by content: the demand names the stream the promotion
+ * performs.
  *
  * Streams are keyed by (target, identifier) over the rebuilt `LineState`
  * (§2.13): an observed key continues at `sequence + 1`; a fresh key — a new
