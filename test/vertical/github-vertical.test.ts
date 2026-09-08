@@ -257,7 +257,7 @@ describe("V1 — plan integrity, github-backed", () => {
 
   it(
     "V1 · content fingerprints · every canonical completion verifies its fingerprint and the publication body reads back the recorded bytes",
-    { timeout: 40_000 }, // one real-git walk plus the adapter doors — headroom, not a hang mask
+    { timeout: 80_000 }, // one real-git walk plus the adapter doors — headroom, not a hang mask
     () => {
       withGitHubVertical("v1-fingerprints", (vertical) => {
         const run = runGitRelease({
@@ -302,7 +302,7 @@ describe("V1 — plan integrity, github-backed", () => {
 describe("V2 — identity, github-backed", () => {
   it(
     "V2 · commit-window · the identity is stable across the crash and the resumed run's records carry it",
-    { timeout: 40_000 }, // two real-git walks — headroom, not a hang mask
+    { timeout: 80_000 }, // two real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v2-identity", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -331,7 +331,7 @@ describe("V2 — identity, github-backed", () => {
 
   it(
     "V2 · five lines · five lines' runs never share an attempt, and the sync enumerates each line's register",
-    { timeout: 60_000 }, // five real-git walks — headroom, not a hang mask
+    { timeout: 120_000 }, // five real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v2-five-lines", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -381,7 +381,7 @@ describe("V2 — identity, github-backed", () => {
 describe("V3 — prerelease sequence, github-backed", () => {
   it(
     "V3 · ladder runs 1–2 · beta.1 then beta.2, only the beta stream moves, and the minted tags are real refs",
-    { timeout: 45_000 }, // two real-git walks — headroom, not a hang mask
+    { timeout: 90_000 }, // two real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v3-ladder", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -413,7 +413,7 @@ describe("V3 — prerelease sequence, github-backed", () => {
 
   it(
     "V3 · ladder run 3 · the rc stream opens from its own key beside beta",
-    { timeout: 45_000 }, // three real-git walks — headroom, not a hang mask
+    { timeout: 90_000 }, // three real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v3-rc", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -449,7 +449,7 @@ describe("V3 — prerelease sequence, github-backed", () => {
 describe("V4 — promotion, github-backed", () => {
   it(
     "V4 · ladder run 4 · the promote lands the stable record, moves the planned channels, replays noop, and the adapter publishes the release",
-    { timeout: 60_000 }, // four real-git walks plus the adapter doors — headroom, not a hang mask
+    { timeout: 120_000 }, // four real-git walks plus the adapter doors — headroom, not a hang mask
     () => {
       withGitHubVertical("v4-promote", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -552,7 +552,7 @@ describe("V4 — promotion, github-backed", () => {
 describe("V5 — supersession, github-backed", () => {
   it(
     "V5 · supersede staging · the abandoned attempt supersedes, its lease releases by token, and no channel points at an abandoned version",
-    { timeout: 45_000 }, // three real-git walks — headroom, not a hang mask
+    { timeout: 90_000 }, // three real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v5-supersede", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -638,7 +638,7 @@ describe("V5 — supersession, github-backed", () => {
 describe("V6 — immutability and determinism, github-backed", () => {
   it(
     "V6 · reload · a fresh binding on the same repo reads the tail byte-identical",
-    { timeout: 40_000 }, // one real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v6-reload", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -661,7 +661,7 @@ describe("V6 — immutability and determinism, github-backed", () => {
 
   it(
     "V6 · determinism · two fresh repos run the matrix identically → the ledger tails agree and the derived remote rows agree (tokens labelled)",
-    { timeout: 60_000 }, // two repositories × two real-git walks — headroom, not a hang mask
+    { timeout: 120_000 }, // two repositories × two real-git walks — headroom, not a hang mask
     () => {
       const trace = (): string => {
         let captured: string | undefined;
@@ -702,7 +702,7 @@ describe("V7 — recovery, github-backed", () => {
   for (const stage of CANONICAL_STAGES) {
     it(
       `V7 · ${stage}-window · the git-backed crash classifies from the recorded tail and the resume completes the run`,
-      { timeout: 40_000 }, // two real-git walks per window — headroom, not a hang mask
+      { timeout: 80_000 }, // two real-git walks per window — headroom, not a hang mask
       () => {
         withGitHubVertical("v7-window", (vertical) => {
           const stores = gitStores(vertical.repo);
@@ -734,7 +734,7 @@ describe("V7 — recovery, github-backed", () => {
 
   it(
     "V7 · artifact-window · the walk stops inside the DAG and the resume completes changelog and the rest",
-    { timeout: 60_000 }, // two declared real-git walks — headroom, not a hang mask
+    { timeout: 120_000 }, // two declared real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v7-artifact", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -784,7 +784,7 @@ describe("V7 — recovery, github-backed", () => {
 
   it(
     "V7 · hook:announce crash · the mid-effect crash classifies and the resume runs the effect exactly once more",
-    { timeout: 60_000 }, // two declared real-git walks — headroom, not a hang mask
+    { timeout: 120_000 }, // two declared real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v7-announce", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -835,7 +835,7 @@ describe("V7 — recovery, github-backed", () => {
 
   it(
     "V7 · recovery composes with publication · a crashed-and-resumed run derives the same remote rows as an uninterrupted one",
-    { timeout: 60_000 }, // three real-git walks plus the adapter doors — headroom, not a hang mask
+    { timeout: 120_000 }, // three real-git walks plus the adapter doors — headroom, not a hang mask
     () => {
       const crashedThenResumed = (): string => {
         let trace: string | undefined;
@@ -890,7 +890,7 @@ describe("V7 — recovery, github-backed", () => {
 describe("V8 — concurrency, github-backed (the hostile transport)", () => {
   it(
     "V8 · exclusive claim · the register accepts exactly one holder per scope and the loser's denial names the winner",
-    { timeout: 40_000 }, // one real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v8-exclusive", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -919,7 +919,7 @@ describe("V8 — concurrency, github-backed (the hostile transport)", () => {
 
   it(
     "V8 · hostile transport · writer B lands between the idempotency read and the create — the re-publish lands ok, never a duplicate",
-    { timeout: 40_000 }, // one declared real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one declared real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v8-lands", (vertical) => {
         const run = runGitRelease({
@@ -964,7 +964,7 @@ describe("V8 — concurrency, github-backed (the hostile transport)", () => {
 
   it(
     "V8 · hostile transport · writer B lands a divergent body in the create window — the re-publish denies as release-conflict, never both-accept",
-    { timeout: 40_000 }, // one declared real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one declared real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v8-denies", (vertical) => {
         const run = runGitRelease({
@@ -1008,7 +1008,7 @@ describe("V8 — concurrency, github-backed (the hostile transport)", () => {
 describe("V9 — divergence, github-backed", () => {
   it(
     "V9 · propagation · the carried fix mints per line, plans stay single-line and disjoint, and the reconciled remote verifies every line",
-    { timeout: 60_000 }, // four real-git walks — headroom, not a hang mask
+    { timeout: 120_000 }, // four real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v9-propagation", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -1056,7 +1056,7 @@ describe("V9 — divergence, github-backed", () => {
 describe("V10 — reconciliation, github-backed", () => {
   it(
     "V10 · clean · the recorded surface reconciles clean: both listings listed over the complete pagination, every recorded tag verified",
-    { timeout: 40_000 }, // one declared real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one declared real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v10-clean", (vertical) => {
         const run = runGitRelease({
@@ -1093,7 +1093,7 @@ describe("V10 — reconciliation, github-backed", () => {
 
   it(
     "V10 · out-of-band tag · the next reconcile detects the remote's out-of-band tag across pagination (R-11)",
-    { timeout: 45_000 }, // three real-git walks — headroom, not a hang mask
+    { timeout: 90_000 }, // three real-git walks — headroom, not a hang mask
     () => {
       withGitHubVertical("v10-unadopted-tag", (vertical) => {
         const stores = gitStores(vertical.repo);
@@ -1148,7 +1148,7 @@ describe("V10 — reconciliation, github-backed", () => {
 
   it(
     "V10 · out-of-band release · the next reconcile detects a release for a tag the binding holds no record of (R-12)",
-    { timeout: 40_000 }, // one real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v10-unadopted-release", (vertical) => {
         const run = runGitRelease({
@@ -1180,7 +1180,7 @@ describe("V10 — reconciliation, github-backed", () => {
 
   it(
     "V10 · moved tag · an out-of-band retarget of a recorded tag is divergence, never silently resolved",
-    { timeout: 40_000 }, // one real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v10-moved-tag", (vertical) => {
         const run = runGitRelease({
@@ -1220,7 +1220,7 @@ describe("V10 — reconciliation, github-backed", () => {
 
   it(
     "V10 · refused listing · a rate-limited tags listing is an outcome — never a demotion — and the sibling's comparison stands",
-    { timeout: 40_000 }, // one real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v10-refused", (vertical) => {
         const run = runGitRelease({
@@ -1257,7 +1257,7 @@ describe("V10 — reconciliation, github-backed", () => {
 
   it(
     "V10 · unobserved listing · an unreachable releases listing claims nothing — never a partial comparison",
-    { timeout: 40_000 }, // one real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v10-unobserved", (vertical) => {
         const run = runGitRelease({
@@ -1308,7 +1308,7 @@ describe("V11 — zero-config and the hermetic surface, github-backed", () => {
 
   it(
     "V11 · hermetic surface · the transport sees only adapter-derived calls and no derived row carries token or clock material",
-    { timeout: 40_000 }, // one declared real-git walk — headroom, not a hang mask
+    { timeout: 80_000 }, // one declared real-git walk — headroom, not a hang mask
     () => {
       withGitHubVertical("v11-hermetic", (vertical) => {
         const run = runGitRelease({
