@@ -86,7 +86,7 @@ describe("the claim store", () => {
     expect(store.verify(token).kind).toBe("lost");
   });
 
-  it("keeps a released stable-version claim as its record — a record, not a lease (P-01)", () => {
+  it("keeps a released stable-version claim as its record — a record, not a lease (ADR-0009 decision 4)", () => {
     const store = new MemoryClaimStore();
     const claim = store.acquire(stableVersion("1.2.0"), "attempt_sha256:a");
     const token = asClaim(claim).token;

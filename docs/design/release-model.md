@@ -503,8 +503,8 @@ ledger writes on multi-artifact releases. That is the price of E-01/E-02/E-07
 class safety existing by construction instead of being bolted on after the
 first half-published release. The budget's rule for paying it: the tax lands in
 engine write volume, never in new user duties — the ledger stays append-only
-and derivable-where-possible, with tags as the authoritative record (P-01's
-state requirements; RECOMMENDATION: model-c question d). Where decision records
+and derivable-where-possible, with tags as the authoritative record (ADR-0009
+decision 4's tag door; D34 — RECOMMENDATION: model-c question d). Where decision records
 and ledgers persist is fixed by the git binding (fork 16's contract half,
 ADR-0009): git-native, forward-only, byte-exact on reload — outside
 `core/domain/` in any case; the reference mapping pins with the

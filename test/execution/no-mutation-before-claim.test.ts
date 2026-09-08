@@ -24,8 +24,9 @@ const open = (): ReleaseAttempt =>
   );
 
 const SCOPE = { kind: "stable-version", lineId: "line-main", version: "1.2.0" } as const;
-// A lease scope: a stable-version claim is a record (P-01), so releasing
-// its token is a no-op — the released-claim scenarios release this one.
+// A lease scope: a stable-version claim is a record (ADR-0009 decision 4),
+// so releasing its token is a no-op — the released-claim scenarios release
+// this one.
 const LEASE_SCOPE = {
   kind: "prerelease-sequence",
   lineId: "line-main",
