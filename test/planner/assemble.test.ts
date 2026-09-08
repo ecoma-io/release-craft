@@ -1136,6 +1136,52 @@ describe("P-03 through the door — the promote intent over the in-flight rc", (
     // §2.14: the door is pure — identical inputs, identical whole outcome.
     expect(plan(input())).toEqual(outcome);
   });
+
+  it("pins the promote × prerelease contradiction — a stream extension riding the promotion decision (#90)", () => {
+    // issue #90: the combined intents produce a promotion-SHAPED decision
+    // (release, bump null, "promotion of the in-flight prerelease …") whose
+    // plan mints a stream extension (1.2.0-rc.3, stable null, no channel
+    // transitions). The decision's shape and its plan disagree. This pin
+    // documents the contradiction as the decide layer currently produces it;
+    // the fix commit flips it to the promotion-carrying plan (D38).
+    const combined = buildInput({
+      digest: DIGEST_P03,
+      lines: [line("1.x", "main")],
+      commits: [commit("p03-c1", "feat: the 1.2 line", { containingRefs: ["main"] })],
+      refs: [ref("main", "p03-c1")],
+      tags: [tag("1.2.0-rc.2", "p03-c1")],
+      components: [component("release-craft", "1.2.0")],
+      intents: [
+        { kind: "promote", lineId: "1.x" },
+        { kind: "prerelease", stream: "rc", lineId: "1.x" },
+      ],
+    });
+
+    const outcome = plan(combined);
+    // The decision is promotion-shaped.
+    expect(decisionFor(outcome, "1.x")).toMatchObject({ kind: "release", bump: null });
+    // …while the plan extends the rc stream: no stable mint, an rc.3 entry,
+    // and no channel transitions on the plan line.
+    expect(planLineOf(outcome)).toEqual({
+      lineId: "1.x",
+      stable: null,
+      streams: [
+        {
+          identifier: "rc",
+          version: Version.parse("1.2.0-rc.3"),
+          tag: "1.2.0-rc.3",
+          seed: "0",
+          pointerBase: "1.2.0-rc.2",
+          movesPointer: true,
+        },
+      ],
+      changes: [],
+      propagation: { edges: [], order: ["release-craft"], notMoved: [] },
+      preconditions: [{ kind: "tag-absent", tag: "1.2.0-rc.3" }],
+      artifacts: ["1.2.0-rc.3"],
+    });
+    expect("channels" in planLineOf(outcome)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
