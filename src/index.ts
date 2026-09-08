@@ -52,5 +52,12 @@ export * from "./planner/index.js";
 // drift), and its isolation is enforced by test/execution/isolation.test.ts.
 export * from "./execution/index.js";
 
+// The Phase 11 application boundary's public contract (the application
+// boundary contract, docs/design/phase11-application-boundary-contract.md).
+// Within this package's own tree, so the relative specifier is the honest
+// spelling; the surface is the app barrel's, wholesale (one declaration, no
+// drift), and its isolation is enforced by test/app/surface.test.ts.
+export * from "./app/index.js";
+
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;
