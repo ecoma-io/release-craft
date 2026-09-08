@@ -254,7 +254,9 @@ export function assertChannelsUnchanged(channels: readonly Channel[]): void {
     }
     if (!channel.pointsAt(target.line, Version.parse(target.version))) {
       throw new Error(
-        `channel ${channel.id} moved off ${target.line}@${target.version} — the engine has no transition door (#76): channels never move`,
+        `channel ${channel.id} moved off ${target.line}@${target.version} — this checkpoint runs ` +
+          `over plans that carry no channel moves (#76's door moves a channel only as recorded ` +
+          `plan surface), so every standing channel must still read its §3.1 seed`,
       );
     }
   }

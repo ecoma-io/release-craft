@@ -514,6 +514,9 @@ describe("V4 — promotion, git-backed", () => {
         // The replay: re-driving the application over the reloaded store
         // classifies every move noop — the recorded pointers are never moved
         // twice (ADR-0012 decision 4).
+        const tailBefore = reloaded.ledger
+          .tail(promoteRun.attempt.attemptId)
+          .filter((record) => record.kind === "channel-transition").length;
         const replay = applyPlannedChannelTransitions({
           attempt: promoteRun.attempt,
           planLine: promoteRun.planLine,
@@ -522,6 +525,32 @@ describe("V4 — promotion, git-backed", () => {
           ledger: reloaded.ledger,
         });
         expect(replay.map((move) => move.outcome.kind)).toStrictEqual(["noop", "noop"]);
+        // The noop replays are recorded like every attempt (durable evidence,
+        // invariant 2.4): exactly two replay records join the reloaded ledger,
+        // each self-describing as no movement — from equals to, and the
+        // fingerprint keys the moved state the store observed deciding — so a
+        // served-window projection (ADR-0012 decision 4) reads them as
+        // non-events.
+        const replayed: ChannelTransitionRecord[] = [];
+        for (const record of reloaded.ledger.tail(promoteRun.attempt.attemptId)) {
+          if (record.kind === "channel-transition") {
+            replayed.push(record.record);
+          }
+        }
+        expect(replayed.length).toBe(tailBefore + 2);
+        for (const record of replayed.slice(tailBefore)) {
+          expect(record.stepKey).toBe("channel-transition");
+          expect(record.from).toStrictEqual({ line: "main", version: "5.0.0" });
+          expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+          expect(record.contentFingerprint).toBe(
+            channelStateFingerprint({
+              id: record.channelId,
+              target: { line: "main", version: "5.0.0" },
+            }),
+          );
+          expect(record.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
+          expect(record.claim).toBe(promoteRun.token);
+        }
       });
     },
   );

@@ -317,6 +317,15 @@ describe("V3/V4 — the ladder and the cut, replayed", () => {
     });
     const promoteRun = runLedgerRelease({ stores, world, lineId: "main", intents: [promote] });
     expect(promoteRun.mintedTag).toBe("5.0.0");
+    // The plan's channel content (ADR-0012 decision 2): the §3.1 declared
+    // moves in declaration order, then the promoted-from edge, then the rc
+    // stream close — the promote names its moves, it never improvises them.
+    expect(promoteRun.planLine.channels).toStrictEqual([
+      { kind: "channel-move", channelId: "stable", to: { line: "main", version: "5.0.0" } },
+      { kind: "channel-move", channelId: "next", to: { line: "main", version: "5.0.0" } },
+      { kind: "promoted-from", from: "5.0.0-rc.1", to: { line: "main", version: "5.0.0" } },
+      { kind: "stream-close", stream: "rc", target: "5.0.0" },
+    ]);
     expect(world.tags.slice(-4).map((t) => t.name)).toStrictEqual([
       "5.0.0-beta.1",
       "5.0.0-beta.2",
@@ -363,6 +372,7 @@ describe("V3/V4 — the ladder and the cut, replayed", () => {
     expect(transitions.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
     for (const record of transitions) {
       expect(record.attemptId).toBe(promoteRun.attempt.attemptId);
+      expect(record.stepKey).toBe("channel-transition");
       expect(record.from).toStrictEqual({ line: "main", version: "4.9.2" });
       expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
       expect(record.contentFingerprint).toBe(
@@ -371,6 +381,7 @@ describe("V3/V4 — the ladder and the cut, replayed", () => {
           target: { line: "main", version: "4.9.2" },
         }),
       );
+      expect(record.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
       expect(record.claim).toBe(promoteRun.token);
     }
 
@@ -378,6 +389,9 @@ describe("V3/V4 — the ladder and the cut, replayed", () => {
     // recorded plan and the moved store classifies every move noop — the
     // promotion never moves twice (ADR-0012 decision 4).
     const settled = stores.channels.list();
+    const tailBefore = stores.ledger
+      .tail(promoteRun.attempt.attemptId)
+      .filter((record) => record.kind === "channel-transition").length;
     const replay = applyPlannedChannelTransitions({
       attempt: promoteRun.attempt,
       planLine: promoteRun.planLine,
@@ -392,6 +406,31 @@ describe("V3/V4 — the ladder and the cut, replayed", () => {
       expect(move.from).toStrictEqual({ line: "main", version: "5.0.0" });
     }
     expect(stores.channels.list()).toStrictEqual(settled);
+    // The noop replays are recorded like every attempt (durable evidence,
+    // invariant 2.4): the tail grew by exactly the two replay records, each
+    // self-describing as no movement — from equals to, and the fingerprint
+    // keys the moved state the store observed deciding — so a served-window
+    // projection (ADR-0012 decision 4) reads them as non-events.
+    const replayed: ChannelTransitionRecord[] = [];
+    for (const record of stores.ledger.tail(promoteRun.attempt.attemptId)) {
+      if (record.kind === "channel-transition") {
+        replayed.push(record.record);
+      }
+    }
+    expect(replayed.length).toBe(tailBefore + 2);
+    for (const record of replayed.slice(tailBefore)) {
+      expect(record.stepKey).toBe("channel-transition");
+      expect(record.from).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.contentFingerprint).toBe(
+        channelStateFingerprint({
+          id: record.channelId,
+          target: { line: "main", version: "5.0.0" },
+        }),
+      );
+      expect(record.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
+      expect(record.claim).toBe(promoteRun.token);
+    }
   });
 
   it("V3 · side cut · 4.8.x mints 4.8.7 beside the ladder", () => {

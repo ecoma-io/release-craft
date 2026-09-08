@@ -20,6 +20,8 @@ import {
   start,
   supersedePlan,
   transition,
+  type ChannelApplyOutcome,
+  type ChannelMove,
   type ChannelTransitionRecord,
   type Claim,
   type ClaimDenied,
@@ -434,6 +436,9 @@ describe("V4 — promotion", () => {
       intents: [{ kind: "promote", lineId: "main" }],
     });
     const settled = promote.stores.channels.list();
+    const tailBefore = promote.stores.ledger
+      .tail(promote.attempt.attemptId)
+      .filter((record) => record.kind === "channel-transition").length;
     // The application re-driven over the SAME recorded plan and the moved
     // store: every move classifies noop (ADR-0012 decision 4) — the replay
     // is decided by the store's classification, not by hoping the plan never
@@ -455,6 +460,31 @@ describe("V4 — promotion", () => {
     // No duplicate move: the pointers stand exactly where the promote left
     // them.
     expect(promote.stores.channels.list()).toStrictEqual(settled);
+    // The noop replays are recorded like every attempt (durable evidence,
+    // invariant 2.4): the tail grew by exactly the two replay records, each
+    // self-describing as no movement — from equals to, and the fingerprint
+    // keys the moved state the store observed deciding — so a served-window
+    // projection (ADR-0012 decision 4) reads them as non-events.
+    const replayed: ChannelTransitionRecord[] = [];
+    for (const record of promote.stores.ledger.tail(promote.attempt.attemptId)) {
+      if (record.kind === "channel-transition") {
+        replayed.push(record.record);
+      }
+    }
+    expect(replayed.length).toBe(tailBefore + 2);
+    for (const record of replayed.slice(tailBefore)) {
+      expect(record.stepKey).toBe("channel-transition");
+      expect(record.from).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.contentFingerprint).toBe(
+        channelStateFingerprint({
+          id: record.channelId,
+          target: { line: "main", version: "5.0.0" },
+        }),
+      );
+      expect(record.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
+      expect(record.claim).toBe(promote.token);
+    }
   });
 
   it("V4 · ambiguity · an unprovable land fails the run loudly and moves nothing (invariant 2.6)", () => {
@@ -506,6 +536,80 @@ describe("V4 — promotion", () => {
       line: "main",
       version: "4.9.2",
     });
+  });
+
+  it("V4 · divergence · a divergent prior fails the application closed at the door (invariant 2.5)", () => {
+    // The application hands the store the observed prior as the CAS `from`,
+    // so a faithful store can only classify applied or noop — the conflict
+    // branch is the fail-closed posture for a writer that lands between the
+    // application's read and the store's own re-read. The hostile store
+    // presents exactly that window: its first applyTransition re-reads a
+    // stable pointer another promotion moved to `4.9.0` — matching neither
+    // the move's prior nor its target — and refuses without moving anything.
+    class DivergentStore extends MemoryChannelStore {
+      #diverged = true;
+      override applyTransition(move: ChannelMove): ChannelApplyOutcome {
+        if (this.#diverged) {
+          this.#diverged = false;
+          return {
+            kind: "conflict",
+            contentFingerprint: channelStateFingerprint({
+              id: move.channelId,
+              target: { line: "main", version: "4.9.0" },
+            }),
+            observed: { line: "main", version: "4.9.0" },
+          };
+        }
+        return super.applyTransition(move);
+      }
+    }
+    const world = liveWorld();
+    runLadder(world, 2);
+    runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "main" }],
+    });
+    const input = runInput(snapshot(world), "main", [{ kind: "promote", lineId: "main" }]);
+    const assembled = plannedOf(plan(input)).plan;
+    const stores = {
+      ...freshStores(),
+      channels: new DivergentStore({ channels: standingChannelStates() }),
+    };
+    const attempt = start(
+      openAttempt(stores.register, {
+        planId: assembled.planId,
+        planFingerprint: assembled.planId,
+      }),
+    );
+    const settled = stores.claims.acquire(scopeFor(assembled, "main"), attempt.attemptId);
+    if (settled.kind !== "claim") {
+      throw new Error(`fixture broken: the claim store denied ${attempt.attemptId}`);
+    }
+    const ctx: WalkContext = {
+      stores,
+      attempt,
+      planLine: planLineFor(assembled, "main"),
+      token: settled.token,
+    };
+    expect(() =>
+      walkStages(ctx, "plan", { world: copyWorld(world), lineId: "main", intents: [] }, []),
+    ).toThrow(/refused the planned move of "stable"/);
+    // Fail closed: the divergent pointer stands untouched and the second
+    // move never ran — no channel-transition record exists for the attempt.
+    expect(stores.channels.read("stable").target).toStrictEqual({
+      line: "main",
+      version: "4.9.2",
+    });
+    expect(stores.channels.read("next").target).toStrictEqual({
+      line: "main",
+      version: "4.9.2",
+    });
+    expect(
+      stores.ledger
+        .tail(attempt.attemptId)
+        .filter((record) => record.kind === "channel-transition"),
+    ).toStrictEqual([]);
   });
 });
 
