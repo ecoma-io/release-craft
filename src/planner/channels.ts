@@ -19,6 +19,7 @@
 
 import type { Version } from "@ecoma-io/release-craft/domain";
 
+import { InvalidPlanningInputError } from "./input.js";
 import type { ChannelObservation, PlannedChannelTransition } from "./types.js";
 
 /** PR-01's promote vocabulary, verbatim: "channels `next`/`stable` move."
@@ -54,13 +55,18 @@ export const plannedChannelTransitions = (
   // — state.ts's own destructuring rule over the kernel prerelease. The
   // promote decision refuses a pointer with no prerelease, so the
   // identifier exists; reaching past that posture is a caller contract
-  // violation, surfaced — never guessed.
+  // violation, surfaced the way the planner surfaces its own — an
+  // `InvalidPlanningInputError` naming the violated field — never guessed.
   const [identifier] = pointer.prerelease;
   if (identifier === undefined) {
-    throw new Error(
-      `caller contract violation: the promote of line ${JSON.stringify(lineId)} names no prerelease identifier — ` +
-        `the pointer ${pointer.toString()} carries no prerelease, which the promote decision refuses`,
-    );
+    throw new InvalidPlanningInputError([
+      {
+        field: "channels",
+        problem:
+          `caller contract violation: the promote of line ${JSON.stringify(lineId)} names no prerelease identifier — ` +
+          `the pointer ${pointer.toString()} carries no prerelease, which the promote decision refuses`,
+      },
+    ]);
   }
   return [
     ...moves,

@@ -54,10 +54,10 @@ E-05):
   an operator-forced record, never a routine release, S-01; `Release-As`
   footer semantics, compatibility boundary row 2);
 - the declared channel registry when present (ADR-0012 decision 2, D36):
-  channel observations — each channel's stable id and the line + version it
-  currently points at — read by the planner when it names a promote's
-  planned channel moves; absence is the pre-ADR-0012 posture and refuses
-  nothing.
+  channel observations — each channel's non-empty unique id and the line +
+  version it currently points at — read by the planner when it names a
+  promote's planned channel moves; absence is the pre-ADR-0012 posture and
+  refuses nothing.
 
 Repeated execution against an identical `PlanningInput` is deterministic and
 produces an identical plan fingerprint (invariant 2; proven by running the
@@ -225,8 +225,9 @@ data — so two implementations cannot ship different fingerprints for the
 same plan.
 
 **Amendment (ADR-0012 decision 2, D36).** The per-line tuple gains the
-planned channel transitions when present — a promote names its moves,
-promoted-from edge, and stream close as plan content — and the input's
+planned channel transitions when present — a promote over a minted
+stable target names its moves, promoted-from edge, and stream close as
+plan content — and the input's
 policy-relevant projection gains the declared channel registry, so worlds
 differing in declared channels carry different input fingerprints (and
 therefore different plan identities) even where the planned content

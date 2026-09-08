@@ -172,9 +172,14 @@ function dedupeIntents(intents: readonly OperatorIntent[]): readonly OperatorInt
  * rebuilt state, so the pointer is the highest-precedence admissible tag —
  * the projection's last entry in its ascending order. `undefined` when the
  * line's history is empty (line birth). Pure; the manifest is never
- * consulted (invariant 6, S-03).
+ * consulted (invariant 6, S-03). Exported for the one consumer that must
+ * name the SAME pointer a decision named — the planned promoted-from edge
+ * (ADR-0012 decision 2): `rebuildLineState`'s pointer keeps the first
+ * among precedence ties, `pointerFor` the last, and on a build-metadata
+ * tie the two strings differ. The plan may not carry two identities for
+ * the prerelease it promotes.
  */
-function pointerFor(lineId: string, input: PlanningInput): Version | undefined {
+export function pointerFor(lineId: string, input: PlanningInput): Version | undefined {
   const projected = loadTagHistory(input.history.tags, input.lines, input.policy);
   const history = projected.lines.find((entry) => entry.lineId === lineId);
   const latest = history?.tags[history.tags.length - 1];

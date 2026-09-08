@@ -61,7 +61,7 @@ import { Version } from "@ecoma-io/release-craft/domain";
 
 import { attribute } from "./attribute.js";
 import { plannedChannelTransitions } from "./channels.js";
-import { decideLine, resolveBump } from "./decide.js";
+import { decideLine, pointerFor, resolveBump } from "./decide.js";
 import { extract } from "./extract.js";
 import { deriveRanges, loadTagHistory } from "./history.js";
 import { inputsFingerprint, planFingerprint } from "./identity.js";
@@ -316,16 +316,23 @@ export const plan: Plan = (raw) => {
     // transitions in the plan — the declared channels' moves, the
     // promoted-from edge, the promoted stream's close. Pure plan content
     // (invariant 2.2); the execution side records it at the stage of the
-    // same name. Every other run plans no transitions.
+    // same name. Every other run plans no transitions. The edge's `from`
+    // is `pointerFor`'s pointer — the SAME pointer the promote decision
+    // named: on a build-metadata tie (`1.2.0-rc.2+a` / `+b`) the rebuilt
+    // state keeps the tie's first entry while the decision names the
+    // last, and one plan may not carry two identities for the prerelease
+    // it promotes. The promoted stable target is unaffected (bumpPatch
+    // drops the prerelease either way).
+    const promotePointer =
+      decision.kind === "release" && decision.bump === null
+        ? pointerFor(line.lineId, input)
+        : undefined;
     const channels: readonly PlannedChannelTransition[] | undefined =
-      decision.kind === "release" &&
-      decision.bump === null &&
-      state.pointer !== null &&
-      targets.stable !== null
+      promotePointer !== undefined && targets.stable !== null
         ? plannedChannelTransitions(
             input.channels ?? [],
             line.lineId,
-            state.pointer,
+            promotePointer,
             targets.stable.version,
           )
         : undefined;

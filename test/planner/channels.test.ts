@@ -304,6 +304,55 @@ describe("plan — the promote over an in-flight rc with a declared channel regi
     const outcome = plan(input(registry));
     expect(plan(input(registry))).toEqual(outcome);
   });
+
+  it("names the decision's own pointer on the promoted-from edge — the last among precedence ties", () => {
+    // Two admissible tags tie in precedence and differ only in build
+    // metadata (§2.13's tie rule): the history sort is total, but the
+    // rebuilt state keeps the tie's FIRST entry while the promote decision
+    // names the LAST (`pointerFor`). The edge must carry the decision's
+    // pointer — one plan, one identity for the prerelease it promotes.
+    const tied = buildInput({
+      lines: [line("1.x", "main")],
+      commits: [commit("p03-c1", "feat: the 1.2 line", { containingRefs: ["main"] })],
+      refs: [ref("main", "p03-c1")],
+      tags: [tag("1.2.0-rc.2+a", "p03-c1"), tag("1.2.0-rc.2+b", "p03-c1")],
+      components: [component("release-craft", "1.2.0")],
+      intents: [{ kind: "promote", lineId: "1.x" }],
+      channels: registry,
+    });
+
+    const outcome = plan(tied);
+    const decision = decisionFor(outcome, "1.x");
+    expect(decision).toMatchObject({ kind: "release", bump: null });
+    expect(planLineOf(outcome).channels).toContainEqual({
+      kind: "promoted-from",
+      from: "1.2.0-rc.2+b",
+      to: { line: "1.x", version: "1.2.0" },
+    });
+  });
+
+  it("plans no transitions when a sibling prerelease intent suppresses the stable co-mint", () => {
+    // The promote decision stands (release, bump null), but D17(3)'s
+    // suppression nulls the stable target — the run mints on the stream,
+    // moves nothing, closes nothing. The field stays absent: there is no
+    // minted stable target to name.
+    const suppressed = buildInput({
+      lines: [line("1.x", "main")],
+      commits: [commit("p03-c1", "feat: the 1.2 line", { containingRefs: ["main"] })],
+      refs: [ref("main", "p03-c1")],
+      tags: [tag("1.2.0-rc.2", "p03-c1")],
+      components: [component("release-craft", "1.2.0")],
+      intents: [
+        { kind: "promote", lineId: "1.x" },
+        { kind: "prerelease", stream: "rc", lineId: "1.x" },
+      ],
+      channels: registry,
+    });
+
+    const outcome = plan(suppressed);
+    expect(decisionFor(outcome, "1.x")).toMatchObject({ kind: "release", bump: null });
+    expect("channels" in planLineOf(outcome)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
