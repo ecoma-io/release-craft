@@ -288,6 +288,40 @@ describe("§3.2 — the fault band: an escaped throw is 70 and never renders as 
       });
     },
   );
+
+  it("an absent feed ref classifies at planning, not at the target check: exit 70, never the pre-walk refused", () => {
+    // §2.5 as amended: the planner's range derivation refuses an
+    // unobserved feedRef (InvalidPlanningInputError) BEFORE the engine's
+    // pre-walk target check can fire, so the process renders the fault —
+    // the pre-walk `refused` remains the hand-built-request path, not a
+    // rendering this surface performs.
+    const ghostDoc = docBytes({
+      ...memoryDoc("main", [betaIntent]),
+      lines: memoryDoc("main", [betaIntent]).lines.map((line) =>
+        line.id === "main" ? { ...line, feedRef: "no-such-ref" } : line,
+      ),
+    });
+    const child = runCli(
+      [
+        "run",
+        "--assembly",
+        "memory",
+        "--world",
+        "-",
+        "--actor",
+        "automation",
+        "--line",
+        "main",
+        "--json",
+      ],
+      { input: ghostDoc },
+    );
+    expect(child.status).toBe(70);
+    expect(child.stdout).toBe("");
+    expect(child.stderr).toContain("InvalidPlanningInputError");
+    expect(child.stderr).toContain("no observed ref named");
+    expect(child.stderr).not.toMatch(/"kind"\s*:\s*"refused"/);
+  });
 });
 
 describe("§3.2 — the usage band: 64 never renders as an outcome", () => {

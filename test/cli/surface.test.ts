@@ -65,6 +65,25 @@ const expectTag = (result: CliResult, tag: string): void => {
   expect(outcome.tag).toBe(tag);
 };
 
+/** The git run's argv for the main line, over one repository, under one
+ * declared namespace root. */
+const gitRunArgs = (repo: string, namespace = ""): string[] => [
+  "run",
+  "--assembly",
+  "git",
+  "--repo",
+  repo,
+  "--tag-namespace",
+  namespace,
+  "--world",
+  "-",
+  "--actor",
+  "automation",
+  "--line",
+  "main",
+  "--json",
+];
+
 describe("§6 obligation 1 — two assemblies over one world", () => {
   it(
     "the same world-document bytes publish the same tag through memory and git",
@@ -114,6 +133,83 @@ describe("§6 obligation 1 — two assemblies over one world", () => {
         expectTag(gitRun, "5.0.0-beta.1");
         // The git assembly minted the ref into the repository.
         expect(git(["tag", "--list"]).trim()).toBe("5.0.0-beta.1");
+      });
+    },
+  );
+});
+
+describe("§2.3 — the declared naming renders the world's own tag format", () => {
+  const prefixed = { main: "v{major}.{minor}.{patch}{prerelease}" };
+
+  it(
+    "a world declaring a prefixed format mints the PREFIXED tag — the naming and the plan render one tag from one document",
+    { timeout: 45_000 },
+    () => {
+      let childText: string | null = null;
+      let childRepo: string | null = null;
+      withSeededRepo("naming-prefixed-child", (repo, git, heads) => {
+        const doc = docBytes(gitDoc("main", [betaIntent], heads, [], prefixed));
+        const child = runCli(gitRunArgs(repo), { input: doc });
+        // The plan's tag renders through the declared format; the naming's
+        // projection of the held claim's scope must equal it or the mint
+        // refuses `unclaimed` with the claim standing (the strand this pin
+        // exists to keep impossible).
+        expectTag(child, "v5.0.0-beta.1");
+        expect(git(["tag", "--list"]).trim()).toBe("v5.0.0-beta.1");
+        childText = child.stdout;
+        childRepo = repo;
+      });
+      // Pass-through holds with declared formats too: a direct engine over
+      // an identically seeded repository builds its naming from the same
+      // document's policy and answers identically.
+      withSeededRepo("naming-prefixed-direct", (repo, _git, heads) => {
+        expect(childText).not.toBeNull();
+        const doc = docBytes(gitDoc("main", [betaIntent], heads, [], prefixed));
+        const direct = directRun(gitSelection(repo), doc, "main", [betaIntent]);
+        expect(asOutcome(direct).kind).toBe("published");
+        expect(
+          projectRepo(JSON.parse(childText as string) as unknown, childRepo as string),
+        ).toStrictEqual(projectRepo(direct, repo));
+      });
+    },
+  );
+
+  it(
+    "a root claiming only the bare spelling refuses the prefixed scope at the namespace door — the filter reads the RENDERED tag",
+    { timeout: 45_000 },
+    () => {
+      withSeededRepo("naming-prefixed-refused", (repo, git, heads) => {
+        const doc = docBytes(gitDoc("main", [betaIntent], heads, [], prefixed));
+        // Root "5.0.0" would claim the BARE projection ("5.0.0-beta.1");
+        // the rendered tag is "v5.0.0-beta.1", which it does not claim —
+        // the namespace door refuses the acquisition (ClaimDenied
+        // { refusal: "namespace" }, holder absent) and nothing walks.
+        const child = runCli(
+          [
+            "run",
+            "--assembly",
+            "git",
+            "--repo",
+            repo,
+            "--tag-namespace",
+            "5.0.0",
+            "--world",
+            "-",
+            "--actor",
+            "automation",
+            "--line",
+            "main",
+            "--json",
+          ],
+          { input: doc },
+        );
+        expect(child.status).toBe(10);
+        const outcome = asOutcome(cliJson(child));
+        expect(outcome.kind).toBe("refused");
+        expect(outcome.detail).toContain("the declared naming derives no tag for it");
+        expect(outcome.drives).toStrictEqual([]);
+        // Nothing stood up: no tag minted, the refusal is the whole stop.
+        expect(git(["tag", "--list"]).trim()).toBe("");
       });
     },
   );

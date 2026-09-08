@@ -439,6 +439,10 @@ describe("§2.2 — the negative inventory, through the built bin (exit 64)", ()
     expect(none.stderr).toContain("attempt | channels");
     const unknown = expectUsageFault(["show", "--assembly", "memory", "everything"]);
     expect(unknown.stderr).toContain('unknown positional "everything"');
+    // A selector is a count, not a membership test: two selectors must
+    // refuse, not silently run the first and discard the second.
+    const two = expectUsageFault(["show", "--assembly", "memory", "attempt", "channels"]);
+    expect(two.stderr).toContain("takes exactly one positional");
     const attemptWithoutHandle = expectUsageFault(["show", "--assembly", "memory", "attempt"]);
     expect(attemptWithoutHandle.stderr).toContain("missing --plan");
     const attemptWithoutActor = expectUsageFault([

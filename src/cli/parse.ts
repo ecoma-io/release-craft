@@ -249,16 +249,24 @@ export const parseArgv = (argv: readonly string[]): Invocation => {
   }
   const grammar = GRAMMAR[command];
   const tokens = tokenize(command, grammar, rest);
-  for (const positional of tokens.positionals) {
-    if (grammar.positionals.length === 0) {
+  if (grammar.positionals.length === 0) {
+    for (const positional of tokens.positionals) {
       throw new UsageFault(
         `unexpected positional "${positional}" — command ${command} takes only flags` +
           " (§2.2's grammar names no positional selector here)",
       );
     }
-    if (!grammar.positionals.includes(positional)) {
+  } else if (tokens.positionals.length !== 1) {
+    // The selector is a count, not a membership test: `show attempt
+    // channels` would silently run the first and discard the second.
+    throw new UsageFault(
+      `command ${command} takes exactly one positional: ${grammar.positionals.join(" | ")}`,
+    );
+  } else {
+    const selector = tokens.positionals[0];
+    if (selector !== undefined && !grammar.positionals.includes(selector)) {
       throw new UsageFault(
-        `unknown positional "${positional}" — command ${command} takes exactly one of: ` +
+        `unknown positional "${selector}" — command ${command} takes exactly one of: ` +
           grammar.positionals.join(" | "),
       );
     }

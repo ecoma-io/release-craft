@@ -444,31 +444,49 @@ describe("targets — derived from the document's refs, the last occurrence winn
   });
 });
 
-describe("naming — the declared namespace roots are a filter, not a prefix", () => {
-  it("the every-tag root claims every scope's own bare tag; release-line has none", () => {
+describe("naming — the roots are a filter over the RENDERED tag, which the planner's own renderer produces", () => {
+  const prerelease = {
+    kind: "prerelease-sequence",
+    lineId: "main",
+    target: "5.0.0",
+    streamId: "beta",
+    sequence: 1,
+  } as const;
+  const stable = { kind: "stable-version", lineId: "main", version: "4.8.7" } as const;
+  const prefixed = { main: "v{major}.{minor}.{patch}{prerelease}" };
+
+  it("with no declared format the projection is the bare tag — the planner's undeclared default", () => {
     const naming = declaredTagNaming([""]);
     expect(naming.namespaces).toStrictEqual([""]);
-    expect(
-      naming.tagFor({
-        kind: "prerelease-sequence",
-        lineId: "main",
-        target: "5.0.0",
-        streamId: "beta",
-        sequence: 1,
-      }),
-    ).toBe("5.0.0-beta.1");
-    expect(naming.tagFor({ kind: "stable-version", lineId: "4.8.x", version: "4.8.7" })).toBe(
-      "4.8.7",
-    );
+    expect(naming.tagFor(prerelease)).toBe("5.0.0-beta.1");
+    expect(naming.tagFor(stable)).toBe("4.8.7");
     expect(naming.tagFor({ kind: "release-line", lineId: "main" })).toBeNull();
   });
 
+  it("a declared format renders through the planner's formatTag — the projection equals the plan's own spelling", () => {
+    const everyTag = declaredTagNaming([""], prefixed);
+    const vRoot = declaredTagNaming(["v"], prefixed);
+    for (const naming of [everyTag, vRoot]) {
+      // The prefix comes from the declared format, never from the root:
+      // the filter claims or denies the rendered tag, it never renames.
+      expect(naming.tagFor(prerelease)).toBe("v5.0.0-beta.1");
+      expect(naming.tagFor(stable)).toBe("v4.8.7");
+      expect(naming.tagFor({ kind: "release-line", lineId: "main" })).toBeNull();
+    }
+  });
+
+  it("a root that claims only the bare spelling denies the prefixed scope, and never renames to fit", () => {
+    const naming = declaredTagNaming(["5.0.0"], prefixed);
+    // The BARE projection would be claimed by "5.0.0"; the RENDERED one
+    // ("v5.0.0-beta.1") is not — the denial is the declared answer.
+    expect(naming.tagFor(prerelease)).toBeNull();
+    expect(naming.tagFor(stable)).toBeNull();
+  });
+
   it("a prefix root claims only its own family and never renames a projection", () => {
-    const naming = declaredTagNaming(["v", "rc"]);
-    expect(naming.namespaces).toStrictEqual(["v", "rc"]);
-    expect(naming.tagFor({ kind: "stable-version", lineId: "4.8.x", version: "v4.8.7" })).toBe(
-      "v4.8.7",
-    );
+    const naming = declaredTagNaming(["4.8"]);
+    expect(naming.namespaces).toStrictEqual(["4.8"]);
+    expect(naming.tagFor(stable)).toBe("4.8.7");
     expect(
       naming.tagFor({
         kind: "prerelease-sequence",

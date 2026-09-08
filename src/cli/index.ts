@@ -50,8 +50,12 @@ const execute = (invocation: Invocation): DoorOutcome => {
     return engine.observe(invocation.query);
   }
   const document = readWorldDocument(invocation.world);
+  // The world-document doors build the engine from the document's own
+  // declared tag formats: the git naming's projection must render the
+  // plan's own tag (§2.3), and the plan renders through the same
+  // document's `policy.tagFormats`.
+  const engine = selectEngine(invocation.selection, document.policy.tagFormats);
   if (invocation.command === "resume") {
-    const engine = selectEngine(invocation.selection);
     return engine.resume(
       { planId: invocation.planId, attemptId: invocation.attemptId, actor: invocation.actor },
       {
@@ -64,13 +68,11 @@ const execute = (invocation: Invocation): DoorOutcome => {
     );
   }
   if (invocation.command === "plan") {
-    const engine = selectEngine(invocation.selection);
     return engine.plan({
       ...document,
       intents: overlayIntents(document.intents ?? [], invocation.intents),
     });
   }
-  const engine = selectEngine(invocation.selection);
   return engine.run({
     input: document,
     lineIds: [invocation.line],
