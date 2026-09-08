@@ -81,6 +81,11 @@ Three workflows, three different questions — none is a god workflow:
   finalized PR description — the gate born from #6, which merged with a
   "(To be finalized)" body and an untouched checklist.
 
+A fourth workflow, `triage.yml`, sits outside this layering: the
+action-agents dogfood run (#101) — a consumer of a released sibling action,
+not a governance gate — and it appears in no gate's `needs:`. Its YAML is
+held to the same `check:workflows` posture as the three above.
+
 The three layers rest on GitHub rulesets on `main`: pull requests only, the
 required checks above, linear history, up-to-date branches, resolved
 conversations. The security posture of every workflow (SHA-pinned actions,
