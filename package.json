@@ -22,6 +22,9 @@
     "email": "john.itvn@gmail.com"
   },
   "type": "module",
+  "bin": {
+    "release-craft": "./dist/src/cli/index.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",

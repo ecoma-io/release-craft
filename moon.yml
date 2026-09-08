@@ -77,6 +77,12 @@ tasks:
 
   test:
     command: vitest run --coverage
+    # The CLI's subprocess suite (test/cli/) executes the built bin —
+    # dist/src/cli/index.js — because the process surface, not the module,
+    # is the subject (phase 12 contract §6). The build task is a dependency,
+    # so the suite never executes a stale dist.
+    dependsOn:
+      - build
     inputs:
       - "src/**/*"
       - "test/**/*"
