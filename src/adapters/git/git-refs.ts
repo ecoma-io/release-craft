@@ -23,7 +23,11 @@ const ZERO_OID = "0".repeat(40);
  * cannot read (a broken ref file, empty or holding garbage, exits 1 with
  * a warning on stderr), an unexpected exit status, a spawn failure —
  * propagates, so each consuming scope's own fault contract applies to it:
- * a pointer git cannot read is never read as an absent one.
+ * a broken ref is never read as an absent one. The discrimination reaches
+ * exactly as far as git can spell: a ref file the process cannot read (a
+ * permission denial) and a directory sitting at the ref's path produce the
+ * same exit 1 with empty stderr as absence and still read as absent — no
+ * rev-parse spelling separates them, and D39 records the residual.
  */
 export function readRef(git: GitRun, ref: string): string | null {
   try {

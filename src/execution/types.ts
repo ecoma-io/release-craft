@@ -734,8 +734,12 @@ export interface ChannelMove {
 }
 
 /** `applyTransition`'s outcomes (ADR-0012 decisions 4, 6, 7) — returned
- * values, never exceptions; everything a race or the world can cause
- * classifies here. Every decided outcome carries the `contentFingerprint`
+ * values, never exceptions: everything a race or the world can cause
+ * classifies here. A store that cannot read its own backing state at all
+ * throws instead — it never observed, so it never attempted a move, and no
+ * outcome class would be honest over a phantom observation (D37(4); the
+ * ref read's fault discrimination is D39). Every decided outcome carries
+ * the `contentFingerprint`
  * over the state the store actually observed when deciding — the ledger
  * record's idempotency key (decision 4) is tied to what the store saw,
  * never to what the plan assumed. */

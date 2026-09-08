@@ -97,7 +97,13 @@ const LEAKED_GIT_CONTEXT: ReadonlySet<string> = new Set([
  */
 export function hermeticGitEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !LEAKED_GIT_CONTEXT.has(key)),
+    // GIT_TRACE* is ambient too: any export makes git write diagnostics to
+    // stderr, which would ride the exit-1 shape the ref read's absence
+    // discrimination keys on (#95) — a healthy absent ref would read as
+    // corruption — and leak operator debugging output into every fault line.
+    Object.entries(process.env).filter(
+      ([key]) => !LEAKED_GIT_CONTEXT.has(key) && !key.startsWith("GIT_TRACE"),
+    ),
   );
   return {
     ...env,

@@ -101,6 +101,20 @@ describe("the git binding's shared surface", () => {
     });
   });
 
+  it("stays silent under a leaked GIT_TRACE export — the absence shape survives the ambient env (#95)", () => {
+    process.env.GIT_TRACE = "1";
+    try {
+      withRepo((git) => {
+        // A trace export puts ~100 bytes of diagnostics on the stderr of
+        // every invocation; the hermetic floor strips it, so the absent ref
+        // still reads as the one shape absence is — exit 1, empty stderr.
+        expect(readRef(git, "refs/heads/never-written")).toBeNull();
+      });
+    } finally {
+      delete process.env.GIT_TRACE;
+    }
+  });
+
   it("appends root and chained commits, and returns the loser outcome on a stale base", () => {
     withRepo((git) => {
       const ref = "refs/heads/scope";
