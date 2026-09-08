@@ -215,17 +215,16 @@ export interface RunOutcomeContext {
   readonly drives: readonly StepDrive[];
 }
 
-/** The run outcome (§2.8's table, verbatim row names, plus two kinds the
- * table does not name — see below). Every outcome is a returned value; no
- * exception crosses the boundary for anything the engine classifies.
+/** The run outcome (§2.8's table, verbatim row names — `resolved` and
+ * `abandoned` included, the recorded verdicts of `.resolve` and `.abort`).
+ * Every outcome is a returned value; no exception crosses the boundary for
+ * anything the engine classifies.
  *
- * `resolved` and `abandoned` are the recorded verdicts of `.resolve` and
- * `.abort` — doors the contract types `: RunOutcome` but whose recorded
- * results the ten-row table has no row for; reusing `failed` or `blocked`
- * would translate a recorded re-arm or a recorded human abort into a row
- * that means something else, which §2.8's own law refuses (outcomes ride
- * verbatim, never translated). A caller discriminates on `kind` as on any
- * other row. */
+ * Reusing `failed` or `blocked` for those two verdicts would translate a
+ * recorded re-arm or a recorded human abort into a row that means
+ * something else, which §2.8's own law refuses (outcomes ride verbatim,
+ * never translated). A caller discriminates on `kind` as on any other
+ * row. */
 export type RunOutcome =
   | ({ readonly kind: "published"; readonly tag: string | null } & RunOutcomeContext)
   /* `tag` is the release's tag identity — the plan's own. With a wired tag
@@ -301,7 +300,10 @@ export type Observation =
         readonly stepKey: StepKey;
         readonly state: LedgerStepState;
       }[];
-      /** The claim the engine acquired for the attempt, when one stands. */
+      /** The claim the engine's entry recorded at its last acquisition —
+       * what this engine believes it holds, not the store's ownership
+       * truth; the store's verdict arrives only through a door that
+       * verifies (a run, a resume, a step's claim view). */
       readonly claim: Claim | null;
       /** The tags the engine minted for the attempt, in mint order. */
       readonly tags: readonly string[];

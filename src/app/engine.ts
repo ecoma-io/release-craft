@@ -242,7 +242,14 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
             holds: true,
           }))
         : undefined;
-    if (ctx.ports.ledger.step(ctx.handle.attemptId, stage) !== "started") {
+    const recorded = ctx.ports.ledger.step(ctx.handle.attemptId, stage);
+    // The write-ahead start is appended for an execution that has none: a
+    // never-started stage, or a failed one whose re-execution needs its own
+    // durable start. A `started` stage already carries its start; a
+    // `completed` stage replays (noop on proven content) and must never read
+    // as re-opened — appending over it wrote misleading durable evidence and
+    // re-entered the stage on every later resume.
+    if (recorded === "none" || recorded === "failed") {
       ctx.ports.ledger.appendStart(
         ctx.attempt,
         stage,

@@ -13,6 +13,12 @@ import {
   assembleMemoryStores,
   InvalidExecutionTransitionError,
   type AttemptHandle,
+  type Claim,
+  type ClaimDenied,
+  type ClaimScope,
+  type ClaimStore,
+  type ClaimToken,
+  type ClaimVerification,
   type Engine,
   type LedgerRecord,
   type RunDeclarations,
@@ -56,6 +62,31 @@ const recordedTos = (tail: readonly LedgerRecord[], stepKey: string): readonly s
   tail.flatMap((record) =>
     record.kind === "step" && record.record.stepKey === stepKey ? [record.record.to] : [],
   );
+
+/** A host's claim store whose line was reconciled behind the engine's back:
+ * once flipped, every acquire reports the demanded scope as a foreign
+ * holder's record. Everything else delegates — a wrapper sitting where a
+ * host's real store sits, so the outcome it produces crosses the surface. */
+class ReconciledClaimStore implements ClaimStore {
+  readonly #inner: ClaimStore;
+  /** When true, acquires report the scope taken by a foreign holder. */
+  reconciled = false;
+  constructor(inner: ClaimStore) {
+    this.#inner = inner;
+  }
+  acquire(scope: ClaimScope, attemptId: string): Claim | ClaimDenied {
+    if (this.reconciled) {
+      return { kind: "denied", holder: "foreign-attempt", scope };
+    }
+    return this.#inner.acquire(scope, attemptId);
+  }
+  verify(token: ClaimToken): ClaimVerification {
+    return this.#inner.verify(token);
+  }
+  release(token: ClaimToken): void {
+    this.#inner.release(token);
+  }
+}
 
 /** The attempt observation, or the test's own failure — never a partial
  * answer read as an attempt. */
@@ -155,6 +186,125 @@ describe("obligation 5 — the blocked loop closes over a recorded resolution", 
       "started",
       "completed",
     ]);
+  });
+});
+
+describe("obligation 5 — a completed stage is never re-opened by a later resume", () => {
+  it("an after-anchored hook's block leaves publish completed; the resume replays it noop and records no second start", () => {
+    const assembly = freshAssembly();
+    const world = liveWorld();
+    const announce = matrixHooks().publishHook;
+    const declaration = (evidence: string | undefined): RunDeclarations => ({
+      hooks: [announce],
+      hookEffects: new Map([
+        [
+          announce.id,
+          (input) => ({
+            attribution: { attemptId: input.attemptId, actor: "automation" },
+            ...(evidence === undefined ? {} : { evidence }),
+          }),
+        ],
+      ]),
+    });
+
+    // The hook anchors publish-AFTER: its failed validation suspends the
+    // attempt only once the stage's start and completion are durable.
+    const stopped = assembly.engine.run(runRequest(world, "main", [beta], declaration(undefined)));
+    expect(stopped.kind).toBe("blocked");
+    if (stopped.kind !== "blocked" || stopped.handle === null || stopped.planId === null) {
+      throw new Error("expected a blocked outcome");
+    }
+    expect(stopped.cause).toBe("validation:hook:announce:evidence-present");
+    const attemptId = stopped.handle.attemptId;
+    expect(recordedTos(assembly.stores.ledger.tail(attemptId), "publish")).toStrictEqual([
+      "started",
+      "completed",
+    ]);
+
+    const resolved = assembly.engine.resolve(stopped.handle, "hook:announce", {
+      kind: "revalidation",
+      planFingerprint: stopped.planId,
+    });
+    expect(resolved.kind).toBe("resolved");
+
+    // The resume re-enters at the hook's anchor stage and replays the
+    // completed stage on proven content — noop. Appending a start over the
+    // completion would miswrite the durable evidence, read `started` from
+    // then on, and re-run the stage's user effect on every later resume.
+    const outcome = assembly.engine.resume(
+      stopped.handle,
+      runRequest(world, "main", [beta], declaration("evidence:announce")),
+    );
+    expect(outcome.kind).toBe("published");
+    if (outcome.kind !== "published" || outcome.handle === null) {
+      throw new Error("expected a published outcome");
+    }
+    const tail = assembly.stores.ledger.tail(outcome.handle.attemptId);
+    expect(recordedTos(tail, "publish")).toStrictEqual(["started", "completed"]);
+    expect(assembly.stores.ledger.step(outcome.handle.attemptId, "publish")).toBe("completed");
+    // The re-entry's drive IS the replay: noop, never a re-run.
+    expect(outcome.drives).toContainEqual({
+      stepKey: "publish",
+      outcome: { kind: "noop", stepKey: "publish" },
+    });
+    expect(recordedTos(tail, "hook:announce")).toStrictEqual([
+      "started",
+      "failed",
+      "started",
+      "completed",
+    ]);
+  });
+});
+
+describe("obligation 5 — the resume re-acquires the claim before anything walks", () => {
+  it("a scope taken between the doors denies the resume naming the winner", () => {
+    const stores = freshStores();
+    const claims = new ReconciledClaimStore(stores.claims);
+    const engine = assembleMemoryStores(
+      { register: stores.register, ledger: stores.ledger, claims, channels: stores.channels },
+      { maxRetries: 2 },
+    );
+    const world = liveWorld();
+    const intents = [{ kind: "release" }] as const;
+    const stopped = engine.run(
+      runRequest(world, "4.8.x", intents, hookDeclaration("attest", undefined)),
+    );
+    expect(stopped.kind).toBe("blocked");
+    if (stopped.kind !== "blocked" || stopped.handle === null || stopped.planId === null) {
+      throw new Error("expected a blocked outcome");
+    }
+    const resolved = engine.resolve(stopped.handle, "hook:attest", {
+      kind: "revalidation",
+      planFingerprint: stopped.planId,
+    });
+    expect(resolved.kind).toBe("resolved");
+
+    // The line's scope was re-recorded under a foreign holder while the
+    // attempt sat blocked (a takeover at the store — a host's
+    // reconciliation, not a mid-walk claim loss). The memory store cannot
+    // spell that state through its own doors — a stable claim is a record
+    // (release no-ops, D33) and a prerelease denial carries the winner's
+    // sequence (E-08's retry base) — so the wrapper sits where the host's
+    // reconciled store sits, and its outcome crosses the public surface.
+    claims.reconciled = true;
+
+    // The resume re-acquires before anything walks (§2.5 step 3): the
+    // denial names the winner, nothing is driven.
+    const outcome = engine.resume(
+      stopped.handle,
+      runRequest(
+        world,
+        "4.8.x",
+        intents,
+        hookDeclaration("attest", { evidence: "evidence:attest" }),
+      ),
+    );
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind !== "denied") {
+      throw new Error("expected a denied outcome");
+    }
+    expect(outcome.holder).toBe("foreign-attempt");
+    expect(outcome.drives).toStrictEqual([]);
   });
 });
 

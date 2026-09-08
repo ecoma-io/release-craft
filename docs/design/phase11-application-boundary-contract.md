@@ -337,17 +337,19 @@ impossible state-machine edge, a terminal attempt through the throwing
 path, a malformed declaration — programming errors carrying the contract
 in the message (phase 4 §2.2, §2.7).
 
-| Outcome                      | Meaning                                                                               | Caller action                                                |
-| ---------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `published`                  | the walk completed, the tag minted, the terminal recorded                             | proceed                                                      |
-| `satisfied-externally`       | ledger-first done-ness, provenance recorded (E-03)                                    | proceed; the evidence reads back through `observe`           |
-| `refused(detail)`            | a planning refusal, a namespace denial, a store-less channel plan, a protocol refusal | read the detail; it names the owner and the refused door     |
-| `denied(holder)`             | a claim denial naming the winner (E-07); E-08's retry exhausted lands `conflict`      | another attempt owns the scope; the loser path is recorded   |
-| `blocked(cause)`             | a guard failed on world state (E-04, PR-03, a hook's or artifact's validation)        | resolve through `.resolve`, then `.resume`                   |
-| `failed(cause)`              | a recorded failure stopped the walk — a record, never a throw                         | inspect the tail; a later `.resume` re-judges                |
-| `conflict(detail)`           | same identity, different content or inconsistent evidence (E-02)                      | a human judges; nothing auto-re-plans, nothing auto-retries  |
-| `ambiguous(detail)`          | a store could not determine whether its effect landed (invariant 2.6)                 | never success — verify through a read, then `.resume`        |
-| `stale` / `escalate(detail)` | the resume verdicts surfaced verbatim (phase 5 §2.3)                                  | re-plan through the planner's door / a human judges the tail |
+| Outcome                      | Meaning                                                                               | Caller action                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `published`                  | the walk completed, the tag minted, the terminal recorded                             | proceed                                                               |
+| `satisfied-externally`       | ledger-first done-ness, provenance recorded (E-03)                                    | proceed; the evidence reads back through `observe`                    |
+| `refused(detail)`            | a planning refusal, a namespace denial, a store-less channel plan, a protocol refusal | read the detail; it names the owner and the refused door              |
+| `denied(holder)`             | a claim denial naming the winner (E-07); E-08's retry exhausted lands `conflict`      | another attempt owns the scope; the loser path is recorded            |
+| `blocked(cause)`             | a guard failed on world state (E-04, PR-03, a hook's or artifact's validation)        | resolve through `.resolve`, then `.resume`                            |
+| `failed(cause)`              | a recorded failure stopped the walk — a record, never a throw                         | inspect the tail; a later `.resume` re-judges                         |
+| `conflict(detail)`           | same identity, different content or inconsistent evidence (E-02)                      | a human judges; nothing auto-re-plans, nothing auto-retries           |
+| `ambiguous(detail)`          | a store could not determine whether its effect landed (invariant 2.6)                 | never success — verify through a read, then `.resume`                 |
+| `stale` / `escalate(detail)` | the resume verdicts surfaced verbatim (phase 5 §2.3)                                  | re-plan through the planner's door / a human judges the tail          |
+| `resolved`                   | the recorded re-arm: `.resolve` closed a blocked loop over the plan's own fingerprint | `.resume` continues the walk from the recorded tail                   |
+| `abandoned`                  | the recorded human abort: `.abort` closed the attempt                                 | the attempt never runs again; no later door revives it (phase 4 §2.8) |
 
 - No exception crosses the boundary for anything the engine classifies —
   the adapters' law carried up one layer (phase 9 §2.3: failures are
