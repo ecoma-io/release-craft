@@ -649,8 +649,10 @@ export type BlockedResolution =
  * equality proof); step records wrap the kernel's transition record
  * verbatim; absorption records adopt attributed external work
  * (`adopted-from:<sourceAttemptId>`); resolution records close the
- * blocked loop; channel-transition records carry ADR-0012's durable
- * move of one channel pointer. */
+ * blocked loop; abandonment records carry ADR-0013's durable human
+ * abort — the attribution E-09 demands, durable across restarts;
+ * channel-transition records carry ADR-0012's durable move of one
+ * channel pointer. */
 export type LedgerRecord =
   | {
       readonly kind: "plan";
@@ -675,6 +677,24 @@ export type LedgerRecord =
       readonly attemptId: string;
       readonly stepKey: StepKey;
       readonly resolution: BlockedResolution;
+      readonly attribution: Attribution;
+      readonly recordedAt?: string;
+    }
+  | {
+      /** The recorded human abort (ADR-0013; E-09): the boundary's
+       * `.abort` door appends exactly one, keyed to the attempt like a
+       * resolution is — the reason verbatim and the abort's attribution
+       * ({ attemptId, actor } — the kernel's `AbortOutcome.attribution`),
+       * so the abort outlives the process that performed it. The attempt
+       * state carries the same terminal fact for the living process; the
+       * record is the durable half a later process classifies from
+       * (invariant 2.4's evidence discipline). Only `.abort` writes it
+       * (the one-explicit-door law, phase 11 contract §2.9). */
+      readonly kind: "abandonment";
+      readonly attemptId: string;
+      /** The abort's reason, verbatim — the same value the attempt's
+       * `terminalReason` carries in the process that aborted. */
+      readonly reason: string;
       readonly attribution: Attribution;
       readonly recordedAt?: string;
     }
