@@ -1,8 +1,9 @@
 /**
  * The git binding opened on one repository (contract §2.6; ADR-0009
  * decision 8). One factory, one shared runner: every port the binding
- * exposes — the ledger, the attempt register, the claim store, the tag
- * door, the artifact producer — is the git-backed implementation of an
+ * exposes — the ledger, the attempt register, the claim store, the
+ * channel store, the tag door, the artifact producer — is the
+ * git-backed implementation of an
  * engine port over the same repository through the same hermetic runner,
  * and the read seam the remote projection reads (§2.7) enumerates the
  * same repository's recorded refs. No port here exists in the engine's

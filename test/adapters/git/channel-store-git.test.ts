@@ -18,6 +18,7 @@ import {
   type ChannelApplyOutcome,
   type ChannelMove,
   type ChannelState,
+  MemoryChannelStore,
   canonicalJson,
   channelStateFingerprint,
 } from "../../../src/index.js";
@@ -128,8 +129,10 @@ const withHostilePath = (dir: string, fn: () => void): void => {
 describe("the git-backed channel store (ADR-0012 decision 6)", () => {
   it("the state ref is the sha256 of the channel id under the channel namespace", () => {
     const digest = createHash("sha256").update("stable", "utf8").digest("hex");
+    // The digest itself is pinned literally — an encoding or hash-algorithm
+    // drift cannot pass silently.
+    expect(digest).toBe("f379ccb92b9116442dc65bdc35648a85d3786b34779db7f704a901fa07b00cb6");
     expect(channelRefFor("stable")).toBe(`${CHANNEL_REF_NAMESPACE}${digest}`);
-    expect(channelRefFor("stable")).toBe(channelRefFor("stable"));
   });
 
   it("an absent ref reads as the hidden channel", () => {
@@ -206,15 +209,15 @@ describe("the git-backed channel store (ADR-0012 decision 6)", () => {
       for (const id of ["stable", "next", "rc-preview"]) {
         store.applyTransition(move(id, null, pointed("1.2.0")));
       }
-      const ids = store.list().map((channel) => channel.id);
-      // Exactly the recorded ids — and the order is the store's own:
-      // refname order over the hashed refs, deterministic across reads.
-      expect([...ids].sort()).toEqual(["next", "rc-preview", "stable"]);
-      const refnameOrder = [...ids].sort((left, right) =>
-        channelRefFor(left) < channelRefFor(right) ? -1 : 1,
-      );
-      expect(ids).toEqual(refnameOrder);
-      expect(store.list().map((channel) => channel.id)).toEqual(ids);
+      // Exactly the recorded states, and the order is the store's own —
+      // refname order over the hashed refs (the digests of "rc-preview",
+      // "next", "stable" sort in that order), pinned literally so a
+      // hashing or ordering drift cannot pass silently.
+      expect(store.list()).toEqual([
+        { id: "rc-preview", target: pointed("1.2.0") },
+        { id: "next", target: pointed("1.2.0") },
+        { id: "stable", target: pointed("1.2.0") },
+      ]);
     });
   });
 
@@ -228,6 +231,69 @@ describe("the git-backed channel store (ADR-0012 decision 6)", () => {
       const store = new GitChannelStore(repo);
       expect(() => store.read("stable")).toThrow(/channel namespace/);
       expect(() => store.list()).toThrow(/channel namespace/);
+    });
+  });
+
+  it("a state keyed to another channel's ref refuses loudly — read and list alike", () => {
+    withTempRepo("channel-miskeyed", (repo, git) => {
+      const ref = channelRefFor("stable");
+      // A shape-valid envelope naming "next", hand-landed under stable's
+      // ref. The ref mapping is derived from the id, so no writer of the
+      // canonical form produces this — it is recorded corruption (a
+      // duplicate JSON key would parse to its last value and land in the
+      // same refusal): the read boundary refuses instead of computing a
+      // move over a state that names another channel.
+      const blob = git(["hash-object", "-w", "--stdin"], envelope("next", pointed("9.9.9")));
+      const tree = git(["mktree"], `100644 blob ${blob.trim()}\trecord\n`).trim();
+      const commit = git(["commit-tree", tree.trim(), "-m", "ecoma: append"]).trim();
+      git(["update-ref", ref, commit]);
+      const store = new GitChannelStore(repo);
+      expect(() => store.read("stable")).toThrow(/one channel per ref/);
+      expect(() => store.list()).toThrow(/one channel per ref/);
+    });
+  });
+
+  it("both reference implementations fingerprint a state identically — literal digests pinned", () => {
+    withTempRepo("channel-fingerprint-parity", (repo) => {
+      const standing: ChannelState = { id: "stable", target: pointed("1.2.0") };
+      // The digests are frozen contract — the ledger stores them as the
+      // move's idempotency key (ADR-0012 decision 4) — so their bytes are
+      // pinned: a canonicalizer or sentinel drift cannot pass silently.
+      expect(channelStateFingerprint(standing)).toBe(
+        "content_sha256:0ad432c6562a2d4bbe87326299e893429f00d321f385ff17d1d5d3159608efc4",
+      );
+      expect(channelStateFingerprint({ id: "stable", target: null })).toBe(
+        "content_sha256:ff7be9b449cb280211c3a893dd5b59894c90480c7c120e589110a0a240c9fcf4",
+      );
+      // And the two stores compute the same key for the same recorded
+      // state: a move replayed across store kinds stays idempotent.
+      const gitStore = new GitChannelStore(repo);
+      const memoryStore = new MemoryChannelStore();
+      const appliedViaGit = asOutcome(
+        gitStore.applyTransition(move("stable", null, pointed("1.2.0"))),
+        "applied",
+      );
+      const appliedViaMemory = asOutcome(
+        memoryStore.applyTransition(move("stable", null, pointed("1.2.0"))),
+        "applied",
+      );
+      // Both observed the hidden prior; the key names what was seen.
+      expect(appliedViaGit.contentFingerprint).toBe(
+        "content_sha256:ff7be9b449cb280211c3a893dd5b59894c90480c7c120e589110a0a240c9fcf4",
+      );
+      expect(appliedViaMemory.contentFingerprint).toBe(appliedViaGit.contentFingerprint);
+      // The replay outcome keys over the standing state — the pointed
+      // digest, identical across the stores.
+      expect(gitStore.applyTransition(move("stable", null, pointed("1.2.0")))).toEqual({
+        kind: "noop",
+        contentFingerprint:
+          "content_sha256:0ad432c6562a2d4bbe87326299e893429f00d321f385ff17d1d5d3159608efc4",
+      });
+      expect(memoryStore.applyTransition(move("stable", null, pointed("1.2.0")))).toEqual({
+        kind: "noop",
+        contentFingerprint:
+          "content_sha256:0ad432c6562a2d4bbe87326299e893429f00d321f385ff17d1d5d3159608efc4",
+      });
     });
   });
 

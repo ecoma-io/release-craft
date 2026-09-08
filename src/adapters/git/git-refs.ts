@@ -19,6 +19,12 @@ const ZERO_OID = "0".repeat(40);
  * reports absence by a non-zero exit with empty stderr, so the runner raises
  * GitFaultError either way and this is the one place the binding swallows
  * it: absence is a value here, not a fault.
+ *
+ * Note (#95): the catch swallows every GitFaultError, not just that absence
+ * shape — a ref git cannot read (a broken ref file faults with a warning
+ * on stderr) also reads as absent. The discrimination is unimplemented;
+ * the consuming scopes' corrupted-state refusals (blob shape, envelope
+ * identity) are the loud boundary that remains.
  */
 export function readRef(git: GitRun, ref: string): string | null {
   try {

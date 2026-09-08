@@ -20,8 +20,14 @@
  * a claimed `applied` — the promotion does not race forward on
  * uncertainty (invariant 2.6; ADR-0012 decision 7), and a resume
  * re-executes against whatever the recorded state proves, converging
- * either way. Read-side faults stay throws: a store that cannot observe
- * never attempted a move, and corrupted recorded state refuses loudly.
+ * either way. Read-side faults stay throws — every fault the substrate
+ * reports refuses loudly: a corrupted blob is not the hidden state, and a
+ * state whose id does not map back onto its own ref is refused at the
+ * read boundary (no writer of the canonical form produces one). The one
+ * gap lives below the store: `readRef` swallows every git fault as
+ * absence, so a ref git cannot read (a broken ref file) also reads as the
+ * hidden channel — the substrate's absence-vs-fault discrimination is
+ * tracked in #95 and shared with the claim register.
  */
 
 import { createHash } from "node:crypto";
@@ -103,6 +109,24 @@ const asChannelState = (value: unknown, ref: string): ChannelState => {
   );
 };
 
+/** The read boundary's one invariant: a state returned for `ref` is the
+ *  state of that ref — its id maps back onto the refname. An envelope
+ *  keyed to another channel under this ref is recorded corruption no
+ *  writer of the canonical form could produce (the mapping is derived
+ *  from the id) and refuses loudly — the ledger's idempotency key would
+ *  otherwise follow the wrong channel (the register's ADR-0011 decision
+ *  5 discipline). `list()`'s read of a just-listed ref takes the hidden
+ *  path only when the ref vanished mid-iteration, which its blank
+ *  placeholder fails here — the store never invents a channel id. */
+const checkRefIdentity = (state: ChannelState, ref: string): ChannelState => {
+  if (channelRefFor(state.id) !== ref) {
+    throw new TypeError(
+      `the channel namespace pins one channel per ref: ${ref} carries channel ${JSON.stringify(state.id)}`,
+    );
+  }
+  return state;
+};
+
 /** The state and the base of its next compare-and-set, from one read —
  *  the pair is a move's whole opening state (the claim register's
  *  `RegisterRead` discipline). `tip` is null when the ref is absent; the
@@ -117,7 +141,7 @@ interface ChannelRead {
 const readChannelAt = (git: GitRun, ref: string, channelId: string): ChannelRead => {
   const tip = readRef(git, ref);
   if (tip === null) {
-    return { tip: null, state: { id: channelId, target: null } };
+    return { tip: null, state: checkRefIdentity({ id: channelId, target: null }, ref) };
   }
   const envelope: unknown = frozenParse(commitRecord(git, tip));
   if (
@@ -130,7 +154,7 @@ const readChannelAt = (git: GitRun, ref: string, channelId: string): ChannelRead
       `the channel namespace pins channel-state envelopes ({"channel":…}); ${ref} does not`,
     );
   }
-  return { tip, state: asChannelState(envelope, ref) };
+  return { tip, state: checkRefIdentity(asChannelState(envelope, ref), ref) };
 };
 
 /** Target equality by value — line string equality plus the canonical
@@ -168,8 +192,9 @@ export class GitChannelStore implements ChannelStore {
       .split("\n")
       .filter((line) => line.length > 0)
       .map((ref) => {
-        // The ref exists by construction here — the hidden-read path that
-        // consumes the caller-supplied id cannot fire.
+        // The blank placeholder cannot pass the read boundary's identity
+        // check on the hidden path — a listed ref that vanished
+        // mid-iteration refuses loudly; list never invents a channel id.
         const { state } = readChannelAt(this.#git, ref, "");
         return deepFreeze(state) as ChannelState;
       });

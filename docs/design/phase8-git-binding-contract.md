@@ -247,12 +247,18 @@ The channel store (ADR-0012 decision 6; D37): one ref per channel under
 claim register's own mapping, because channel ids are opaque strings a
 refname cannot carry verbatim — whose tip commit's blob is the
 canonical envelope `{"channel":{"id":…,"target":{…}|null}}`; a foreign
-blob refuses loudly. Reads are total: an absent ref reads as the hidden
-channel, never as an error. `applyTransition` is the whole-state
-compare-and-set with the store computing the content fingerprint over
-the state it observed; the outcomes are `applied` | `noop` | `conflict`
+blob refuses loudly, and so does a shape-valid envelope whose id does
+not map back onto the ref it was read from — one channel per ref, and
+no writer of the canonical form produces a mis-keyed state. Reads are
+total: an absent ref reads as the hidden channel, never as an error.
+`applyTransition` is the whole-state compare-and-set with the store
+computing the content fingerprint over the state it observed; the
+outcomes are `applied` | `noop` | `conflict`
 (naming the observed target) | `ambiguous` — the land-fault outcome,
-decision 7's fail-closed law (read-side faults stay throws). The port's
+decision 7's fail-closed law (read-side faults the substrate reports
+stay throws; the substrate's `readRef` cannot yet distinguish an absent
+ref from a ref git cannot read — #95 — so the loud read boundary is the
+blob and identity checks). The port's
 vocabulary is the serialized `ChannelState` (id + line + canonical
 version string, or `null`), string-shaped like every record target; the
 deterministic reference implementation (`MemoryChannelStore`) and the
