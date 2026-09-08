@@ -126,7 +126,8 @@ describe("the content read seam (§2.8; D27)", () => {
     withTempRepo("file-on-disk-absence", (_repo, git) => {
       const binding = bindingOn(_repo);
       // The recorded tree holds only the README; a file of the asked-for
-      // name sits beside the repository. git spells this absence with
+      // name sits in the repository's working tree, untracked. git spells
+      // this absence with
       // its second message (`exists on disk, but not in`) — the same
       // null, since the binding reads recorded objects, never the
       // working tree (ADR-0009 decision 4).

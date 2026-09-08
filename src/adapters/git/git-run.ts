@@ -114,6 +114,12 @@ export function hermeticGitEnv(): NodeJS.ProcessEnv {
     // the empty device and a leaked GIT_CONFIG_GLOBAL is stripped above.
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_TERMINAL_PROMPT: "0",
+    // The fault-shape discriminations key on byte-exact stderr (D39's
+    // empty-stderr absence, D40's absence message pair), and those shapes
+    // are stable only under git's own locale — pin the C locale so an
+    // operator's translated environment can never reword a fault line
+    // into, or out of, a shape the reads discriminate on.
+    LC_ALL: "C",
     ...COMMIT_ENV,
   };
 }
