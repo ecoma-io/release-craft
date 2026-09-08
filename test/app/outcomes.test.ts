@@ -21,6 +21,7 @@ import {
   COMMITTED_AT,
   freshStores,
   liveWorld,
+  matrixArtifacts,
   matrixHooks,
   plannedOf,
   planLineFor,
@@ -466,5 +467,32 @@ describe("§2.8 — terminal is terminal: the kernel's violations throw through 
       expect(outcome.detail).toContain("unknown attempt");
       expect(outcome.detail).toContain(foreign.planId);
     }
+  });
+});
+
+describe("§2.8 — the engine never invents user code: a declared extension without its injection is the named violation", () => {
+  it("a declared hook with no hookEffects map throws the kernel's named violation, never a silent skip", () => {
+    const assembly = freshAssembly();
+    // The hook is declared but the effects map is absent entirely: the
+    // scheduler must still be reached, and its per-id demand is the
+    // kernel's own named violation — the same answer a map that exists
+    // but lacks the id gives (ADR-0007 decision 2). Skipping the
+    // scheduler instead would publish without the hook ever running.
+    expect(() =>
+      assembly.engine.run(
+        runRequest(liveWorld(), "main", [beta], { hooks: [matrixHooks().attest] }),
+      ),
+    ).toThrow(/no effect injected for the declared hook "attest"/);
+  });
+
+  it("a declared artifact with neither a producers map nor a wired producer throws the kernel's named violation", () => {
+    const assembly = freshAssembly(); // the memory assembly wires no producer
+    const artifact = matrixArtifacts()[0];
+    if (artifact === undefined) {
+      throw new Error("fixture broken: the matrix declares no artifacts");
+    }
+    expect(() =>
+      assembly.engine.run(runRequest(liveWorld(), "main", [beta], { artifacts: [artifact] })),
+    ).toThrow(/no producer injected for the declared artifact/);
   });
 });

@@ -177,13 +177,18 @@ const runBoundary = (ctx: WalkContext, stage: StageKey, position: HookAnchorPosi
   const hooksHere = (ctx.attempt.hooks ?? []).filter(
     (hook) => hook.anchor.stage === stage && hook.anchor.position === position,
   );
-  if (hooksHere.length > 0 && ctx.declarations.hookEffects !== undefined) {
+  // An absent injection map is the empty map — the schedulers' own per-id
+  // demand is the kernel's named violation ("the engine never invents user
+  // code"), and gating on the map's presence would silence it: a declared
+  // extension would neither run nor record, and the walk would publish
+  // beside it. The demand happens before any record for the step.
+  if (hooksHere.length > 0) {
     const run = scheduleHooks(
       ctx.attempt,
       attributionFor(ctx.handle),
       ctx.ports.ledger,
       view,
-      ctx.declarations.hookEffects,
+      ctx.declarations.hookEffects ?? new Map(),
     );
     ctx.attempt = run.attempt;
   }
@@ -194,13 +199,13 @@ const runBoundary = (ctx: WalkContext, stage: StageKey, position: HookAnchorPosi
     (step) => step.anchor.stage === stage && step.anchor.position === position,
   );
   const producers = effectiveProducers(ctx);
-  if (artifactsHere.length > 0 && producers !== undefined) {
+  if (artifactsHere.length > 0) {
     const run = scheduleArtifacts(
       ctx.attempt,
       attributionFor(ctx.handle),
       ctx.ports.ledger,
       claimViewFor(ctx.claim, ctx.ports.claims, ctx.handle.attemptId),
-      producers,
+      producers ?? new Map(),
     );
     ctx.attempt = run.attempt;
   }
