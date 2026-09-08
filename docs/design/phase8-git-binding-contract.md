@@ -16,14 +16,13 @@ In scope: a git-backed adapter layer implementing the `ExecutionLedger`,
 store's one-ref accept with the binding's mint door; the ref-side
 namespace door; a git-backed producer for the artifact seam;
 persist–reload equivalence and double-run determinism over real
-repositories.
+repositories; and the `channels` store port (ADR-0012 decision 6 — the
+delivered slice; D37 records its physical decisions).
 
 Non-goals: the GitHub adapter and any API/network behavior (Phase 9,
 [ADR-0010](../adr/0010-github-adapter.md),
 [phase9-github-adapter-contract.md](phase9-github-adapter-contract.md)); evidence
-freshness rules (PR-03 — carried); channels and promotion (ADR-0012's
-`channel-transition` door; the binding's `channels` store port is that
-ADR's decision 6, its own slice); any
+freshness rules (PR-03 — carried); any
 change to `src/execution/`'s shapes (the in-memory references stay as the test
 seam; if an implementation needs a port widened, that is its own reviewed
 change, not a drive-by); authentication, remote synchronization, or anything
@@ -202,6 +201,9 @@ GitBinding
                                      ref; a namespace refusal returns
                                      ClaimDenied { refusal: "namespace" }
                                      with holder absent)
+  .channels  : ChannelStore         (the port, ADR-0012 decision 6 — see
+                                     below; the kernel never consumes it,
+                                     invariant 2.1)
   .mintTag(input: { attemptId, token, tag, target }) → TagMintResult
 
 TagMintResult =
@@ -239,6 +241,31 @@ tagNaming: {
   discipline it inherits is already fixed here. Phase 8's fixture 1
   pins the two scopes the engine holds values for — the ledger tail
   and the register ordinal.
+
+The channel store (ADR-0012 decision 6; D37): one ref per channel under
+`refs/ecoma/channels/<sha256 of the channel id's UTF-8 bytes>` — the
+claim register's own mapping, because channel ids are opaque strings a
+refname cannot carry verbatim — whose tip commit's blob is the
+canonical envelope `{"channel":{"id":…,"target":{…}|null}}`; a foreign
+blob refuses loudly, and so does a shape-valid envelope whose id does
+not map back onto the ref it was read from — one channel per ref, and
+no writer of the canonical form produces a mis-keyed state. Reads are
+total: an absent ref reads as the hidden channel, never as an error.
+`applyTransition` is the whole-state compare-and-set with the store
+computing the content fingerprint over the state it observed; the
+outcomes are `applied` | `noop` | `conflict`
+(naming the observed target) | `ambiguous` — the land-fault outcome,
+decision 7's fail-closed law (read-side faults the substrate reports
+stay throws; the substrate's `readRef` cannot yet distinguish an absent
+ref from a ref git cannot read — #95 — so the loud read boundary is the
+blob and identity checks). The port's
+vocabulary is the serialized `ChannelState` (id + line + canonical
+version string, or `null`), string-shaped like every record target; the
+deterministic reference implementation (`MemoryChannelStore`) and the
+shared `channelStateFingerprint` live in the execution layer beside the
+port. The refs-read seam (§2.7's projection) does not enumerate the
+channel family — consumers reach recorded channels through the port's
+own reads.
 
 ## 3. Laws
 

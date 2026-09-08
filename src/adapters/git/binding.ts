@@ -1,8 +1,9 @@
 /**
  * The git binding opened on one repository (contract §2.6; ADR-0009
  * decision 8). One factory, one shared runner: every port the binding
- * exposes — the ledger, the attempt register, the claim store, the tag
- * door, the artifact producer — is the git-backed implementation of an
+ * exposes — the ledger, the attempt register, the claim store, the
+ * channel store, the tag door, the artifact producer — is the
+ * git-backed implementation of an
  * engine port over the same repository through the same hermetic runner,
  * and the read seam the remote projection reads (§2.7) enumerates the
  * same repository's recorded refs. No port here exists in the engine's
@@ -14,11 +15,13 @@
 import type {
   ArtifactProducer,
   AttemptRegister,
+  ChannelStore,
   ClaimStore,
   ExecutionLedger,
 } from "../../index.js";
 
 import type { BindingConfig, ContentRead, RefRead } from "./binding-types.js";
+import { GitChannelStore } from "./channel-store-git.js";
 import { GitClaimStore } from "./claim-store-git.js";
 import { GitContentRead } from "./content-read.js";
 import { GitLedger } from "./ledger-git.js";
@@ -44,6 +47,11 @@ export interface GitBinding {
    * `unclaimed`, `foreign-token`) and conflict outcomes are returned
    * values, never exceptions. */
   readonly mintTag: TagMint;
+  /** The git-backed channel store (ADR-0012 decision 6) — the
+   * deliverability pointer's durable half, the port the application layer
+   * drives the `channel-transition` stage's recorded moves through. The
+   * kernel never consumes it (invariant 2.1). */
+  readonly channels: ChannelStore;
   /** The git-backed artifact producer — the digest of the repository's
    *  recorded content (ADR-0008 decision 12's first half, §2.5). */
   readonly producer: ArtifactProducer;
@@ -94,6 +102,7 @@ export function openGitBinding(config: BindingConfig): GitBinding {
     ledger,
     register: new GitAttemptRegister(git),
     claims,
+    channels: new GitChannelStore(config.repo),
     mintTag: GitTagDoor(git, config.tagNaming),
     producer: GitArtifactProducer(config.repo),
     repo: config.repo,
