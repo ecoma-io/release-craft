@@ -105,6 +105,13 @@ Three workflows, three questions, no god workflow:
 - `policy.yml` — governance: the five `scripts/check-*.mjs` gates (required
   files · package · workflows · docs · PR description) + the PR title.
 
+One workflow sits outside the three governance layers: `triage.yml` — the
+action-agents dogfood run (#101) — a consumer of the released sibling action
+`ecoma-io/action-agents/triage`, not a gate of this repository. It judges
+incoming issues and pull requests, not this repository's changes, and appears
+in no gate's `needs:`; `check:workflows` still scans it like every other
+workflow file.
+
 When you add a job, add it to its gate's `needs:` — the gates tighten only
 through that list, visibly, in review.
 
