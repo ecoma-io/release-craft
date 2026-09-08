@@ -78,7 +78,8 @@ job is to express that discipline over git, not to invent a second one.
    No accept spans two refs: an orphan object created before a refused
    ref update is unreachable and is not a claim; adjudication reads only
    the ref. A stable-version claim is a record, not a lease — the
-   release record stands (P-01), `release` of its token is a no-op and a
+   release record stands (this decision — D33; record posture, not the
+   P-01 alpha-increments scenario), `release` of its token is a no-op and a
    later `verify` still reads held; the non-tag claims are leases:
    `release` is a check-and-set delete of the scope's claim ref, and a
    later `verify` reads lost. The physical tag under the tag namespace

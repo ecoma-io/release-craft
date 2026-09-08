@@ -105,7 +105,7 @@ mint(tag, target) — the binding's tag door, not the port —
   vocabulary), never an exception crossing the door.
 - A stable-version claim is a record, not a lease: `release` of its
   token is a no-op and a later `verify` still reads held — the release
-  record stands (P-01). The non-tag claims are leases: `release` is a
+  record stands (ADR-0009 decision 4; D33). The non-tag claims are leases: `release` is a
   check-and-set delete of the scope's claim ref; a later `verify` reads
   lost.
 - The physical tag (`refs/tags/<tag>`) is minted at the binding's tag
@@ -116,7 +116,7 @@ mint(tag, target) — the binding's tag door, not the port —
   tag ref is absent.
 - Force updates and re-creations under an existing ref refuse at both
   doors with the same recorded-reason discipline. Tags remain the
-  authoritative record (P-01): the binding never substitutes a ledger
+  authoritative record (ADR-0009 decision 4's tag door; D34): the binding never substitutes a ledger
   row for the ref, and never records a completion the ref did not take.
 
   Amendment proposed in #49 (ADR-0011; the implementation PR follows):

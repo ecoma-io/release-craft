@@ -25,8 +25,8 @@ What the binding does not do — and what Phase 9 must — is the remote half:
   tail, attempt ordinals, claim records) to a remote so that another
   instance or a human can observe the same history.
 - **Tag publication**: pushing the binding's minted tags to the remote so
-  that the authoritative tag record (P-01's "tags are the authoritative
-  record") is visible on GitHub.
+  that the authoritative tag record (ADR-0009 decision 4's tag door; D34)
+  is visible on GitHub.
 - **GitHub Release creation**: creating and verifying GitHub Releases
   corresponding to published tags, as the human-facing publication surface.
 - **E2E reconciliation**: discovering pre-existing remote state (tags,

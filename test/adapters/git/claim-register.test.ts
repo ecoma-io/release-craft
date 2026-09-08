@@ -384,7 +384,8 @@ describe("the per-line claim register (ADR-0011)", () => {
     it("a release racing the same scope's re-acquisition removes by token, never by scope", () => {
       withTempRepo("register-release-by-token", (repo, git) => {
         // A lease, not a record: a stable-version claim's release is a
-        // no-op (P-01), so the race only exists for the lease scopes.
+        // no-op (ADR-0009 decision 4), so the race only exists for the
+        // lease scopes.
         const scope = prerelease(7);
         // Writer B re-acquires the same scope — a new holder, a new
         // token — between A's release resolution and A's compare-and-set.
@@ -636,7 +637,7 @@ describe("the dual-backend scenario list (ADR-0011)", () => {
       log("acquire rc7@c", store.acquire(prerelease(7), "attempt_c"));
       log("acquire line@d", store.acquire(releaseLine(), "attempt_d"));
     }),
-    scenario("leases release, records stand (P-01)", (store, log) => {
+    scenario("leases release, records stand (ADR-0009 decision 4)", (store, log) => {
       const lease = asClaim(store.acquire(prerelease(7), "attempt_a"));
       store.release(lease.token);
       log("verify released lease", store.verify(lease.token));

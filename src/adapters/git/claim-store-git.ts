@@ -196,9 +196,9 @@ export function allClaimRecords(git: GitRun): readonly ClaimRecord[] {
  * release racing the same scope's re-acquisition by a new holder deletes
  * the old holder's record only. A stable-version claim is a record, not a
  * lease — releasing its token is a no-op and a later verify still reads
- * held, the release record stands (P-01); the other scopes are leases.
- * An empty register persists: the ref is never deleted, so the write path
- * stays one primitive (ADR-0011 decision 4).
+ * held, the release record stands (ADR-0009 decision 4; D33); the other
+ * scopes are leases. An empty register persists: the ref is never deleted,
+ * so the write path stays one primitive (ADR-0011 decision 4).
  */
 export class GitClaimStore implements ClaimStore {
   readonly #git: GitRun;
@@ -282,7 +282,8 @@ export class GitClaimStore implements ClaimStore {
       return;
     }
     // A stable-version claim is a record, not a lease: the release of its
-    // token is a no-op and a later verify still reads held (P-01).
+    // token is a no-op and a later verify still reads held (ADR-0009
+    // decision 4; D33).
     if (record.scope.kind === "stable-version") {
       return;
     }

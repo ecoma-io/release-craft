@@ -231,7 +231,7 @@ describe("the git-backed claim store (fixture 3)", () => {
     });
   });
 
-  it("keeps a stable-version claim as a record — its release is a no-op (P-01)", () => {
+  it("keeps a stable-version claim as a record — its release is a no-op (ADR-0009 decision 4)", () => {
     withStore((store, _mint, git) => {
       const claim = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       store.release(claim.token);
