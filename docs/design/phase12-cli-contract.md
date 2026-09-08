@@ -13,13 +13,18 @@ GitHub Action live above the boundary (invariant 2.10) — thin surfaces that
 call it and compose nothing of their own; their slices do not open here"
 ([phase 11 §1](phase11-application-boundary-contract.md),
 [§6](phase11-application-boundary-contract.md#6-out-of-scope-and-where-it-stays)).
-The boundary's implementation is under review at this writing (PR #110,
-branch `feat/app-boundary`, head `4c57c56`), and this contract is written
+The boundary's implementation is merged (PR #110; main carries it at
+`9c3671d` as this contract is finalized), and this contract is written
 against that reviewed surface: every door name, request field, and outcome
-kind below was read from that branch's `src/app/types.ts` and is quoted, not
+kind below was read from `src/app/types.ts` and is quoted, not
 invented — each shape's subsection names what was verified by reading and
 what is this contract's own decision. Where the boundary is still moving,
-the contract says so instead of guessing.
+the contract says so instead of guessing. One moving part is named rather
+than guessed around: main carries #113 for the moment (a declared extension
+whose injection map is absent entirely is skipped where the kernel's law
+names the throw), and its fix is in review (PR #116) — the
+[declarations decision](#26-the-declarations-decision) never consults an
+injection map, so it stands unaffected either way.
 
 ## 1. Scope and non-goals
 
@@ -111,7 +116,7 @@ release-craft resolve --assembly … --actor <string>
                       | --resolution revalidation --plan-fingerprint <fp> )
 release-craft abort   --assembly … --actor <string>
                       --plan <planId> --attempt <attemptId> --reason <string>
-release-craft show    --assembly … ( --channels | --attempt --plan <planId> --attempt <attemptId> )
+release-craft show    --assembly … ( attempt --plan <planId> --attempt <attemptId> | channels )
 ```
 
 | Command   | Door (verified signature)                                                      | Notes                                                                        |
@@ -121,7 +126,7 @@ release-craft show    --assembly … ( --channels | --attempt --plan <planId> --
 | `resume`  | `resume(handle: AttemptHandle, request: RunRequest): RunOutcome`               | classify first, never re-plan; the request's `input`/`intents` not consulted |
 | `resolve` | `resolve(handle, stepKey: StepKey, resolution: BlockedResolution): RunOutcome` | the only door that re-arms a blocked attempt (phase 5 §2.7)                  |
 | `abort`   | `abort(handle: AttemptHandle, actor: string, reason: string): RunOutcome`      | terminal is terminal (E-09)                                                  |
-| `show`    | `observe(query: ObservationQuery): Observation`                                | read doors only; `--channels` / `--attempt` pick the query kind              |
+| `show`    | `observe(query: ObservationQuery): Observation`                                | read doors only; the `attempt` / `channels` positionals pick the query kind  |
 
 Every flag maps onto exactly one boundary value, and this is the rule
 invariant 2.10 becomes when it reaches the process:
@@ -141,20 +146,31 @@ invariant 2.10 becomes when it reaches the process:
 | `--resolution`, `--note`, `--plan-fingerprint` | `BlockedResolution` — `{ kind: "human", note }` or `{ kind: "revalidation", planFingerprint }` (verified union)     |
 | `--reason <string>`                            | `abort`'s reason                                                                                                    |
 
+- `--repo` and `--tag-namespace` are demanded on the git assembly and are
+  usage faults on `--assembly memory`, whose stores construct from nothing
+  (verified: `assembleMemoryStores` takes no repository) — a flag the
+  selected assembly cannot consume is a lie in argv, refused before any
+  door is reached.
 - The intents serialize kind-first, one `--intent` per demand, repeatable:
   `release`, `release-anyway`, `prerelease:<stream>:<lineId>`,
   `release-as:<version>`, `promote:<lineId>` — the `OperatorIntent` union's
   five rows, verified verbatim. A value that parses to none of them is a
-  usage fault (exit 64, [§3.2](#32-the-exit-code-table)).
+  usage fault (exit 64, [§3.2](#32-the-exit-code-table)), and so is an id
+  carrying `:` — the serialization is kind-first and colon-delimited, and
+  a colon-bearing stream or line id would make the split ambiguous; such
+  an id is declared in the world document, never in an `--intent`.
 - **Defaults are declared, never ambient.** No flag reads `process.env`, no
   flag defaults from the working directory, no flag falls back to git
   config for the actor. `--actor` is demanded on every mutating door
   because every record the run appends carries it (E-09's human
   precedence); an absent `--actor` is a usage fault, never an inferred
   identity. `--max-retries` defaults to `0` — the fail-closed posture: a
-  denied `prerelease-sequence` surfaces, and the operator who wants the
-  kernel's bounded re-acquisition raises the bound explicitly
-  ([§8](#8-open-questions-for-the-maintainer), question 4).
+  denied `prerelease-sequence` surfaces as the explicit `conflict` (exit 14) E-08 itself names — the bound exhausted (0 of 0), never a silent
+  retry — and the operator who wants the kernel's bounded re-acquisition
+  raises the bound explicitly
+  ([§8](#8-open-questions-for-the-maintainer), question 4). (`denied`,
+  exit 11, is the rendering of non-sequence denials — a stable-version
+  scope another attempt holds.)
 - `--line` is demanded on `run` and accepted-but-not-demanded on `resume`:
   the carried attempt's entry is authoritative for the line it executes
   (the boundary's `AttemptEntry.planLine`), and a resume's grammar should
@@ -183,7 +199,11 @@ refused, and the CLI ships **one declared, in-repo derivation**.
   the sequence from its `-<stream>.<n>` suffix, and the stable tag from the
   version (verified: `test/vertical/matrix-git.ts`'s `naming`, with the
   fixture's own warning that the mapping exists so the mint door reproduces
-  the plan's own tag, never a second opinion of one).
+  the plan's own tag, never a second opinion of one). The precise
+  rendering — prefix against filter, and whether an empty namespace root
+  is an accepted spelling (the binding's namespace door reads the empty
+  root as every tag) — is the implementation PR's to pin against the
+  fixture's model, not this contract's.
 - What is deliberately absent: no `--naming-module`, no per-invocation code
   path, no implicit namespace. The naming is declared configuration, the
   same posture the empty declaration takes in
@@ -245,6 +265,12 @@ CAS, the guards' `blocked` records (E-04), the walk's stop-and-record.
 `bootstrap` absent stays what phase 2 made it — a `blocked` record at the
 planning boundary (S-02), never a CLI prompt.
 
+One declared lie does not classify: a feed-ref head the repository does
+not hold survives every classification above and faults the mint (exit
+70 — the tag door's unresolvable-target `GitFaultError`), after the
+walk's records stand. That is the honest rendering of a world document
+that lied — the fault band, not a stop the recorded evidence cannot name.
+
 ### 2.5 The mint target — derived once, from the same world
 
 `RunRequest.targets` is "the recorded base per line id the tag door mints
@@ -268,7 +294,10 @@ planned range is a silent lie, and the operator who needs a different base
 corrects the declared world, whose change moves the plan identity with it.
 
 - The derivation is pure over declared input: the world document's
-  `repository.refs` observation for the line's `feedRef` names its head.
+  `repository.refs` observation for the line's `feedRef` names its head —
+  the same observation the planner's range derivation takes, the last
+  occurrence of a ref name in document order, so the plan's range and the
+  mint always evaluate one head and never two.
 - A minting line whose feed ref is absent from the document yields no
   target — and the engine's pre-walk `refused` (verified: the git-assembly
   fixture, which also pins `handle: null` and `drives: []` on that stop) is
@@ -358,7 +387,7 @@ one-shot: the engine that ran the walk dies with the process, and no second
 invocation carries its attempt.
 
 **Decided: the CLI maps every door anyway and gates nothing on
-capability.** `resume`, `resolve`, `abort`, and `show --attempt` construct
+capability.** `resume`, `resolve`, `abort`, and `show attempt` construct
 the handle from `--plan`/`--attempt`/`--actor`, call the door, and render
 whatever comes back — today, from a fresh process, that is the engine's own
 `refused(unknown attempt)`, rendered at exit 10: honest, recorded, and
@@ -371,7 +400,7 @@ across invocations with zero grammar change ([§7](#7-the-other-slices)).
   CLI knowing the boundary's internals — a capability gate, which §1
   refuses — and it would go stale the day the lookup lands. The engine's
   outcome is the truth; the CLI is its rendering.
-- **`show --channels` works cross-process today**: the channels observation
+- **`show channels` works cross-process today**: the channels observation
   reads the wired store's recorded states, not the carried entry (verified:
   `ObservationQuery { kind: "channels" }` and the `Observation` union). It
   is the one observation a second invocation can meaningfully make, and the
@@ -381,7 +410,10 @@ across invocations with zero grammar change ([§7](#7-the-other-slices)).
   the observation returns `null` channels when no store is wired (verified:
   the `Observation` attempt row's `channels` field), and the CLI renders
   that null verbatim — never as an empty list that reads as "no channels
-  recorded".
+  recorded". The two query kinds differ in that corner: the `attempt`
+  row's null is the no-store case, while a `channels` query over a
+  store-less assembly renders the engine's own `refused` ("no channel
+  store is wired") at exit 10, never a null.
 
 ## 3. The process surface — outputs and exit codes
 
@@ -415,22 +447,22 @@ what to do, and every one is non-zero — a shell script that ignores exit
 codes never mistakes a stop for success. The **fault** band: the invocation
 or the contract broke before any classification.
 
-| Code | Band    | Outcome / class        | The caller's next move (phase 11 §2.8's column, rendered)                                                                                                                                         |
-| ---- | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | proceed | `published`            | proceed — the walk completed, the tag minted, the terminal recorded                                                                                                                               |
-| 1    | proceed | `satisfied-externally` | proceed — ledger-first done-ness (E-03); the evidence reads back through `show`                                                                                                                   |
-| 2    | proceed | `resolved`             | proceed — the recorded resolution re-armed the attempt; `.resume` next                                                                                                                            |
-| 3    | proceed | `abandoned`            | proceed — the abort was honored and terminal (E-09)                                                                                                                                               |
-| 10   | stop    | `refused`              | read the detail — it names the owner and the refused door                                                                                                                                         |
-| 11   | stop    | `denied`               | another attempt owns the scope (E-07) — the winner is named                                                                                                                                       |
-| 12   | stop    | `blocked`              | a guard failed on world state — resolve through `resolve`, then `resume`                                                                                                                          |
-| 13   | stop    | `failed`               | a recorded failure stopped the walk — inspect the tail; a later resume re-judges                                                                                                                  |
-| 14   | stop    | `conflict`             | same identity, different content or inconsistent evidence (E-02) — a human judges                                                                                                                 |
-| 15   | stop    | `ambiguous`            | never success (invariant 2.6) — verify through a read, then resume                                                                                                                                |
-| 16   | stop    | `stale`                | the resume verdict surfaced verbatim — re-plan                                                                                                                                                    |
-| 17   | stop    | `escalate`             | the resume verdict surfaced verbatim — a human judges the tail                                                                                                                                    |
-| 64   | fault   | usage                  | unknown command/flag, missing `--actor`/`--repo`/`--world`, malformed `--intent`, a `--world` document that is not valid JSON or not `PlanningInput`-shaped — the invocation never reached a door |
-| 70   | fault   | escaped throw          | the kernel's named contract violations, `InvalidAssemblyConfigError`, `GitFaultError` — name and message printed verbatim on stderr, never translated into an outcome                             |
+| Code | Band    | Outcome / class        | The caller's next move (phase 11 §2.8's column, rendered)                                                                                                                                                                             |
+| ---- | ------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | proceed | `published`            | proceed — the walk completed, the tag minted, the terminal recorded                                                                                                                                                                   |
+| 1    | proceed | `satisfied-externally` | proceed — ledger-first done-ness (E-03); the evidence reads back through `show`                                                                                                                                                       |
+| 2    | proceed | `resolved`             | proceed — the recorded resolution re-armed the attempt; `.resume` next                                                                                                                                                                |
+| 3    | proceed | `abandoned`            | proceed — the abort was honored and terminal (E-09)                                                                                                                                                                                   |
+| 10   | stop    | `refused`              | read the detail — it names the owner and the refused door                                                                                                                                                                             |
+| 11   | stop    | `denied`               | another attempt owns the scope (E-07) — the winner is named                                                                                                                                                                           |
+| 12   | stop    | `blocked`              | a guard failed on world state — resolve through `resolve`, then `resume`                                                                                                                                                              |
+| 13   | stop    | `failed`               | a recorded failure stopped the walk — inspect the tail; a later resume re-judges                                                                                                                                                      |
+| 14   | stop    | `conflict`             | same identity, different content or inconsistent evidence (E-02) — a human judges                                                                                                                                                     |
+| 15   | stop    | `ambiguous`            | never success (invariant 2.6) — verify through a read, then resume                                                                                                                                                                    |
+| 16   | stop    | `stale`                | the resume verdict surfaced verbatim — re-plan                                                                                                                                                                                        |
+| 17   | stop    | `escalate`             | the resume verdict surfaced verbatim — a human judges the tail                                                                                                                                                                        |
+| 64   | fault   | usage                  | unknown command/flag, missing `--actor`/`--world` (`--repo` demanded on the git assembly only), malformed `--intent`, a `--world` document that is not valid JSON or not `PlanningInput`-shaped — the invocation never reached a door |
+| 70   | fault   | escaped throw          | the kernel's named contract violations, `InvalidAssemblyConfigError`, `GitFaultError` — name and message printed verbatim on stderr, never translated into an outcome                                                                 |
 
 The doors whose unions differ from `RunOutcome` render through the same
 table where the rows coincide: `plan`'s `PlanningOutcome` (verified
@@ -545,7 +577,7 @@ already covers the doors; phase 11 §5).
    temp-repo git binding (the binding's own `withTempRepo` harness). The
    same world documents drive both; the git side adds the target
    derivation ([§2.5](#25-the-mint-target-derived-once-from-the-same-world))
-   and the minted-ref check through `show --channels`' sibling read doors.
+   and the minted-ref check through `show channels`' sibling read doors.
 2. **The exit-code table, pinned kind by kind.** Every
    [§3.2](#32-the-exit-code-table) row produced through public doors and
    asserted by exit code **and** `--json` kind. `ambiguous` is pinned
@@ -631,9 +663,12 @@ left open, each with its proposed default:
    and testable the same way every other door call is. An interactive
    wrapper can live above the CLI without this contract's change.
 4. **The default `--max-retries`.** Proposed: `0` — fail closed; a denied
-   `prerelease-sequence` surfaces at exit 11 and the operator who wants the
-   kernel's bounded re-acquisition raises the bound explicitly. The
-   boundary test harness's `2` is a fixture convenience, not a policy.
+   `prerelease-sequence` renders the explicit `conflict` (exit 14) E-08
+   itself names — the bound exhausted, never a silent retry — and the
+   operator who wants the kernel's bounded re-acquisition raises the bound
+   explicitly. (`denied`, exit 11, is the rendering of non-sequence
+   denials.) The boundary test harness's `2` is a fixture convenience, not
+   a policy.
 5. **Home and bin name.** `src/cli/` and bin `release-craft` are proposed;
    the shape does not move with the name.
 6. **The world document's schema ownership.** Verbatim `PlanningInput` is
