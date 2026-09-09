@@ -633,7 +633,7 @@ describe("the certification fixture · A-git", () => {
   );
 
   it(
-    "git-08 · W1 × I3 · durability's proof — a fresh binding resumes from the reloaded tail, byte-exact, and lands the uninterrupted verdict",
+    "git-08 · W1 × I3 · durability's proof — the carrying engine resumes on the tail re-read fresh from the repository, byte-exact, and lands the uninterrupted verdict",
     { timeout: 180_000 },
     () => {
       withSeededRepo("cert-git-08", (repo, _git, heads) => {
@@ -895,6 +895,14 @@ describe("the certification fixture · A-git", () => {
         if (outcome.kind !== "refused") {
           throw new Error("expected a refused outcome");
         }
+        // The refusal's own word, pinned: the mint target is the caller's
+        // recorded value, never ambient HEAD — this is the engine's
+        // pre-walk door, not a planner classification.
+        expect(outcome.detail).toBe(
+          "line main's plan mints 5.0.0-beta.1 over an assembly that wired the tag door, " +
+            "but the request supplies no recorded target for the line — the mint target is a " +
+            "plan-run value carried by the caller, never ambient HEAD (phase 8 §2.3)",
+        );
         expect(outcome.handle).toBeNull();
         expect(outcome.drives).toStrictEqual([]);
       });

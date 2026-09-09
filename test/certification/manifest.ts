@@ -356,6 +356,13 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 4 §2.4 item 5 (E-08 over the durable register; the fold parity pin — a denial with no recorded holder sequence conflicts immediately, D31's exclusion-path denials)",
       "reachability note: the row's boundary (raised) half is unreachable as the contract pins it — a published exit-0 — because the retried scope always outruns the plan's own tag by one and the binding's mint door refuses the walk at the mismatch (`no claim held by attempt … derives tag …`); the row pins the implementable halves, and the exit-0 half of the row's `exits 14 / 0` pin is earned by `memory-04`'s raised-bound half on A-memory, where the assembly wires no mint door",
+      // §8 seed declaration: the fold-parity half seeds its precondition
+      // through `rawGitClaims` — the binding's own GitClaimStore, reached
+      // beneath its namespace-gated wrapper because the binding's public
+      // path refuses the release-line scope the pin needs (a release-line
+      // claim excludes every other claim on the line, the exclusion
+      // path's shape). The seed is a precondition only; the walk itself
+      // is the engine's full run through every door check.
     ],
     status: "live",
   },
@@ -371,6 +378,18 @@ export const MANIFEST: readonly ManifestRow[] = [
     provenance: [
       "phase 14 §3.3",
       "ADR-0012 decisions 3–4 (the moves land exactly in the write-ahead window; the replay classifies, never moves twice)",
+      // R2 resolution — the row's declared in-process seat, named per §8:
+      // the crash is seated by wrapping the wired channel-store port.
+      // `gitAssemblyWithChannels` composes the git binding's own factory
+      // with a DELEGATING wrapper — `dyingAfterFirstMove` (the
+      // write-ahead window: the first move lands through the real
+      // GitChannelStore, then the host dies) and `divergentSeat` (the
+      // replay race: the first call lands and dies, later calls land a
+      // foreign move just before delegating). The wrappers simulate host
+      // death around the real store's own calls; every read, list, and
+      // transition flows through the real store and every outcome through
+      // the public doors — nothing bypasses a door check, and the git
+      // binding's walk exposes no hook anchor mid-stage to seat at.
     ],
     status: "live",
   },
