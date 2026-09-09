@@ -609,7 +609,19 @@ export const MANIFEST: readonly ManifestRow[] = [
     expectedFiles: [],
     provenance: [
       "phase 14 §3.3",
-      "phase 13 §6 fixture 2 (the conclusion table's reachable rows instantiated with this contract's scenarios: `denied`, `refused`, `conflict` — each with its exit, its envelope kind, and its annotation fields verbatim)",
+      // Recorded instantiation: the cell drives `denied` (I1) and
+      // `conflict` (I2 at the fail-closed bound 0) with their envelope
+      // kinds and annotation fields verbatim, plus I12's CLI-classified
+      // half — the planning fault, exit 70, stdout empty. The `refused`
+      // row in fixture 2's inventory is NOT instantiated here: no
+      // scenario of this contract renders a refused envelope through the
+      // invocation (the boundary's refused(null-handle) shape is
+      // git-14's alone). The refused conclusion is pinned live by the
+      // Action implementation's own suite
+      // (test/action/conclusions.test.ts) — R3-correct: the fixture
+      // imports no mechanism it does not own and does not duplicate the
+      // implementation suite's row.
+      "phase 13 §6 fixture 2 (the conclusion table instantiated with this contract's scenarios)",
     ],
     status: "live",
   },
@@ -654,7 +666,15 @@ export const MANIFEST: readonly ManifestRow[] = [
     expectedFiles: [],
     provenance: [
       "phase 14 §3.3",
-      "phase 13 §6 fixture 4 (the hostile ambient, verbatim: lying `GITHUB_*` values, `ACTIONS_*`, `RUNNER_*`, `CI=true`, an `INPUT_WORLD` naming a different document, a `GIT_DIR` pointing elsewhere, a `NODE_OPTIONS` carrying a marker, a token-shaped `GH_TOKEN` — and no planted value reachable in the envelope, the annotation, or the conclusion; the envelope equals the clean run, byte for byte)",
+      // Recorded instantiation: the planted ambient is fixture 4's
+      // verbatim MINUS the NODE_OPTIONS plant — this cell asserts the
+      // composite's declared clearing row (`NODE_OPTIONS: ""`) from the
+      // artifact beside its pins, and the plant's live leg (a workflow
+      // planting NODE_OPTIONS, overridden by the step's env block, the
+      // run unchanged) is the Action implementation's
+      // (test/action/invocation.test.ts §6.4). R3-correct: the fixture
+      // owns the scenario data, the implementation owns the mechanism.
+      "phase 13 §6 fixture 4 (the hostile ambient: lying `GITHUB_*` values, `ACTIONS_*`, `RUNNER_*`, `CI=true`, an `INPUT_WORLD` naming a different document, a `GIT_DIR` pointing elsewhere, a token-shaped `GH_TOKEN` — and no planted value reachable in the envelope, the annotation, or the conclusion; the envelope equals the clean run, byte for byte)",
     ],
     status: "live",
   },

@@ -323,6 +323,17 @@ describe("the certification fixture · the Action transport", () => {
         "/evil/.git",
         "runner-tracking-evil",
       ];
+      // MARKS carries the 7 DISTINCTIVE plants' values (GITHUB_TOKEN,
+      // GH_TOKEN, GITHUB_REPOSITORY, ACTIONS_RUNTIME_TOKEN, INPUT_WORLD,
+      // GIT_DIR, RUNNER_TRACKING_ID) of the ambient's 17 keys. The
+      // unchecked remainder — `CI=true`, `GITHUB_ACTIONS=true`,
+      // `GITHUB_REF=refs/heads/evil`, `GITHUB_OUTPUT=/evil/outputs`,
+      // `ACTIONS_RESULTS_URL`, `ACTIONS_CACHE_URL`,
+      // `GIT_WORK_TREE=/evil/worktree`, `GIT_INDEX_FILE=/evil/index`,
+      // `NODE_ENV=production`, `NO_COLOR=1` — rides the same starvation:
+      // the child's environment is exactly {HOME, PATH} (the shape pinned
+      // by the implementation suite's env-echo cell), so no remaining key
+      // can reach the run either.
       expect(ACTION_METADATA).toContain('NODE_OPTIONS: ""');
 
       // Two identical repositories — the determinism pattern: the hostile
