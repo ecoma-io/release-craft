@@ -687,7 +687,7 @@ harness — so the standard is class-shaped, not byte-shaped:
    trailing newline; the surviving value therefore equals the stdout byte for
    byte, trailing newline included, and that equality — survivor against the
    child's stdout — is what the dogfood compares (phase 13 §6's fixture 3
-   names this first real run as the re-proof). The step conclusion equals the
+   will be re-proven by the next successful hosted run). The step conclusion equals the
    conclusion table's row for the envelope's kind. Run 34397333332 observed
    the old malformed header's delimiter fragment being stored before the
    runner rejected the following JSON; that evidence is kept distinct from

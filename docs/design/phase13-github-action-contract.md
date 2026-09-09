@@ -655,8 +655,8 @@ trailing newline and drops the delimiter line (actions/runner's
 pin below would fail on every run. The empty content line absorbs that
 consumption — the parser eats its empty line, and the envelope's own trailing
 newline survives. The write is pinned against the runner's documented parse in
-[§6](#6-test-obligations), fixture 3, and the dogfood's first real run re-proves
-it on the runner itself. The envelope is also relayed to the step log verbatim
+[§6](#6-test-obligations), fixture 3; the next successful hosted dogfood run
+will re-prove it on the runner itself. The envelope is also relayed to the step log verbatim
 — display, not translation. A caller diffing `steps.release.outputs.outcome`
 against the same invocation's CLI stdout must find them equal, byte for byte.
 
@@ -924,8 +924,8 @@ already cover those; phase 11 §5, phase 12 §6).
    ([§3.1](#31-outputs-one-envelope-verbatim)'s platform fact). The harness
    rejects the malformed `outcome=<<...` shape rather than masking it,
    asserting the surviving canonical value equals stdout exactly; the
-   empty-line write is what makes the assertion hold, and the dogfood's first
-   real run re-proves it on the runner itself. A `drives`-bearing `published`
+   empty-line write is what makes the assertion hold, and the next successful
+   hosted dogfood run will re-prove it on the runner itself. A `drives`-bearing `published`
    outcome from a real temp-repo walk (the binding's own `withTempRepo`
    harness) is the realistic-size pin under the 1 MB output ceiling.
 

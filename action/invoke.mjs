@@ -201,12 +201,14 @@ function firstStderrLine(stderr) {
  * captured stdout byte-for-byte. The runner's file-command grammar recognises
  * `NAME<<DELIM` as a heredoc header; `NAME=VALUE` is its single-line form, so
  * the `<<` header must not contain `=`. The parser takes each heredoc content
- * line without its trailing newline and drops the delimiter line. The bytes
- * written are exactly `outcome<<ghadelimiter_<uuid>\n`, then the captured
- * stdout, then `\nghadelimiter_<uuid>\n`: the empty content line absorbs the
- * parser's newline consumption, so the replayed value equals stdout exactly,
- * including stdout's own trailing newline. Empty stdout therefore remains a
- * valid zero-content heredoc and replays to "".
+ * line without its trailing newline and drops the delimiter line. For non-empty
+ * stdout, the bytes are exactly `outcome<<ghadelimiter_<uuid>\n`, then the
+ * captured stdout, then `\nghadelimiter_<uuid>\n`: the empty content line
+ * absorbs the parser's newline consumption, so the replayed value equals stdout
+ * exactly, including stdout's own trailing newline. Empty stdout is a separate
+ * branch: it writes the header immediately followed by the delimiter
+ * (`outcome<<ghadelimiter_<uuid>\n<delimiter>\n`), with no empty content line,
+ * and replays to "".
  *
  * This is the same multiline shape emitted by `@actions/core`'s canonical
  * `setOutput` writer; keeping the runner grammar and raw bytes explicit here
