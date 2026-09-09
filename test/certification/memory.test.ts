@@ -351,6 +351,18 @@ describe("the certification fixture · A-memory", () => {
     expect(
       recordedTos(assembly.stores.ledger.tail(outcome.handle.attemptId), "hook:attest"),
     ).toStrictEqual(["started", "failed", "started", "completed"]);
+
+    // Resumed-equals-uninterrupted (memory-05's pattern, I8's third
+    // clause): a walk whose declaration carries the evidence from the
+    // start never blocks, and lands the identical published tag.
+    const uninterrupted = freshAssembly().engine.run(
+      runRequest(liveWorld(), "main", [beta], attestDeclaration("evidence:attest")),
+    );
+    expect(uninterrupted.kind).toBe("published");
+    if (uninterrupted.kind !== "published") {
+      throw new Error("expected a published outcome");
+    }
+    expect(uninterrupted.tag).toBe(outcome.tag);
   });
 
   it("memory-09 · the store-less channels corner: show channels over A-memory renders the engine's own refusal, never a null", () => {
@@ -359,8 +371,12 @@ describe("the certification fixture · A-memory", () => {
     expect(child.stderr).toBe("");
     const rendered = JSON.parse(child.stdout) as { kind: string; detail?: string };
     expect(rendered.kind).toBe("refused");
-    expect(typeof rendered.detail).toBe("string");
-    expect(rendered.detail?.length ?? 0).toBeGreaterThan(0);
+    // The engine's own refusal, its text pinned: the corner is the store's
+    // absence, not an empty read.
+    expect(rendered.detail).toBe(
+      "no channel store is wired — the assembly names no channel port, so there is " +
+        "nothing to read (phase 11 contract §2.4)",
+    );
   });
 
   it("memory-10 · the zero-random assembly: every memory envelope is byte-identical across runs, with no projection", () => {
