@@ -22,11 +22,15 @@ contract's own findings (the mint does not push —
 [§2.8](#28-the-tokens-journey-decided-empty) — and the conclusion table is
 not the exit table — [§3.3](#33-the-rules-the-table-pins)).
 
-One runner behavior the hermeticity decision leans on is named up front
-because it is load-bearing: the runner injects a composite action's inputs
-into the composite's `run:` steps as `INPUT_<NAME>` environment variables.
-Everything below is written as if that channel exists, because it does — the
-Action's job is to make it the channel that carries nothing.
+Two runner behaviors this contract leans on are named up front because both
+are load-bearing: the runner injects a composite action's inputs into the
+composite's `run:` steps as `INPUT_<NAME>` environment variables
+([§4](#4-hermeticity-in-ci-the-two-lines)), and the runner's file-command
+parser consumes an output value's final newline before the delimiter
+([§3.1](#31-outputs-one-envelope-verbatim)). Everything below is written as
+if both hold, because they do — the Action's job is to make the first the
+channel that carries nothing and to keep the second from eating a byte of
+the envelope.
 
 ## 1. Scope and non-goals
 
@@ -127,8 +131,10 @@ it, not the reverse.
 ### 2.2 The kind — composite, hermeticity deciding
 
 **Decided: a composite action.** The composite's steps are (1) provision —
-check out this repository at the consumer's pin, install the lockfile,
-build the bin; (2) invoke — run the built bin under a constructed
+install the lockfile and build the bin inside the runner's own
+materialization of this repository at the consumer's pin
+(`github.action_path`; [§2.7](#27-the-invocation-the-constructed-command));
+(2) invoke — run the built bin under a constructed
 environment with argv assembled from the inputs
 ([§2.7](#27-the-invocation-the-constructed-command)). The kind was weighed on
 one axis first, because the runner is wall-to-wall ambient — `GITHUB_*`,
@@ -178,8 +184,9 @@ the invocation shell is bash, the composite is written for it, and promising
 runners the suite never exercised is the kind of claim this repository does
 not make. Node is pinned by `.node-version` (24 — matching the package's
 `engines.node >= 24`), pnpm by `packageManager` through the same
-`pnpm/action-setup` pin the repo's own CI uses; the three provisioning
-actions (`actions/checkout`, `pnpm/action-setup`, `actions/setup-node`) are
+`pnpm/action-setup` pin the repo's own CI uses; the composite's provisioning
+actions (`pnpm/action-setup`, `actions/setup-node` — no checkout step exists,
+[§2.7](#27-the-invocation-the-constructed-command)) are
 reused from `.github/workflows/ci.yml`'s 40-character pins, re-pinned to
 current at implementation time by the slice that lands the file.
 
@@ -309,9 +316,14 @@ spelling is a CLI capability this inventory does not expose:
   quoting-hostile, size-limited, and invisible in any diff.
 - The invocation reads no stdin at all
   ([§4](#4-hermeticity-in-ci-the-two-lines)); the child's stdin is closed.
-  `-` is not refused by a gate the Action adds — it is absent from an
-  inventory that never wires a stream, so a `-` value reaches `readFileSync`
-  and fails as the usage fault it is.
+  `-` is not refused by a gate the Action adds — it is absent from the
+  inventory. The mechanism, stated against the built code: the CLI **does**
+  wire the stream for that spelling (`world.ts` reads
+  `location === "-" ? 0 : location` — fd 0), so through the Action a `-`
+  value takes the CLI's stdin branch, finds the closed stream, and fails as
+  the usage fault it is (exit 64, the stdin-specific fault line) — the
+  outcome is the grammar's own refusal, reached through the branch the
+  grammar built for it, never through a path read of a file named `-`.
 - An inline-JSON spelling (`world-json`) is refused for the reason phase 12
   §2.4 refused per-field flags: a second spelling of one input is a second
   place for the two to disagree.
@@ -331,8 +343,8 @@ declared, not discovered — carried up unchanged). The path resolves against
 **Decided: the Action pins `--assembly git` and offers no `assembly` input.**
 Is a memory assembly meaningful in CI? No — and the reason is durability,
 not preference: the memory stores construct from nothing
-(`assembleMemoryStores` wires `mint: null`, verified in `selection.ts` and
-phase 12 §2.5) and die with the process. A memory run in CI is a walk whose
+(`assembleMemoryStores` wires `mint: null`, verified in
+`src/app/assemble.ts`; phase 12 §2.5) and die with the process. A memory run in CI is a walk whose
 every record — ledger, claims, the minted tag — evaporates with the runner:
 performed, recorded, gone. The only evidence a CI context can consult after
 the step is over is the git assembly's recorded refs in a repository someone
@@ -374,27 +386,43 @@ node <action>/dist/src/cli/index.js run \
   file in this repository**, which the composite's `run:` step invokes —
   the suite drives the same file as a subprocess. One definition, no
   drifted duplicate in a test.
-- Provisioning (checkout, install, build) runs _before_ and _outside_ the
+- Provisioning (install, build) runs _before_ and _outside_ the
   hermetic envelope — it reads the network and the ambient runner
   environment freely, because it is the Action's provisioning, not the
   engine's execution. The envelope wraps exactly the invocation of the
   built bin ([§4](#4-hermeticity-in-ci-the-two-lines)); everything after the
   build's completion reads nothing ambient.
-- The internal checkout pins this repository at the consumer's pin —
-  `ref: ${{ github.action_ref }}`, which for a consumer obeying the SHA law
-  is the exact commit they pinned — with `persist-credentials: false` and
-  `fetch-depth: 1` (the build needs no history). The exact context field is
-  an implementation-slice verification ([§8](#8-open-questions-for-the-maintainer),
-  question 6); the rule it must satisfy is stated here: the bin the run
-  executes is built from the same commit the consumer pinned.
+- **The provisioning root is the runner's own materialization — no second
+  checkout exists.** The runner downloads the composite's sources at the
+  consumer's resolved pin before any step runs and exposes that tree at
+  `github.action_path`; provisioning stands there (the steps set
+  `working-directory: ${{ github.action_path }}` explicitly — a composite's
+  `run:` steps stand in the caller's workspace by default, and the build
+  must stand in the Action's own tree). The alternative — a second
+  `actions/checkout` of this repository at `github.action_ref` — was weighed
+  and refused: the materialization **is** the pin's guarantee (the runner
+  resolves the consumer's reference once and hands the composite that exact
+  tree, a stronger provenance than a checkout re-resolving a context
+  field), and refusing it deletes a step class rather than managing it —
+  no `github.action_ref` spelling risk, no `persist-credentials` obligation
+  on a checkout of our own, no clone time. The build needs no git history
+  (`tsc`; every lockfile dependency is a registry package), so the
+  materialization's fetch posture is irrelevant to it. The bin the run
+  executes is built from the same commit the consumer pinned by
+  construction; the runner-behavior facts this rests on — the
+  materialization guarantee and the context spelling — are pinned by
+  [§6](#6-test-obligations), fixture 1, and the maintainer's eyes are asked
+  in [§8](#8-open-questions-for-the-maintainer), question 6.
 
 ### 2.8 The token's journey — decided empty
 
 The issue's premise was that "the tag mint needs push rights." The built
 surface says otherwise, and the contract follows the built surface:
-**verified — the mint is `git update-ref` on the local repository**
-(`src/adapters/git/git-refs.ts`; the tag door's target resolution is a local
-`rev-parse --verify`, `tag-door.ts`), and the binding spawns every git on
+**verified — the mint is `git tag --no-sign <name> <resolved>` on the local
+repository** (`src/adapters/git/tag-door.ts` — a lightweight, unsigned tag at
+the locally resolved target), beside the CAS append family's local
+`git update-ref` writes (`git-refs.ts`); the target resolution itself is a
+local `rev-parse --verify`, and the binding spawns every git on
 `hermeticGitEnv()` — no remote, no credential, `GIT_TERMINAL_PROMPT=0`.
 Nothing in the engine, the boundary, or the CLI names a remote. A v1 run in
 CI therefore mints its tag and lands its records as refs in the checked-out
@@ -415,28 +443,50 @@ forgot to close:
   unreviewed projection. Publication is the adapter's and the publishing
   slice's territory ([ADR-0010](../adr/0010-github-adapter.md); phase 11 §6;
   phase 12 §1).
-- The org's `persist-credentials: false` law applies to the one checkout the
-  composite itself performs — its own source, internal, credentials never
-  persisted — and to the **consumer's** checkout, which remains the
-  consumer's workflow's own step. The Action does not check out the
-  consumer's repository for anyone: the caller chooses the fetch posture and
-  the layout, and the declared world must make its named commits resolvable
-  in that checkout — the mint's `rev-parse` is where a mismatch faults
-  (exit 70), which is phase 12 §2.4's declared-lie posture, not a gap.
+- The org's `persist-credentials: false` law reaches this composite
+  vacuously: it performs **no checkout at all** — the consumer's repository
+  remains the consumer's workflow's own step, and the Action's own sources
+  arrive as the runner's materialization
+  ([§2.7](#27-the-invocation-the-constructed-command)). The Action does not
+  check out the consumer's repository for anyone: the caller chooses the
+  fetch posture and the layout, and the declared world must make its named
+  commits resolvable in that checkout — the mint's `rev-parse` is where a
+  mismatch faults (exit 70), which is phase 12 §2.4's declared-lie posture,
+  not a gap.
 
 The constraints the publishing slice starts from (this contract's
-contribution to that slice, not its design): a credential never persists to
-disk or repository config (`persist-credentials: false` generalized —
-`.git/config` is a reviewable file a token must never land in); a credential
-never travels through the ambient environment (the floor strips the
-`GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` injection channels by design —
-an env-injected config is stripped, not delivered); the process-scoped
-mechanism class (`git -c http.<url>.extraheader=…`) dies with the process
-and is weighed against its command-line exposure (`ps` for the push's
-lifetime on a single-use runner — the residual a slice may accept) and
-against a credential-helper script on disk (refused: a file carrying the
-token). The slice that owns publication decides in its own PR; this
-contract only fixes what v1 refuses so that decision starts honest.
+contribution to that slice, not its design), with the mechanism classes
+named so the decision cannot pass one by unremarked:
+
+- **Never persisted.** A credential never lands in repository config or any
+  file (`persist-credentials: false` generalized — `.git/config` is a
+  reviewable file a token must never sit in). A credential-helper _script_
+  on disk is refused by the same clause: it is a file carrying the token.
+- **Never ambient.** A credential never enters the Action's own environment
+  or the runner's ambient layer — and the ambient-injection channels stay
+  closed (the floor strips `GIT_CONFIG_COUNT`/`GIT_CONFIG_PARAMETERS` by
+  design: an env-injected config is stripped, not delivered).
+- **Child-scoped transport is the in-tree precedent.** The built GitHub
+  adapter already ships the third class, and it is the starting point this
+  contract names rather than rediscovers: an **inline** credential helper —
+  `-c credential.helper=` (clearing any inherited helper list) followed by
+  `-c credential.helper=!f(){ … }; f` answering git's query from the
+  spawned git's **own child environment** (verified:
+  `src/adapters/github/remote-git.ts`), with `GIT_TERMINAL_PROMPT=0` so a
+  remote that would prompt fails instead of hanging. The constraints judge
+  it as written and it passes: a child-process environment is _scoped_ —
+  one spawn, one transport, never the Action's env, never a file, never the
+  runner's layer — so it satisfies "never persisted" and "never ambient"
+  **provided the slice says so in exactly those terms** (scoped to the
+  child, not ambient); what this contract refuses is the same token in the
+  Action's environment or on disk, and the distinction is the review's
+  burden to keep visible.
+- **Process-scoped config** (`git -c http.<url>.extraheader=…`) remains the
+  weighed alternative: it dies with the process but exposes the token on
+  the command line (`ps` for the push's lifetime on a single-use runner —
+  the residual a slice may accept). The slice that owns publication decides
+  in its own PR; this contract only fixes what v1 refuses and names what
+  already exists so that decision starts honest.
 
 Mask rules, stated though v1 makes them vacuous: no secret exists to leak;
 no output carries anything but the envelope; no annotation quotes anything
@@ -484,12 +534,22 @@ slice's suite pins:
 
 **Decided: one output, `outcome`, carrying the `--json` envelope
 byte-for-byte** — the captured stdout of the invocation, written to
-`$GITHUB_OUTPUT` in heredoc form so the bytes survive verbatim
-(`renderJson` emits one compact line plus a trailing newline, so the value
-is single-line-safe). The envelope is also relayed to the step log verbatim
-— display, not translation. A caller diffing `steps.release.outputs.outcome`
-against the same invocation's CLI stdout must find them equal, and
-[§6](#6-test-obligations), fixture 3 pins exactly that.
+`$GITHUB_OUTPUT` with one deliberate shape: the envelope, then an **empty
+line**, then the delimiter (`renderJson` emits one compact line plus a
+trailing newline, so the value is single-line-safe). The platform fact that
+forces the shape, recorded so nobody simplifies it back: the runner's
+file-command parser consumes the value's final newline before the delimiter
+(it substrings each content line without its trailing newline —
+actions/runner's `FileCommandManager`; actions/runner#1182), so a bare
+heredoc would deliver `outputs.outcome` **without** the envelope's trailing
+newline and the equality pin below would fail on every run. The empty
+content line absorbs that consumption — the parser eats its empty line, and
+the envelope's own trailing newline survives. The write is pinned against
+the runner's documented parse in [§6](#6-test-obligations), fixture 3, and
+the dogfood's first real run re-proves it on the runner itself. The
+envelope is also relayed to the step log verbatim — display, not
+translation. A caller diffing `steps.release.outputs.outcome` against the
+same invocation's CLI stdout must find them equal, byte for byte.
 
 - **No shaped outputs.** `tag`, `plan-id`, `handle` as separate outputs
   would require the Action to parse the envelope and re-emit selected
@@ -513,27 +573,28 @@ The outcome kind → step conclusion. The table is total over the
 `RunOutcome` union — mirroring `EXIT_CODES`' exhaustive record
 (`src/cli/exit-codes.ts`, verified) — though the `run` door's reachable
 subset today is narrower; the rows beyond it are pinned as typed rows with
-the same honesty as phase 12 §6, obligation 2. The `resolved`/`abandoned`
-rows are `resolve`/`abort` outcomes the `run` door does not return today;
-`resume` outcomes arrive through no input this inventory offers.
+the same honesty as phase 12 §6, obligation 2. `satisfied-externally`,
+`resolved`, and `abandoned` are outcomes the declarations-less one-shot
+`run` does not return today — phase 12 §6, obligation 2, names the class —
+and `resume` outcomes arrive through no input this inventory offers.
 
-| Kind                   | Exit                                                                          | Conclusion | The annotation (`::error::` line, fields verbatim)                                                      |
-| ---------------------- | ----------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------- |
-| `published`            | 0                                                                             | success    | none required                                                                                           |
-| `satisfied-externally` | 1                                                                             | success    | names ledger-first done-ness — the evidence reads back through `show` (phase 12 §3.2)                   |
-| `resolved`             | 2                                                                             | success    | typed row — `run` never returns it today                                                                |
-| `abandoned`            | 3                                                                             | success    | typed row — `run` never returns it today                                                                |
-| `refused`              | 10                                                                            | failure    | `refused` + `detail` verbatim                                                                           |
-| `denied`               | 11                                                                            | failure    | `denied` + `holder` — another attempt owns the scope; the winner is named                               |
-| `blocked`              | 12                                                                            | failure    | `blocked` + `cause` — needs a human resolve, then resume; **never** a retryable failure                 |
-| `failed`               | 13                                                                            | failure    | `failed` + `cause` — inspect the tail; a later resume re-judges                                         |
-| `conflict`             | 14                                                                            | failure    | `conflict` + `detail` — a human judges                                                                  |
-| `ambiguous`            | 15                                                                            | failure    | `ambiguous` + `detail` — never success (invariant 2.6), never folded into `failed`                      |
-| `stale`                | 16                                                                            | failure    | `stale` — re-plan                                                                                       |
-| `escalate`             | 17                                                                            | failure    | `escalate` + `detail` — a human judges the tail                                                         |
-| usage fault            | 64                                                                            | failure    | the first stderr line verbatim (stdout is empty — pinned by phase 12 §3.2)                              |
-| escaped throw          | 70                                                                            | failure    | the first stderr line verbatim — `Name: message`, never translated into an outcome                      |
-| no verdict             | any other exit or signal; missing or unparseable envelope; kind↔exit mismatch | failure    | `no verdict` + the raw exit or signal — the run produced no verdict; the recorded evidence is the truth |
+| Kind                   | Exit                                                                          | Conclusion | The annotation (`::error::` line, fields verbatim)                                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `published`            | 0                                                                             | success    | none required                                                                                                                                                 |
+| `satisfied-externally` | 1                                                                             | success    | typed row — the one-shot `run` never returns it today; when reachable it names ledger-first done-ness, the evidence reads back through `show` (phase 12 §3.2) |
+| `resolved`             | 2                                                                             | success    | typed row — `run` never returns it today                                                                                                                      |
+| `abandoned`            | 3                                                                             | success    | typed row — `run` never returns it today                                                                                                                      |
+| `refused`              | 10                                                                            | failure    | `refused` + `detail` verbatim                                                                                                                                 |
+| `denied`               | 11                                                                            | failure    | `denied` + `holder` — another attempt owns the scope; the winner is named                                                                                     |
+| `blocked`              | 12                                                                            | failure    | `blocked` + `cause` — needs a human resolve, then resume; **never** a retryable failure                                                                       |
+| `failed`               | 13                                                                            | failure    | `failed` + `cause` — inspect the tail; a later resume re-judges                                                                                               |
+| `conflict`             | 14                                                                            | failure    | `conflict` + `detail` — a human judges                                                                                                                        |
+| `ambiguous`            | 15                                                                            | failure    | `ambiguous` + `detail` — never success (invariant 2.6), never folded into `failed`                                                                            |
+| `stale`                | 16                                                                            | failure    | `stale` + `detail` verbatim — re-plan                                                                                                                         |
+| `escalate`             | 17                                                                            | failure    | `escalate` + `detail` — a human judges the tail                                                                                                               |
+| usage fault            | 64                                                                            | failure    | the first stderr line verbatim (stdout is empty — pinned by phase 12 §3.2)                                                                                    |
+| escaped throw          | 70                                                                            | failure    | the first stderr line verbatim — `Name: message`, never translated into an outcome                                                                            |
+| no verdict             | any other exit or signal; missing or unparseable envelope; kind↔exit mismatch | failure    | `no verdict` + the raw exit or signal — the run produced no verdict; the recorded evidence is the truth                                                       |
 
 Every stop-band row concludes failure. GitHub offers no verdict-shaped
 status below success; the distinction the table must preserve lives in the
@@ -544,7 +605,9 @@ by an exit code it guesses at.
 ### 3.3 The rules the table pins
 
 - **The step conclusion is not the exit code.** `satisfied-externally` exits
-  1 — a shell reads failure; the Action concludes success. The exit table
+  1 — a shell reads failure; the Action concludes success. (It is a typed
+  row today — the example stands for the day the row is reachable, which is
+  exactly when the distinction first bites.) The exit table
   (phase 12 §3.2) answers "did the invocation do what it said" to a process;
   the conclusion table answers "what did the release do" to a workflow; the
   kind is the one verdict, and both renderings key on it. An Action that
@@ -705,20 +768,32 @@ already cover those; phase 11 §5, phase 12 §6).
    composite's step invokes it); the suite executes that file directly. The
    same fixture pins the Action's build command equal to the moon task's
    command (`tsc -p tsconfig.build.json`) so the two definitions of "build"
-   may not drift.
+   may not drift, and pins the runner-behavior facts provisioning rests on
+   ([§2.7](#27-the-invocation-the-constructed-command)): the materialized
+   `github.action_path` tree is what the build stands in, and the invocation
+   executes the bin built from it.
 2. **The conclusion table, pinned kind by kind.** Every
    [§3.2](#32-the-conclusion-table) row asserted by envelope kind, expected
-   conclusion, and annotation content. The rows a fresh-process `run`
-   cannot produce today (`resolved`, `abandoned`) are pinned as typed rows
-   through the harness's outcome injection, declared here so a later slice
-   that makes one reachable moves the pin as part of its own obligations
-   rather than reading the suite as under-tested (phase 12 §6.2's posture,
-   one layer up).
-3. **Byte-equality.** `steps.*.outputs.outcome` equals the same invocation's
-   CLI `--json` stdout, byte for byte, for every fixture — including a
-   `drives`-bearing `published` outcome from a real temp-repo walk (the
-   binding's own `withTempRepo` harness), which is also the realistic-size
-   pin under the 1 MB output ceiling.
+   conclusion, and annotation content. The rows the declarations-less
+   one-shot `run` cannot produce today (`satisfied-externally`,
+   `resolved`, `abandoned` — phase 12 §6.2's own class) are pinned as typed
+   rows through the harness's outcome injection, declared here so a later
+   slice that makes one reachable moves the pin as part of its own
+   obligations rather than reading the suite as under-tested (phase 12
+   §6.2's posture, one layer up).
+3. **Byte-equality, proven against the runner's own parse.**
+   `steps.*.outputs.outcome` equals the same invocation's CLI `--json`
+   stdout, byte for byte — including the trailing newline `renderJson`
+   emits — for every fixture. The harness drives the invocation script with
+   the outputs path pointed at a temp file and replays the runner's
+   file-command parse over what was written (each content line taken
+   without its trailing newline, the delimiter line dropped —
+   [§3.1](#31-outputs-one-envelope-verbatim)'s platform fact), asserting the
+   surviving value equals stdout exactly; the empty-line write is what
+   makes the assertion hold, and the dogfood's first real run re-proves it
+   on the runner itself. A `drives`-bearing `published` outcome from a real
+   temp-repo walk (the binding's own `withTempRepo` harness) is the
+   realistic-size pin under the 1 MB output ceiling.
 4. **The hostile-environment leg.** The invocation under a planted ambient —
    lying `GITHUB_*` values, `ACTIONS_*`, `RUNNER_*`, `CI=true`,
    `INPUT_WORLD` naming a different document, `GIT_DIR` pointing elsewhere,
@@ -729,9 +804,12 @@ already cover those; phase 11 §5, phase 12 §6).
    fixture, extended to the runner's ambient layer.
 5. **The token-journey pin.** v1's journey is empty, so the pin is the
    negative inventory, executable: the action metadata declares no token
-   input and references no secret anywhere; the internal checkout's
-   `persist-credentials: false` is pinned by the same scan; the invocation
-   script names no `git` invocation of its own.
+   input, references no secret anywhere, and names no `actions/checkout`
+   step — the composite performs no checkout of any repository (the
+   consumer's is the caller's step; the Action's own sources arrive as the
+   runner's materialization), so `persist-credentials` is vacuously
+   satisfied and pinned as such; the invocation script names no `git`
+   invocation of its own.
 6. **The inputs' negative inventory.** The refused inputs
    ([§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar)) are
    asserted absent from the metadata — `assembly`, `command`, `json`,
@@ -769,8 +847,9 @@ already cover those; phase 11 §5, phase 12 §6).
 - **The publishing slice** owns remote publication and the token's real
   journey. It starts from [§2.8](#28-the-tokens-journey-decided-empty)'s
   constraints — nothing persisted to disk or repo config, nothing ambient
-  in the environment, process-scoped transport — and decides the mechanism
-  in its own PR.
+  in the Action's environment (a child-scoped transport env is the in-tree
+  precedent's class, named there), process-scoped transport — and decides
+  the mechanism in its own PR.
 - **The world-reader slice** (phase 12 §7) is where `--world` gains a
   legitimate alternative source; the Action's `world` input may grow a
   spelling there, in that slice's PR — never amended silently here.
@@ -803,10 +882,14 @@ left open, each with its proposed default:
    step running the built bin's `plan` command directly, which the
    provisioning already makes possible; the Action stays the release
    execution surface.
-6. **The internal checkout's pin spelling.** `ref: ${{ github.action_ref }}`
-   is proposed; the implementation slice verifies the exact context field
-   that carries the consumer's resolved pin under the current runner and
-   pins it in fixture 1's obligations.
+6. **The provisioning root.** Decided: the runner's materialization at
+   `github.action_path`, no second checkout
+   ([§2.7](#27-the-invocation-the-constructed-command)) — the alternative
+   was weighed and refused there. What stays open is the maintainer's eyes
+   on _relying_ on that materialization before the first consumer pins:
+   proposed default is to rely on it, with fixture 1 pinning the
+   materialization guarantee and the context spelling against the current
+   runner so a runner change breaks the suite before it breaks a release.
 7. **The cold-start cost.** Build-from-source at the pinned SHA costs a
    `pnpm install` plus `tsc` per run, minutes on a release job; a committed
    bundle would buy it back and cost the repo's build-not-commit hygiene
