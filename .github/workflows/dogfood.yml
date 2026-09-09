@@ -52,7 +52,12 @@ jobs:
       # token, and the mint is a local `git tag --no-sign`). Full history is
       # load-bearing, not a Moon convenience here: the world closure observes
       # the line's whole ancestry, and a shallow clone would close a world
-      # whose birth is the clone's edge — a declared lie.
+      # whose birth is the clone's edge — a declared lie. The closure's feed
+      # ref (`refs/heads/main`) exists here by construction, not luck: for a
+      # branch this action checks out with `git checkout --force -B main
+      # refs/remotes/origin/main` (ref-helper's branch row), materializing
+      # the local branch — any other materialization shape is a closure
+      # fault, which is the honest outcome.
       - name: Check out the repository the run certifies
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,7 +91,7 @@ jobs:
       # A consumer's invocation, spelled as §2.3's table spells it: the
       # world file the caller closed, one line, a declared actor, and the
       # every-tag namespace root — ONE EMPTY LINE (the fixture's own
-      # spelling, `EVERY_TAG = "\n"` at test/action/invocation.test.ts:54;
+      # spelling, `EVERY_TAG = "\n"` at test/action/invocation.test.ts:55;
       # the quoted escape is the parser-independent byte spelling). An
       # entirely empty value would forward zero roots and usage-fault — the
       # empty line IS the root. The pin is the FULL 40-character SHA this
