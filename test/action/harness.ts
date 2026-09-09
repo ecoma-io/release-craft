@@ -181,6 +181,16 @@ export const ENV_ECHO_BIN =
 /** A stand-in bin that kills itself — the no-verdict posture's signal leg. */
 export const SIGKILL_BIN = 'process.kill(process.pid, "SIGKILL");\n';
 
+/** The runner's ambient composed under a planted one: the outer line reads
+ * exactly two names, and `PATH` is the step's own — so a hostile-ambient
+ * drive carries the plant AND the runner's PATH, exactly the composition a
+ * step's `env:` block produces (the runner composes workflow-level env
+ * first, the step block over it; PATH is never a plant target). */
+export const ambientWithRunnerPath = (ambient: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
+  ...ambient,
+  PATH: process.env.PATH ?? "",
+});
+
 /**
  * A real temp-repo fixture shaped the way a consumer's run looks: the
  * repository is the caller's checkout, the declared world document lives in

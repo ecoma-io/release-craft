@@ -1,0 +1,18 @@
+{
+  "cell": "git-12",
+  "projection": "phase 14 §4.3 v1 — the repository path becomes REPO in plain and JSON-escaped text spellings; a JSON string whose parsed value is exactly 64 lowercase hex characters (the claim token's whole shape) becomes CLAIM. Whole-value, never substring: plan_sha256/attempt_sha256 values and refs/ecoma/channels names carry 64-hex substrings inside longer strings and stay verbatim.",
+  "scenarios": [
+    {
+      "label": "the unobserved feedRef (planner fault)",
+      "exit": 70,
+      "stdout": "",
+      "stderr": "InvalidPlanningInputError: invalid planning input — 1 violation: lines[0].feedRef: no observed ref named \"no-such-ref\"\n"
+    },
+    {
+      "label": "the unobserved ref head (mint fault)",
+      "exit": 70,
+      "stdout": "",
+      "stderr": "GitFaultError: git rev-parse --verify --quiet eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee^{commit} failed (exit 1): \n"
+    }
+  ]
+}
