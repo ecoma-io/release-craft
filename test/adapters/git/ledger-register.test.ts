@@ -28,6 +28,8 @@ import { withTempRepo } from "./temp-repo.js";
  * classification over a reloaded tail equals classification over the
  * original (double-run determinism), and an append that would rewrite the
  * recorded history fails closed with nothing of the refused door on disk.
+ * The second describe below is not contract fixtures: it pins the walked-
+ * tail cache's two invalidation rules (issue #136) against their mutants.
  */
 
 const attemptId = "attempt_sha256:alpha-a";
@@ -238,6 +240,71 @@ describe("the git-backed ledger and register (phase 8 contract §4, fixtures 1�
       expect(onRef).toHaveLength(before.length + 3);
       expect(ledger.tail(attemptId).slice(0, before.length)).toStrictEqual(before);
       expect(classifyResume(a, ledger)).toEqual({ kind: "resume", from: "plan" });
+    });
+  });
+});
+
+/**
+ * The walked-tail cache's two invalidation rules (issue #136), each pinned
+ * against the mutant that removes it: a ledger whose tail is cached must
+ * still see a peer's commit, whether the peer lands between the ledger's
+ * own writes (the extension rule) or between its reads (the probe rule).
+ * Both scenarios are deterministic and in-process — the peer is a second
+ * `GitLedger` opened on the same repository, its append a plain winning
+ * compare-and-swap, no clocks, no sleeps.
+ */
+describe("the git ledger's walked-tail cache invalidation (issue #136)", () => {
+  it("extension — a winning append built past a walked tail drops it, and the peer's record stays readable", () => {
+    withTempRepo("cache-extension-exact-base", (_repo, git) => {
+      const ledger = new GitLedger(git);
+      const a = attempt();
+      ledger.appendStart(a, "plan", actor("automation"));
+      // appendStart's stored-record read walks the tail: the cache now
+      // holds the history up to this tip.
+      const before = ledger.tail(attemptId);
+
+      // A peer appends on the same stream — the ref moves off the tip the
+      // walked tail holds.
+      const peer = new GitLedger(git);
+      peer.append(completedRecord("claim", actor("peer")));
+
+      // The walking ledger appends again, and its compare-and-swap wins
+      // from the peer's tip, not from the tip it holds. The extension
+      // rule — the cache extends only from the exact base the append was
+      // classified against, drops otherwise — is what keeps the peer's
+      // record readable here: extend unconditionally and this ledger
+      // serves a tail whose history never held the peer's commit.
+      ledger.append(completedRecord("publish", actor("automation")));
+
+      const actors = ledger
+        .tail(attemptId)
+        .flatMap((record) => (record.kind === "step" ? [record.record.attribution.actor] : []));
+      expect(actors).toEqual(["automation", "peer", "automation"]);
+      expect(ledger.tail(attemptId).slice(0, before.length)).toStrictEqual(before);
+    });
+  });
+
+  it("probe — a walked tail is re-walked when the ref moves under it", () => {
+    withTempRepo("cache-probe-reads-the-ref", (_repo, git) => {
+      const ledger = new GitLedger(git);
+      const a = attempt();
+      ledger.appendStart(a, "plan", actor("automation"));
+      const before = ledger.tail(attemptId);
+
+      // A peer appends on the same stream, and the walking ledger reads
+      // with no write of its own in between. The probe rule — the ref is
+      // read before any cached history answers — is what turns the peer's
+      // commit into a cache miss: serve the walked tail unconditionally
+      // and this read reports the attempt's stream without the peer's
+      // record on it.
+      const peer = new GitLedger(git);
+      peer.append(completedRecord("claim", actor("peer")));
+
+      const actors = ledger
+        .tail(attemptId)
+        .flatMap((record) => (record.kind === "step" ? [record.record.attribution.actor] : []));
+      expect(actors).toEqual(["automation", "peer"]);
+      expect(ledger.tail(attemptId).slice(0, before.length)).toStrictEqual(before);
     });
   });
 });
