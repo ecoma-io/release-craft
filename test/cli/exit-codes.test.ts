@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { EXIT_CODES, EXIT_FAULT, EXIT_USAGE } from "../../src/cli/exit-codes.js";
+import { RECORDED_EXIT_TABLE } from "../certification/exit-table.js";
 import {
   betaIntent,
   cliJson,
@@ -50,27 +51,15 @@ const gitRunArgs = (repo: string): string[] => [
 ];
 
 describe("§3.2 — the table, exhaustively", () => {
-  it("every outcome kind maps to its §3.2 row", () => {
-    expect(EXIT_CODES).toStrictEqual({
-      // the proceed band
-      planned: 0,
-      published: 0,
-      "satisfied-externally": 1,
-      resolved: 2,
-      abandoned: 3,
-      // the stop band
-      refused: 10,
-      denied: 11,
-      blocked: 12,
-      failed: 13,
-      conflict: 14,
-      ambiguous: 15,
-      stale: 16,
-      escalate: 17,
-      // the observation doors
-      attempt: 0,
-      channels: 0,
-    });
+  it("every outcome kind maps to its §3.2 row — the certification fixture's recorded copy, cross-pinned here", () => {
+    // The phase 14 certification fixture records its own copy of this
+    // table (test/certification/exit-table.ts, hand-derived from phase 12
+    // §3.2). §4.2 of that contract pins the two equal BY a cross-pin in
+    // this suite — one table, no second mapping — because the fixture's
+    // import law bars it from src/cli/, where the other side of the
+    // equality lives. Amending the table (phase 12 §8 question 8) edits
+    // the recorded copy and this suite's verdict moves with it.
+    expect(EXIT_CODES).toStrictEqual(RECORDED_EXIT_TABLE);
   });
 
   it("the fault bands are the two named constants", () => {
