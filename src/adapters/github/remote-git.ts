@@ -36,7 +36,8 @@ const GIT_TIMEOUT_MS = 30_000;
  *  query with the x-access-token username and the token from the child's
  *  own environment. Git runs helpers through a shell; the argument here
  *  is a single `argv` entry, so no shell quoting crosses the spawn. */
-const CREDENTIAL_HELPER = "!f(){ echo username=x-access-token; echo password=$ECOMA_GH_TOKEN; }; f";
+const CREDENTIAL_HELPER =
+  "!f(){ echo username=x-access-token; echo password=$RELEASE_CRAFT_GITHUB_TOKEN; }; f";
 
 /** The child's environment: the binding's hermetic floor plus the
  *  prompt-proof switch (a remote that would ask for credentials must
@@ -95,7 +96,7 @@ export function openRemoteGit(config: {
         timeout: GIT_TIMEOUT_MS,
         maxBuffer: MAX_BUFFER_BYTES,
         encoding: "utf8",
-        env: { ...GIT_ENV, ECOMA_GH_TOKEN: config.token },
+        env: { ...GIT_ENV, RELEASE_CRAFT_GITHUB_TOKEN: config.token },
         windowsHide: true,
       },
     );
