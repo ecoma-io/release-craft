@@ -27,8 +27,9 @@ out. The engine's machinery ships through Phase 9: the append-only ledger
 git binding (Phase 8), and the assembled GitHub adapter — remote
 synchronization, release publication, reconciliation behind
 `openGitHubAdapter` (Phase 9, [ADR-0010](docs/adr/0010-github-adapter.md)).
-Not built yet: the GitHub action, and this repository's own adoption of
-the engine for its releases. Phase 0's model — vocabulary,
+Not built yet: this repository's own adoption of the engine for its
+releases. The GitHub action — the composite front door over the run door —
+ships (phase 13). Phase 0's model — vocabulary,
 invariants, complexity budget, built on the
 [53-scenario matrix](docs/design/release-scenarios.md) and adversarially reviewed — is
 in [`release-model.md`](docs/design/release-model.md); older work in
@@ -47,6 +48,7 @@ in [`release-model.md`](docs/design/release-model.md); older work in
 | Task graph       | `.moon/`, `moon.yml`, `scripts/moon.yml`                                                                                                               | every task declares its `inputs`; `pnpm check` composes all gates                                                                                                                                                      |
 | Boundary law     | `module-boundaries.config.mjs`                                                                                                                         | `arch` (archkeep, pinned exact) — gates may never import the package; the kernel may import nothing                                                                                                                    |
 | Gate scripts     | `scripts/check-*.mjs` + tests                                                                                                                          | `policy` workflow, `pnpm check:*`                                                                                                                                                                                      |
+| GitHub action    | `action.yml` + `action/invoke.mjs` — the composite front door over the run door (phase 13)                                                             | `test/action/` — the artifact suite over the one script — plus `check:action`                                                                                                                                          |
 | Docs contract    | `README`, `CONTRIBUTING`, `AGENTS`, `docs/`                                                                                                            | `check:docs` — links, anchors and commands resolve                                                                                                                                                                     |
 
 ## Quickstart
@@ -77,7 +79,7 @@ Three workflows, three different questions — none is a god workflow:
   healthy: CodeQL (TypeScript + the workflow files themselves), Semgrep
   (report-only), Gitleaks over full history, aggregated by `analysis-gate`.
 - **Policy** (`.github/workflows/policy.yml`) — does _governance_ hold: the
-  five executable gates plus the PR title against the commitlint rules and a
+  six executable gates plus the PR title against the commitlint rules and a
   finalized PR description — the gate born from #6, which merged with a
   "(To be finalized)" body and an untouched checklist.
 

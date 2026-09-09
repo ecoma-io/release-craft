@@ -21,9 +21,11 @@ publication, and reconciliation composed behind the
 holds the semantic `Version` value plus the five release values the
 Phase 0 vocabulary locked — `Change`, `ChangeSet`, `ReleaseLine`,
 `Channel`, `Artifact` — behind the barrel entrypoint (ADR-0001,
-ADR-0002). The engine's own release adoption, publishing pipelines, and
-the GitHub action do not exist yet — no release behavior, provider
-pipeline, or action wiring may appear outside its own issue and design.
+ADR-0002). The engine's own release adoption and
+publishing pipelines do not exist yet — no release behavior or provider
+pipeline may appear outside its own issue and design. The GitHub action
+(phase 13, `action.yml` + `action/invoke.mjs`) exists; changes to its
+behavior land through the phase 13 contract, never as drive-by edits.
 Do not implement new provider behavior, release lines as behavior,
 publishing pipelines, npm publishing, or release-please compatibility in
 a drive-by change — that work lands through its own issue and design,
@@ -102,8 +104,9 @@ Three workflows, three questions, no god workflow:
 - `analysis.yml` — the repository: CodeQL (javascript-typescript + actions),
   Semgrep (registry packs, report-only), Gitleaks (full history, checksummed
   binary) + `analysis-gate`.
-- `policy.yml` — governance: the five `scripts/check-*.mjs` gates (required
-  files · package · workflows · docs · PR description) + the PR title.
+- `policy.yml` — governance: the six `scripts/check-*.mjs` gates (required
+  files · package · workflows · action metadata · docs · PR description) +
+  the PR title.
 
 One workflow sits outside the three governance layers: `triage.yml` — the
 action-agents dogfood run (#101) — a consumer of the released sibling action
