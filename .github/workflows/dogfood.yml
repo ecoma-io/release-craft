@@ -1,0 +1,149 @@
+name: dogfood
+
+# The self-dogfood (#139, phase 14 contract §7): this repository's own
+# release through this repository's own GitHub Action — a real run over a
+# real world, judged class-shaped, not byte-shaped. One dispatch, four
+# captured classes:
+#
+#   1. the exit code equals the conclusion table's entry for the rendered
+#      kind (the Action's own integrity pin, re-proven on the real runner);
+#   2. the `--json` envelope parses to the pinned shape inventory — kind,
+#      carrying fields, `planId`/`handle`/`drives`;
+#   3. the recorded tail after the run matches the projected record
+#      sequence for the run's walk class — the ledger dump below is the
+#      material that class reads, and it is what makes this a
+#      certification rather than a smoke test;
+#   4. the `outcome` output the runner replays equals the child's stdout
+#      byte for byte, trailing newline included (the preserving write's
+#      first real-run re-proof, phase 13 §6 fixture 3), and the step
+#      conclusion equals the conclusion table's row for the envelope's
+#      kind.
+#
+# The workflow captures; it never judges. Every dump below is
+# display-not-translation, and `if: always()` guards the evidence — a
+# stop-band verdict concludes FAILURE, and the evidence must be captured
+# regardless. The judgment itself reads the run's log against the four
+# classes; one mismatch is a filed defect against the owning slice, never
+# a waived row.
+#
+# `workflow_dispatch` is the ONLY trigger, on purpose: the dogfood must
+# never run during the PR's own CI — it mints a tag, and a push or PR
+# trigger would mint it on every merge instead of under a judged dispatch.
+on:
+  workflow_dispatch:
+
+concurrency:
+  # Two dispatches at once would race for the same mint; the second one's
+  # conflict is evidence, not something to cancel a first run over.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  dogfood:
+    name: dogfood
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # The checkout carries no token past this step (`persist-credentials:
+      # false` — phase 13 §2.8's empty token journey: the run needs no
+      # token, and the mint is a local `git tag --no-sign`). Full history is
+      # load-bearing, not a Moon convenience here: the world closure observes
+      # the line's whole ancestry, and a shallow clone would close a world
+      # whose birth is the clone's edge — a declared lie. The closure's feed
+      # ref (`refs/heads/main`) exists here by construction, not luck: for a
+      # branch this action checks out with `git checkout --force -B main
+      # refs/remotes/origin/main` (ref-helper's branch row), materializing
+      # the local branch — any other materialization shape is a closure
+      # fault, which is the honest outcome.
+      - name: Check out the repository the run certifies
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The closure script imports `node:` modules only — zero installs —
+      # but the interpreter is pinned by value (§2.2's posture, the same
+      # value the Action itself pins).
+      - name: Provision Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # The caller closes the world (phase 12 §2.4); the CLI discovers
+      # nothing. The document's bytes are dumped in the evidence step below
+      # — the judgment needs the world the run actually planned over, and
+      # the runner's copy evaporates with the runner.
+      - name: Close the world
+        run: node scripts/dogfood/close-world.mjs > world.json
+
+      # Zero remote writes is a claimed property of the run (the writes are
+      # the walk's local writes, §2.8) — this is the before half of proving
+      # it: the remote's refs, hashed. The remote is public; no credential
+      # exists to leak into this read.
+      - name: Record the remote refs before the run
+        run: |
+          git ls-remote origin > remote-before.txt
+          sha256sum remote-before.txt
+
+      # A consumer's invocation, spelled as §2.3's table spells it: the
+      # world file the caller closed, one line, a declared actor, and the
+      # every-tag namespace root — ONE EMPTY LINE (the fixture's own
+      # spelling, `EVERY_TAG = "\n"` at test/action/invocation.test.ts:55;
+      # the quoted escape is the parser-independent byte spelling). An
+      # entirely empty value would forward zero roots and usage-fault — the
+      # empty line IS the root. The pin is the FULL 40-character SHA this
+      # dogfood certifies (§2.1: the SHA carries the metadata, the sources,
+      # the lockfile, and the grammar table — one commit, one behavior).
+      - name: Invoke the run door
+        id: invoke
+        uses: ecoma-io/release-craft@9ae06a5008ef08a3de97840d3483cf1f138167ea
+        with:
+          world: world.json
+          line: main
+          actor: release-craft-dogfood
+          tag-namespaces: "\n"
+          intents: release
+          repo: .
+          max-retries: "0"
+
+      # — the evidence — display only, captured before the runner
+      # evaporates, guarded by `always()` because a stop-band verdict
+      # concludes FAILURE and the evidence must be captured regardless.
+      # The `outcome` output reaches this shell through `env:`, never an
+      # interpolation into the script source, so its bytes are dumped, not
+      # re-quoted: the class-4 comparison reads this byte dump against the
+      # invoke step's log, whose stdout is the envelope relayed verbatim.
+      - name: Capture the evidence
+        if: always()
+        env:
+          OUTCOME: ${{ steps.invoke.outputs.outcome }}
+        run: |
+          set -euo pipefail
+          echo '## the commit the run certified'
+          git rev-parse HEAD
+          echo '## the closed world the run planned over'
+          cat world.json
+          echo '## the refs after the run'
+          git for-each-ref
+          echo '## the recorded ledger tails'
+          for ref in $(git for-each-ref --format='%(refname)' 'refs/ecoma/ledger/'); do
+            echo "== ${ref}"
+            for sha in $(git rev-list --first-parent "${ref}"); do
+              echo "-- commit ${sha}"
+              git show "${sha}:record"
+            done
+          done
+          echo '## the tags after the run'
+          git tag -l
+          echo '## the outcome output, byte for byte'
+          printf '%s' "$OUTCOME" | od -c
+          echo '## the remote refs, before and after the run'
+          git ls-remote origin > remote-after.txt
+          sha256sum remote-before.txt remote-after.txt
+          echo '--- before ---'
+          cat remote-before.txt
+          echo '--- after ---'
+          cat remote-after.txt
