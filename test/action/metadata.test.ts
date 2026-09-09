@@ -89,9 +89,9 @@ describe("fixture 1 — the toolchain pins are declared values, single-sourced",
     expect(bashSteps.length).toBeGreaterThan(0);
   });
 
-  it("the install is frozen — the repository's own invariant reaches its front door", () => {
+  it("the install is frozen and scripts-free — the invariants reach the front door", () => {
     const installs = ACTION_METADATA.match(/pnpm install.*/g) ?? [];
-    expect(installs).toStrictEqual(["pnpm install --frozen-lockfile"]);
+    expect(installs).toStrictEqual(["pnpm install --frozen-lockfile --ignore-scripts"]);
   });
 });
 

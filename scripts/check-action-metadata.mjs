@@ -33,8 +33,13 @@
 //   - every `run:` step declares `shell: bash` and a `working-directory:`
 //     of exactly the two the contract names (§2.7 — the Action's own tree
 //     for provisioning, the declared input for the invocation);
-//   - the install is frozen (`pnpm install --frozen-lockfile`) — the
-//     lockfile is the pin's reproducibility (§2.6);
+//   - the install is frozen and runs no lifecycle scripts
+//     (`pnpm install --frozen-lockfile --ignore-scripts`) — the lockfile is
+//     the pin's reproducibility (§2.6), and the scripts-free row is the
+//     materialization's (§2.2): the archive extraction carries no .git, so a
+//     lifecycle script that assumes one cannot succeed there — the package's
+//     own prepare died exactly that way in the first self-dogfood run
+//     (34388697784);
 //   - one output, `outcome`, declared over the invocation step (§3.1 — the
 //     exposure plumbing `steps.<id>.outputs.outcome` presupposes), and no
 //     shaped outputs beside it.
@@ -285,8 +290,10 @@ export function analyzeActionMetadata(source) {
     }
   }
 
-  if (!/pnpm install --frozen-lockfile/.test(source)) {
-    violations.push("the install is not frozen — pnpm install --frozen-lockfile is absent (§2.6)");
+  if (!/pnpm install --frozen-lockfile --ignore-scripts/.test(source)) {
+    violations.push(
+      "the install is not frozen-and-scripts-free — pnpm install --frozen-lockfile --ignore-scripts is absent (§2.2, §2.6)",
+    );
   }
 
   // — one output, `outcome`, exposed over the invocation step (§3.1) —

@@ -151,7 +151,8 @@ whole job is environment?
   reviewed step in this repository, not library behavior inside a runtime.
   Hermeticity is _achievable by construction_: the ambient layer ends at a
   shell line this repo owns. Cost: cold start — a `pnpm install
---frozen-lockfile` plus `tsc` build per run, minutes on a release job.
+--frozen-lockfile --ignore-scripts` plus `tsc` build per run, minutes on a
+  release job.
   Accepted and stated: releases are not latency-critical, and the build is
   what makes the pinned SHA mean the reviewed sources.
 - **`node24` (a JavaScript action).** Refused. The `main` entry must exist at
@@ -188,6 +189,23 @@ the package's `engines.node >= 24`), pnpm by its `packageManager` field
 (`pnpm@11.25.0`) — and the composite pins **values**, not file paths:
 `actions/setup-node` gets `node-version: 24`, `pnpm/action-setup` gets
 `version: 11.25.0`.
+
+The provisioning install also runs **no lifecycle scripts** — the run line
+is `pnpm install --frozen-lockfile --ignore-scripts` — and the reason is a
+materialization fact, grounded in this repository's first self-dogfood run
+([run 34388697784](https://github.com/ecoma-io/release-craft/actions/runs/34388697784)):
+the runner materializes the pinned action by extracting an archive, so the
+tree the provisioning stands in holds no `.git`, and the package's own
+`prepare` script (`lefthook install`) died there in `git rev-parse`
+(exit 128) — the install with it, the run door never reached. A lifecycle
+script that assumes a git repository cannot succeed in that tree, so the
+provisioning runs none at all. Its product is the dependencies and the
+build — nothing else — and the flag removes the whole class (any current or
+future lifecycle script, of the package or of any dependency) rather than
+lefthook alone, and keeps install-time code execution out of the
+materialization. This repository's own CI installs keep their scripts: a
+checkout IS a git repository, and the hooks `prepare` wires there are
+wanted.
 
 The file-keyed mechanism is decided against, and the reason is a platform
 fact, verified against the actions' sources at the pins this repository's
