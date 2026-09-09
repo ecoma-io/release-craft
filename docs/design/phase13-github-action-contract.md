@@ -151,7 +151,8 @@ whole job is environment?
   reviewed step in this repository, not library behavior inside a runtime.
   Hermeticity is _achievable by construction_: the ambient layer ends at a
   shell line this repo owns. Cost: cold start — a `pnpm install
---frozen-lockfile` plus `tsc` build per run, minutes on a release job.
+--frozen-lockfile --ignore-scripts` plus `tsc` build per run, minutes on a
+  release job.
   Accepted and stated: releases are not latency-critical, and the build is
   what makes the pinned SHA mean the reviewed sources.
 - **`node24` (a JavaScript action).** Refused. The `main` entry must exist at
