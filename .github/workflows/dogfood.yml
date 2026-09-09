@@ -99,7 +99,7 @@ jobs:
       # the lockfile, and the grammar table — one commit, one behavior).
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@084613b040cc9cb5c02214c39426ef6bfef2146d
+        uses: ecoma-io/release-craft@e47e027c58b01d26c7d2597aad7e6e25dbeb1fdf
         with:
           world: world.json
           line: main
