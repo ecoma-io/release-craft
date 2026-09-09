@@ -124,6 +124,15 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
+        # The empty NODE_OPTIONS is load-bearing (§6.4: the planted-ambient
+        # run is unchanged): NODE_OPTIONS poisons every node process that
+        # reads it, so a workflow- or job-level plant would kill this step's
+        # own interpreter before the script ever runs — and a step's `env:`
+        # block overrides those levels. The empty value clears the plant for
+        # this step only; every other step in the consumer's workflow keeps
+        # its own NODE_OPTIONS untouched. The child never sees the name at
+        # all — its environment is constructed as exactly {PATH, HOME}.
+        NODE_OPTIONS: ""
         RC_WORLD: ${{ inputs.world }}
         RC_LINE: ${{ inputs.line }}
         RC_ACTOR: ${{ inputs.actor }}

@@ -18,10 +18,12 @@
  *     the naive heredoc shape provably fails the same replay;
  *   - obligation 4 (hostile environment): the runner's planted ambient layer
  *     (`GITHUB_*`, `ACTIONS_*`, `RUNNER_*`, `CI`, the injected `INPUT_*`
- *     channel, `GIT_DIR`, `NODE_OPTIONS`) never reaches planning — the echo
- *     seam proves the child's whole environment is exactly {HOME, PATH}, and
- *     the run's verdict is byte-equal to the clean run's modulo the claim
- *     token;
+ *     channel, `GIT_DIR`) never reaches planning — the echo seam proves the
+ *     child's whole environment is exactly {HOME, PATH}, and the run's
+ *     verdict is byte-equal to the clean run's modulo the claim token. A
+ *     workflow-level `NODE_OPTIONS` plant is overridden by the step's own
+ *     `env:` block (§6.4: the run is unchanged), and the counterfactual —
+ *     the override stripped — shows the plant killing the step loudly;
  *   - obligation 7 (determinism): identical declared inputs over identical
  *     repositories give byte-equal verdicts modulo the claim token.
  */
@@ -33,6 +35,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  ACTION_METADATA,
   ARGV_ECHO_BIN,
   ENV_ECHO_BIN,
   annotationOf,
@@ -332,6 +335,32 @@ const PLANTED_MARKS = [
   "runner-tracking-evil",
 ];
 
+/** The invoke step's `env:` block, parsed from the action.yml text — the
+ * rows a runner composes OVER the workflow- and job-level environment (a
+ * step block wins). Values are the literal YAML scalars; the quoted empty
+ * string is the NODE_OPTIONS override, and it is read from the artifact so
+ * this helper throws if the row this fixture depends on is ever removed. */
+const invokeStepEnv = (metadata: string): Record<string, string> => {
+  const lines = metadata.split("\n");
+  const start = lines.indexOf("      env:");
+  if (start === -1) {
+    throw new Error("the action.yml invoke step declares no env: block");
+  }
+  const override: Record<string, string> = {};
+  for (const line of lines.slice(start + 1)) {
+    if (!line.startsWith("        ")) break;
+    // The block may teach — comment lines explain the rows without being
+    // rows.
+    if (line.trim().length === 0 || line.trimStart().startsWith("#")) continue;
+    const row = /^ {8}([A-Z_]+): (.*)$/.exec(line);
+    if (row === null) break;
+    const key = row[1] ?? "";
+    const raw = row[2] ?? "";
+    override[key] = raw === '""' ? "" : raw.replace(/^"(.*)"$/, "$1");
+  }
+  return override;
+};
+
 describe("fixture: the planted ambient layer ends at the outer hermeticity line", () => {
   it(
     "the child's whole environment is exactly {HOME, PATH}; HOME is a fresh directory, the cwd is the declared one",
@@ -417,28 +446,69 @@ describe("fixture: the planted ambient layer ends at the outer hermeticity line"
   );
 
   it(
-    "a planted NODE_OPTIONS cannot slip past the outer line — it breaks the step loudly, never the child silently",
+    "a workflow-level planted NODE_OPTIONS is overridden by the step's env block — the run is unchanged (§6.4)",
     { timeout: 45_000 },
     () => {
+      // The step's `env:` block, parsed from action.yml itself: the runner
+      // composes workflow-level env FIRST and step env OVER it, so whatever
+      // NODE_OPTIONS the consumer's workflow plants, this block's value
+      // wins for this step. The override is read from the artifact, so a
+      // test cannot pass while the row it depends on is gone.
+      const stepEnv = invokeStepEnv(ACTION_METADATA);
+      expect(stepEnv).toHaveProperty("NODE_OPTIONS", "");
+      const planted = {
+        ...HOSTILE,
+        PATH: process.env.PATH ?? "",
+        NODE_OPTIONS: "--require /no/such/release-craft-pwn.mjs",
+      };
       withActionRepo("hostile-node-options", (repo, _git, worldPath) => {
-        // NODE_OPTIONS poisons every node process that reads it — the step's
-        // own interpreter included. That is the outer line working as
-        // designed: the step fails loudly (the option names a file that does
-        // not exist), no verdict is rendered, and the child is never run
-        // with the option in its constructed environment.
+        // The counterfactual, first — the row is load-bearing and this is
+        // what it prevents: with the step block's override stripped, the
+        // plant kills the step's own interpreter loudly, no verdict is
+        // rendered, and the repository is untouched (the failure happens
+        // before the bin is ever spawned).
+        const bare = runInvoke(baseInputs({ world: worldPath }), { cwd: repo, env: planted });
+        expect(bare.status).not.toBe(0);
+        expect(bare.stdout.toString("utf8")).not.toContain('"kind":"published"');
+        expect(bare.outputs.toString("utf8")).not.toContain("published");
+        expect(bare.stderr.toString("utf8")).toContain("release-craft-pwn");
+        // The step block applied over the plant — the runner's own
+        // composition order — and §6.4's letter holds: the run is the clean
+        // run, byte for byte, modulo the claim token.
         const drive = runInvoke(baseInputs({ world: worldPath }), {
           cwd: repo,
-          env: {
-            ...HOSTILE,
-            PATH: process.env.PATH ?? "",
-            NODE_OPTIONS: "--require /no/such/release-craft-pwn.mjs",
-          },
+          env: { ...planted, ...stepEnv },
         });
-        expect(drive.status).not.toBe(0);
-        expect(drive.stdout.toString("utf8")).not.toContain('"kind":"published"');
-        expect(drive.outputs.toString("utf8")).not.toContain("published");
-        expect(drive.stderr.toString("utf8")).toContain("release-craft-pwn");
+        expect(drive.status).toBe(0);
+        expect(annotationOf(drive.stdout)).toBe("");
+        expect(drive.stderr.toString("utf8")).not.toContain("release-craft-pwn");
       });
+      let cleanEnvelope: unknown = null;
+      let cleanRepo = "";
+      withActionRepo("node-options-clean", (repo, _git, worldPath) => {
+        cleanRepo = repo;
+        const clean = runInvoke(baseInputs({ world: worldPath }), { cwd: repo });
+        expect(clean.status).toBe(0);
+        cleanEnvelope = JSON.parse(replayOutcome(clean.outputs)) as unknown;
+      });
+      let plantedEnvelope: unknown = null;
+      let plantedRepo = "";
+      withActionRepo("node-options-planted", (repo, _git, worldPath) => {
+        plantedRepo = repo;
+        const drive = runInvoke(baseInputs({ world: worldPath }), {
+          cwd: repo,
+          env: { ...planted, ...stepEnv },
+        });
+        expect(drive.status).toBe(0);
+        expect(JSON.parse(replayOutcome(drive.outputs)) as { kind: string }).toHaveProperty(
+          "kind",
+          "published",
+        );
+        plantedEnvelope = JSON.parse(replayOutcome(drive.outputs)) as unknown;
+      });
+      expect(projectRepo(plantedEnvelope, plantedRepo)).toStrictEqual(
+        projectRepo(cleanEnvelope, cleanRepo),
+      );
     },
   );
 });
