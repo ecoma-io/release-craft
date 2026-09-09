@@ -76,6 +76,21 @@ interface ExternalNote {
 export class GitLedger implements ExecutionLedger {
   readonly #git: GitRun;
 
+  /** The reconstructed tails, keyed by ref and by the tip they walked. The
+   * ref itself is read on every `tail` call — the cheap half — and the
+   * recorded commits are re-read out of the object store only when the tip
+   * has moved; a walk's repeated tail reads (the projection, the resume
+   * classification, the abandonment scan) stop re-deriving the whole
+   * history per call. A concurrent writer still shows: it moves the ref,
+   * the probe misses the cache, the history is re-walked. Entries are
+   * extended by the walk's own winning appends only when they hold the
+   * exact base the append extended — anything else is dropped, so a
+   * history that raced a concurrent winner is never served. */
+  readonly #tails: Map<
+    string,
+    { readonly tip: string | null; readonly records: readonly LedgerRecord[] }
+  > = new Map();
+
   constructor(git: GitRun) {
     this.#git = git;
   }
@@ -115,7 +130,9 @@ export class GitLedger implements ExecutionLedger {
 
   /** The only other write: append, persist, freeze. The record lands as one
    * compare-and-swap commit on its attempt's stream — a pure extension of
-   * the recorded history or nothing at all. */
+   * the recorded history or nothing at all. A winning append extends the
+   * walked tail it built on, so the walk's next read of this stream does
+   * not re-read what it just wrote. */
   append(record: LedgerRecord): LedgerRecord {
     const attemptId =
       record.kind === "step"
@@ -124,19 +141,40 @@ export class GitLedger implements ExecutionLedger {
           ? record.record.attemptId
           : record.attemptId;
     const ref = ledgerRef(attemptId);
-    this.#casAppend(ref, () => canonicalJson(record));
+    const bytes = canonicalJson(record);
+    this.#casAppend(
+      ref,
+      () => bytes,
+      (base, tip) => {
+        this.#cacheAppend(ref, base, tip, bytes);
+      },
+    );
     return deepFreeze(record) as LedgerRecord;
   }
 
   /** All of the attempt's records, append order, reconstructed from the
    * ref's tip by walking the first-parent history (contract §2.2's read
-   * path). Every record arrives deep-frozen — `frozenParse` froze it on
-   * the way out of the repository. */
+   * path). The ref is read on every call; the history behind it is walked
+   * only when the tip moved off what the last walk saw — a repeated tail
+   * read inside one walk is answered from the walked history without
+   * re-reading the object store, and a concurrent writer's ref move is
+   * still seen as it happens. Every record arrives deep-frozen —
+   * `frozenParse` froze it on the way out of the repository. */
   tail(attemptId: string): readonly LedgerRecord[] {
     const ref = ledgerRef(attemptId);
-    const records = firstParentHistory(this.#git, ref).map(
+    const cached = this.#tails.get(ref);
+    const tip = readRef(this.#git, ref);
+    if (cached !== undefined && cached.tip === tip) {
+      return deepFreeze([...cached.records]) as readonly LedgerRecord[];
+    }
+    const commits = firstParentHistory(this.#git, ref);
+    const records = commits.map(
       (commit) => frozenParse(commitRecord(this.#git, commit)) as LedgerRecord,
     );
+    // The cache keys on the tip the walk itself saw — the history's own
+    // last commit, not the probe above — so a ref that moves inside the
+    // read window keys the entry to the history it truly holds.
+    this.#tails.set(ref, { tip: commits.at(-1) ?? null, records });
     return deepFreeze(records) as readonly LedgerRecord[];
   }
 
@@ -174,8 +212,9 @@ export class GitLedger implements ExecutionLedger {
 
   /** The step record view the kernel's `requestStep` consumes (§2.3) — the
    * replay projection, lazy per attempt: nothing is read until a view
-   * function names its attempt, and every call reconstructs from the
-   * repository rather than caching mutable state. */
+   * function names its attempt, and every call re-reads the ref rather
+   * than caching mutable state (the walked history behind the ref is
+   * `tail`'s tip-keyed cache). */
   stepView(): StepRecordsView {
     return {
       records: (attemptId) => this.#stepRecords(attemptId),
@@ -248,9 +287,34 @@ export class GitLedger implements ExecutionLedger {
       planFingerprint,
       attribution,
     };
-    this.#casAppend(ref, () =>
-      this.planFingerprint(attemptId) === null ? canonicalJson(record) : null,
+    this.#casAppend(
+      ref,
+      () => (this.planFingerprint(attemptId) === null ? canonicalJson(record) : null),
+      (base, tip) => {
+        this.#cacheAppend(ref, base, tip, canonicalJson(record));
+      },
     );
+  }
+
+  /**
+   * Extends the walked tail `ref`'s cache holds when it is exactly the
+   * history `base` names — the state the append was classified against and
+   * extended — and drops it otherwise (a read that raced a concurrent
+   * winner, or no read at all): the next tail re-walks from the ref, never
+   * serving a history the cache does not hold. The appended record joins
+   * as `frozenParse` of the very bytes the commit carries, so the cached
+   * tail is byte-identical to what a fresh walk of the ref returns.
+   */
+  #cacheAppend(ref: string, base: string | null, tip: string, bytes: string): void {
+    const cached = this.#tails.get(ref);
+    if (cached === undefined || cached.tip !== base) {
+      this.#tails.delete(ref);
+      return;
+    }
+    this.#tails.set(ref, {
+      tip,
+      records: [...cached.records, frozenParse(bytes) as LedgerRecord],
+    });
   }
 
   /**
@@ -263,10 +327,16 @@ export class GitLedger implements ExecutionLedger {
    * under every retry, and appending anyway would diverge it (contract
    * §2.2's forward-only guarantee made physical). A null classification
    * ends the loop with nothing written — the re-read state already
-   * satisfies the write. Returns the new tip, or null when the write was
+   * satisfies the write. A winning round hands `(base, tip)` to `onWin`
+   * before the loop returns, so the caller can extend what it knows the
+   * append produced. Returns the new tip, or null when the write was
    * already satisfied.
    */
-  #casAppend(ref: string, classify: () => string | null): string | null {
+  #casAppend(
+    ref: string,
+    classify: () => string | null,
+    onWin?: (base: string | null, tip: string) => void,
+  ): string | null {
     for (let round = 0; round < MAX_CAS_ATTEMPTS; round++) {
       const base = readRef(this.#git, ref);
       const content = classify();
@@ -275,6 +345,7 @@ export class GitLedger implements ExecutionLedger {
       }
       const tip = casAppendCommit(this.#git, ref, content, base);
       if (tip !== null) {
+        onWin?.(base, tip);
         return tip;
       }
     }
