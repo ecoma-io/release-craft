@@ -24,6 +24,8 @@ import {
   MANIFEST,
   manifestDefects,
   refusalInventoryViolations,
+  suiteSources,
+  unproducedRows,
 } from "./manifest.js";
 
 describe("the manifest's executable census · the recorded taxonomy", () => {
@@ -102,8 +104,8 @@ describe("the manifest's completeness · one row per cell, statuses as recorded"
     expect(MANIFEST.length).toBe(45);
     const byStatus = (status: string): number =>
       MANIFEST.filter((row) => row.status === status).length;
-    expect(byStatus("live")).toBe(27);
-    expect(byStatus("typed-row")).toBe(6);
+    expect(byStatus("live")).toBe(33);
+    expect(byStatus("typed-row")).toBe(0);
     expect(byStatus("census-only")).toBe(1);
     expect(byStatus("refused")).toBe(11);
     expect(MANIFEST.filter((row) => row.status !== "refused").length).toBe(34);
@@ -129,22 +131,16 @@ describe("the manifest's completeness · one row per cell, statuses as recorded"
     }
   });
 
-  it("every typed row names its reachability note and its mover", () => {
+  it("no typed rows remain — the Action rows' declared mover (phase 13's composite and invocation script) has landed, so every declared cell is produced", () => {
     const typed = MANIFEST.filter((row) => row.status === "typed-row");
-    expect(typed.map((row) => row.id)).toStrictEqual([
-      "action-01",
-      "action-02",
-      "action-03",
-      "action-04",
-      "action-05",
-      "action-06",
-    ]);
-    for (const row of typed) {
-      expect(
-        row.reachability?.note.length,
-        `${row.id} declares its unreachability`,
-      ).toBeGreaterThan(0);
-      expect(row.reachability?.mover.length, `${row.id} names its mover`).toBeGreaterThan(0);
+    expect(typed).toStrictEqual([]);
+    // The change protocol's own posture, pinned now that it holds: a row
+    // typed as pending a mover must name its mover — and the six Action
+    // rows named this slice's prerequisite, which main carries since the
+    // Action implementation merged. The rows are live, driving the real
+    // invocation script.
+    for (const row of MANIFEST.filter((candidate) => candidate.status === "live")) {
+      expect(row.reachability, `${row.id} carries no pending declaration`).toBeUndefined();
     }
   });
 });
@@ -166,5 +162,9 @@ describe("the manifest's executable laws · the probes over the fixture's own mo
 
   it("no fixture module names a refused input", () => {
     expect(refusalInventoryViolations()).toStrictEqual([]);
+  });
+
+  it("every live or typed row id is produced by a test title in its suite (§5's produced-by law)", () => {
+    expect(unproducedRows(suiteSources())).toStrictEqual([]);
   });
 });

@@ -577,11 +577,7 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 13 §6 fixture 3 (the byte-equality and parse-replay scenario cell: the promote scenario's output write replayed against the runner's documented parse, byte-equal to git-01's recorded stdout; conclusion success)",
     ],
-    status: "typed-row",
-    reachability: {
-      note: "The Action transport's mechanisms — the invocation script, the env construction, the output write, and the runner-parse replay — are the Action implementation's (phase 14 §2.2 transport 3, §6). The fixture owns the scenario data; the scenario's expected bytes are pinned here against git-01's committed stdout.",
-      mover: "the Action implementation slice (phase 13's composite and invocation script)",
-    },
+    status: "live",
   },
   {
     id: "action-02",
@@ -596,11 +592,7 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 13 §6 fixture 2 (the conclusion table's reachable rows instantiated with this contract's scenarios: `denied`, `refused`, `conflict` — each with its exit, its envelope kind, and its annotation fields verbatim)",
     ],
-    status: "typed-row",
-    reachability: {
-      note: "The conclusion table's rows are recorded data owned here (phase 14 §6); the invocation script that drives them is the Action implementation's.",
-      mover: "the Action implementation slice (phase 13's composite and invocation script)",
-    },
+    status: "live",
   },
   {
     id: "action-03",
@@ -615,11 +607,7 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 13 §3.2 (the fault rows: exit 64 and exit 70 scenarios conclude failure with the fault text verbatim, stdout empty — pinned by the render module's own law)",
     ],
-    status: "typed-row",
-    reachability: {
-      note: "The fault scenarios are recorded data owned here; the invocation script and its stderr capture are the Action implementation's.",
-      mover: "the Action implementation slice (phase 13's composite and invocation script)",
-    },
+    status: "live",
   },
   {
     id: "action-04",
@@ -634,11 +622,7 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 13 §3.2 (the no-verdict row instantiated: a killed child, an unparseable envelope, a kind↔exit mismatch — each fails with the raw evidence, never green, never neutral)",
     ],
-    status: "typed-row",
-    reachability: {
-      note: "The no-verdict scenarios are recorded data owned here; the killed-child and unparseable-envelope mechanisms are the Action implementation's.",
-      mover: "the Action implementation slice (phase 13's composite and invocation script)",
-    },
+    status: "live",
   },
   {
     id: "action-05",
@@ -653,11 +637,7 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 13 §6 fixture 4 (the hostile ambient, verbatim: lying `GITHUB_*` values, `ACTIONS_*`, `RUNNER_*`, `CI=true`, an `INPUT_WORLD` naming a different document, a `GIT_DIR` pointing elsewhere, a `NODE_OPTIONS` carrying a marker, a token-shaped `GH_TOKEN` — and no planted value reachable in the envelope, the annotation, or the conclusion; the envelope equals the clean run, byte for byte)",
     ],
-    status: "typed-row",
-    reachability: {
-      note: "The hostile scenario's planted ambient is recorded data owned here; the env -i construction that starves it is the Action implementation's (phase 13 §4).",
-      mover: "the Action implementation slice (phase 13's composite and invocation script)",
-    },
+    status: "live",
   },
   {
     id: "action-06",
@@ -672,11 +652,7 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 13 §6 fixture 1 (the drift row as scenario data: the composite's declared toolchain values paired with the repository's `.node-version` and `packageManager`; the row's data — which files, which fields — is owned here, the mechanism is the Action implementation's)",
     ],
-    status: "typed-row",
-    reachability: {
-      note: "The drift pairing's data is owned here (which files, which fields); the composite whose declared values the pairing reads does not exist on this base.",
-      mover: "the Action implementation slice (phase 13's composite front door)",
-    },
+    status: "live",
   },
 
   // — the refusals (phase 14 §3.4) —
