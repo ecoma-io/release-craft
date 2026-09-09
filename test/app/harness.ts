@@ -80,15 +80,23 @@ export interface Assembly {
   /** The stores the assembly wired — the bundle's own fresh fixtures for
    * the ports left alone, the caller's overrides for the ports overridden —
    * kept so a test can read the recorded evidence and (for the
-   * seeded-fault windows) wrap or seed a store before the run. An evidence
-   * read through this bundle always observes the store the engine writes:
-   * never a private default (issue #118). */
+   * seeded-fault windows) wrap or seed a store before the run. For the
+   * engine's ports an evidence read through this bundle always observes
+   * the store the engine writes: never a private default (issue #118).
+   * Two fixtures are not engine ports and the bundle says so: `log` is
+   * the fixture driver's own (only the driver appends outcome records —
+   * the boundary engine never writes it), and in the §2.4 store-less
+   * shape (`withChannels: false`) `channels` is the seeded fixture the
+   * store-less engine cannot move — reads observe the standing seeds,
+   * never an engine move. */
   readonly stores: Stores;
 }
 
 export interface AssemblyOptions {
   /** Wire the channel store (default true) — `false` builds the §2.4
-   * store-less assembly. */
+   * store-less assembly. Either way the bundle keeps its seeded
+   * `channels` fixture; only the engine's wiring changes, and a
+   * store-less engine cannot move it. */
   readonly withChannels?: boolean;
   /** E-08's declared retry bound (default 2). */
   readonly maxRetries?: number;
