@@ -96,7 +96,18 @@ runs:
     - name: Install the lockfile
       shell: bash
       working-directory: ${{ github.action_path }}
-      run: pnpm install --frozen-lockfile
+      # The provisioning runs no lifecycle scripts (--ignore-scripts): the
+      # materialization is not a git repository — the runner extracts the
+      # pinned action as an archive; there is no .git — and a lifecycle
+      # script that assumes one cannot succeed here. The package's own
+      # `prepare` (`lefthook install`) died exactly this way in the first
+      # self-dogfood run (34388697784): `git rev-parse` exit 128, the
+      # install failed, the run door never reached. The provisioning's
+      # product is the dependencies and the build — scripts are not its
+      # business, the flag removes the whole class rather than lefthook
+      # alone, and no code from the materialization executes at install
+      # time. This repository's own CI installs are untouched (§2.2).
+      run: pnpm install --frozen-lockfile --ignore-scripts
 
     # The build command is the moon graph's own (`release-craft:build` runs
     # `tsc -p tsconfig.build.json`), run without moon — the dev graph stays

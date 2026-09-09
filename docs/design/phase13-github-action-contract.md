@@ -189,6 +189,23 @@ the package's `engines.node >= 24`), pnpm by its `packageManager` field
 `actions/setup-node` gets `node-version: 24`, `pnpm/action-setup` gets
 `version: 11.25.0`.
 
+The provisioning install also runs **no lifecycle scripts** — the run line
+is `pnpm install --frozen-lockfile --ignore-scripts` — and the reason is a
+materialization fact, grounded in this repository's first self-dogfood run
+([run 34388697784](https://github.com/ecoma-io/release-craft/actions/runs/34388697784)):
+the runner materializes the pinned action by extracting an archive, so the
+tree the provisioning stands in holds no `.git`, and the package's own
+`prepare` script (`lefthook install`) died there in `git rev-parse`
+(exit 128) — the install with it, the run door never reached. A lifecycle
+script that assumes a git repository cannot succeed in that tree, so the
+provisioning runs none at all. Its product is the dependencies and the
+build — nothing else — and the flag removes the whole class (any current or
+future lifecycle script, of the package or of any dependency) rather than
+lefthook alone, and keeps install-time code execution out of the
+materialization. This repository's own CI installs keep their scripts: a
+checkout IS a git repository, and the hooks `prepare` wires there are
+wanted.
+
 The file-keyed mechanism is decided against, and the reason is a platform
 fact, verified against the actions' sources at the pins this repository's
 CI carries today (and identical from `setup-node` v4.0.0 through the pinned

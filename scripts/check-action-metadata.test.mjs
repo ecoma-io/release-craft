@@ -63,7 +63,7 @@ runs:
     - name: Install the lockfile
       shell: bash
       working-directory: \${{ github.action_path }}
-      run: pnpm install --frozen-lockfile
+      run: pnpm install --frozen-lockfile --ignore-scripts
 
     - name: Build the bin
       shell: bash
@@ -245,8 +245,18 @@ test("a run: step without bash, or with a foreign working-directory, is a findin
 });
 
 test("an unfrozen install is a finding", () => {
-  const loose = CLEAN.replace("pnpm install --frozen-lockfile", "pnpm install");
+  const loose = CLEAN.replace("pnpm install --frozen-lockfile --ignore-scripts", "pnpm install");
   assert.ok(analyzeActionMetadata(loose).some((violation) => violation.includes("frozen")));
+});
+
+test("an install that runs lifecycle scripts is a finding — the materialization holds no git", () => {
+  const scripted = CLEAN.replace(
+    "pnpm install --frozen-lockfile --ignore-scripts",
+    "pnpm install --frozen-lockfile",
+  );
+  assert.ok(
+    analyzeActionMetadata(scripted).some((violation) => violation.includes("scripts-free")),
+  );
 });
 
 test("the output surface is exactly one outcome output over the invocation step", () => {
