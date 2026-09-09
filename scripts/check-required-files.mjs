@@ -82,6 +82,13 @@ const REQUIRED_FILES = [
   // The pull-request-description gate and its suite (#6).
   "scripts/check-pr-description.mjs",
   "scripts/check-pr-description.test.mjs",
+
+  // The GitHub Action front door (phase 13) and the gate that keeps its
+  // metadata on the contract's shape.
+  "action.yml",
+  "action/invoke.mjs",
+  "scripts/check-action-metadata.mjs",
+  "scripts/check-action-metadata.test.mjs",
 ];
 
 /**

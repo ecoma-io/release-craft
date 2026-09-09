@@ -14,6 +14,10 @@ name: Policy
 #                        one their YAML actually carries (SHA pins, declared
 #                        permissions, no pull_request_target, no leaked
 #                        credentials);
+#   - check:action     — the GitHub Action's front door (action.yml) keeps the
+#                        phase 13 contract's shape: the closed input inventory,
+#                        the value toolchain pins, the empty token journey, the
+#                        one outcome output;
 #   - check:docs       — the documentation resolves: links, anchors, and every
 #                        `pnpm <command>` a page cites exists as a script;
 #   - check:pr-description — the pull request description is finalized (the
@@ -30,7 +34,7 @@ name: Policy
 #                        commit's subject IS the pull request title, so the
 #                        title is the one message the hook never sees.
 #
-# The five file gates are dependency-free Node scripts (see scripts/moon.yml),
+# The six file gates are dependency-free Node scripts (see scripts/moon.yml),
 # so they need nothing but the checkout and a pinned Node. The title check is
 # the one step that wants the toolchain: commitlint comes from the
 # lockfile-pinned install, never a floating `dlx` fetch.
@@ -77,6 +81,9 @@ jobs:
 
       - name: Check workflow safety
         run: node scripts/check-workflow-safety.mjs
+
+      - name: Check the action metadata
+        run: node scripts/check-action-metadata.mjs
 
       - name: Check documentation integrity
         run: node scripts/check-docs-links.mjs
