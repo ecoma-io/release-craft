@@ -261,26 +261,57 @@ describe("fixture: the output write survives the runner's file-command parse", (
           kind: "published",
         });
         expect(replayOutcome(drive.outputs)).toBe(stdout);
+
+        // Pin the raw file-command bytes, not merely the replayed value. The
+        // header is the runner's heredoc grammar (`NAME<<DELIM`), and the
+        // empty content line after stdout is what preserves stdout's final LF.
+        const outputText = drive.outputs.toString("utf8");
+        const headerEnd = outputText.indexOf("\n");
+        expect(headerEnd).toBeGreaterThan(0);
+        const header = outputText.slice(0, headerEnd);
+        expect(header).toMatch(
+          /^outcome<<ghadelimiter_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+        );
+        const delimiter = header.slice("outcome<<".length);
+        expect(drive.outputs).toEqual(
+          Buffer.concat([
+            Buffer.from(`${header}\n`),
+            drive.stdout,
+            Buffer.from(`\n${delimiter}\n`),
+          ]),
+        );
       });
     },
   );
 
-  it("the adversarial form: the naive heredoc loses the final newline to the parser — the empty content line is load-bearing", () => {
+  it("the naive heredoc shape loses only the final newline when its empty content line is omitted", () => {
     withActionRepo("output-naive", (repo, _git, worldPath) => {
       const drive = runInvoke(baseInputs({ world: worldPath }), { cwd: repo });
       const stdout = drive.stdout.toString("utf8");
-      // The refused shape (§3.1): value, delimiter — no empty line. The
-      // parser takes each content line WITHOUT its trailing newline, so
-      // this replay loses the envelope's own final newline and the output
-      // is not byte-equal to what the run rendered.
+      // The header is canonical here; this fixture isolates the second
+      // defect only: value, delimiter — no empty content line. The parser
+      // takes each content line WITHOUT its trailing newline, so replay loses
+      // stdout's own final newline.
       const naive = Buffer.concat([
-        Buffer.from("outcome=<<ghadelimiter_fixed\n"),
+        Buffer.from("outcome<<ghadelimiter_fixed\n"),
         drive.stdout,
         Buffer.from("ghadelimiter_fixed\n"),
       ]);
       expect(replayOutcome(naive)).not.toBe(stdout);
       expect(replayOutcome(naive)).toBe(stdout.replace(/\n$/, ""));
     });
+  });
+
+  it("rejects the old outcome=<< header instead of masking the malformed protocol", () => {
+    const malformed = Buffer.from(
+      'outcome=<<ghadelimiter_fixed\n{"kind":"published"}\n\nghadelimiter_fixed\n',
+    );
+    expect(() => replayOutcome(malformed)).toThrow("'=' precedes '<<'; expected outcome<<DELIM");
+  });
+
+  it("replays an empty stdout from the canonical zero-content heredoc", () => {
+    const empty = Buffer.from("outcome<<ghadelimiter_fixed\nghadelimiter_fixed\n");
+    expect(replayOutcome(empty)).toBe("");
   });
 
   it(

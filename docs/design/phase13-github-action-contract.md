@@ -26,11 +26,21 @@ Two runner behaviors this contract leans on are named up front because both
 are load-bearing: the runner injects a composite action's inputs into the
 composite's `run:` steps as `INPUT_<NAME>` environment variables
 ([§4](#4-hermeticity-in-ci-the-two-lines)), and the runner's file-command
-parser consumes an output value's final newline before the delimiter
-([§3.1](#31-outputs-one-envelope-verbatim)). Everything below is written as
-if both hold, because they do — the Action's job is to make the first the
-channel that carries nothing and to keep the second from eating a byte of
-the envelope.
+parser distinguishes its single-line and heredoc grammars by delimiter
+precedence ([§3.1](#31-outputs-one-envelope-verbatim)). In particular, `=`
+before `<<` is `NAME=VALUE`; the canonical heredoc header is
+`outcome<<ghadelimiter_<uuid>` with no `=`. Everything below is written as if
+both hold, because they do — the Action's job is to make the first the channel
+that carries nothing and to keep the second from eating a byte of the envelope.
+The canonical shape follows `@actions/core`'s `setOutput` writer; the local
+writer pins those exact bytes rather than relying on a permissive replay.
+
+The second self-dogfood (run
+[34397333332](https://github.com/ecoma-io/release-craft/actions/runs/34397333332))
+observed the malformed header reach GitHub's runner and fail while parsing the
+following JSON. The expected no-`=` grammar below is the contract-level
+explanation of that observed failure, not a claim that the local fixture alone
+reproduces GitHub's hosted runner.
 
 ## 1. Scope and non-goals
 
@@ -630,22 +640,32 @@ slice's suite pins:
 
 **Decided: one output, `outcome`, carrying the `--json` envelope
 byte-for-byte** — the captured stdout of the invocation, written to
-`$GITHUB_OUTPUT` with one deliberate shape: the envelope, then an **empty
-line**, then the delimiter (`renderJson` emits one compact line plus a
-trailing newline, so the value is single-line-safe). The platform fact that
-forces the shape, recorded so nobody simplifies it back: the runner's
-file-command parser consumes the value's final newline before the delimiter
-(it substrings each content line without its trailing newline —
-actions/runner's `FileCommandManager`; actions/runner#1182), so a bare
-heredoc would deliver `outputs.outcome` **without** the envelope's trailing
-newline and the equality pin below would fail on every run. The empty
-content line absorbs that consumption — the parser eats its empty line, and
-the envelope's own trailing newline survives. The write is pinned against
-the runner's documented parse in [§6](#6-test-obligations), fixture 3, and
-the dogfood's first real run re-proves it on the runner itself. The
-envelope is also relayed to the step log verbatim — display, not
-translation. A caller diffing `steps.release.outputs.outcome` against the
-same invocation's CLI stdout must find them equal, byte for byte.
+`$GITHUB_OUTPUT` with one deliberate shape: the exact header
+`outcome<<ghadelimiter_<uuid>\n` (no `=`), then the envelope, an **empty line**,
+then the delimiter. The runner's file-command grammar gives `NAME=VALUE`
+precedence when `=` occurs before `<<`; therefore `outcome=<<ghadelimiter_<uuid>`
+is malformed single-line syntax, not a heredoc header. The canonical header is
+the form emitted by `@actions/core`'s `setOutput` writer. `renderJson` emits
+one compact line plus a trailing newline, so the value is single-line-safe.
+The platform fact that forces the empty line, recorded so nobody simplifies it
+back: the runner's file-command parser consumes each content line without its
+trailing newline and drops the delimiter line (actions/runner's
+`FileCommandManager`; actions/runner#1182). A bare heredoc would deliver
+`outputs.outcome` **without** the envelope's trailing newline and the equality
+pin below would fail on every run. The empty content line absorbs that
+consumption — the parser eats its empty line, and the envelope's own trailing
+newline survives. The write is pinned against the runner's documented parse in
+[§6](#6-test-obligations), fixture 3, and the dogfood's first real run re-proves
+it on the runner itself. The envelope is also relayed to the step log verbatim
+— display, not translation. A caller diffing `steps.release.outputs.outcome`
+against the same invocation's CLI stdout must find them equal, byte for byte.
+
+The malformed header was observed in self-dogfood run
+[34397333332](https://github.com/ecoma-io/release-craft/actions/runs/34397333332):
+the runner stored the delimiter fragment as the single-line `outcome` value,
+then rejected the following JSON as an invalid file command. That observation
+is separate from the inferred runner-grammar explanation; both are pinned here
+so the no-`=` expectation remains honest.
 
 - **No shaped outputs.** `tag`, `plan-id`, `handle` as separate outputs
   would require the Action to parse the envelope and re-emit selected
@@ -897,14 +917,28 @@ already cover those; phase 11 §5, phase 12 §6).
    stdout, byte for byte — including the trailing newline `renderJson`
    emits — for every fixture. The harness drives the invocation script with
    the outputs path pointed at a temp file and replays the runner's
-   file-command parse over what was written (each content line taken
-   without its trailing newline, the delimiter line dropped —
-   [§3.1](#31-outputs-one-envelope-verbatim)'s platform fact), asserting the
-   surviving value equals stdout exactly; the empty-line write is what
-   makes the assertion hold, and the dogfood's first real run re-proves it
-   on the runner itself. A `drives`-bearing `published` outcome from a real
-   temp-repo walk (the binding's own `withTempRepo` harness) is the
-   realistic-size pin under the 1 MB output ceiling.
+   file-command grammar over what was written: `NAME=VALUE` is selected only
+   when `=` precedes `<<`, while the canonical heredoc header is
+   `outcome<<ghadelimiter_<uuid>` with no `=`; each heredoc content line is
+   taken without its trailing newline, and the delimiter line is dropped
+   ([§3.1](#31-outputs-one-envelope-verbatim)'s platform fact). The harness
+   rejects the malformed `outcome=<<...` shape rather than masking it,
+   asserting the surviving canonical value equals stdout exactly; the
+   empty-line write is what makes the assertion hold, and the dogfood's first
+   real run re-proves it on the runner itself. A `drives`-bearing `published`
+   outcome from a real temp-repo walk (the binding's own `withTempRepo`
+   harness) is the realistic-size pin under the 1 MB output ceiling.
+
+   The focused regression includes the exact raw writer bytes: header,
+   captured stdout, the empty content line, and delimiter. It also kills a
+   mutant that restores `outcome=<<` and directly rejects that malformed
+   protocol, so the fixture cannot pass through a permissive replay.
+
+   The hosted evidence remains explicit: run 34397333332 observed the old
+   header's delimiter fragment being stored as a single-line value before the
+   runner rejected the following JSON; the grammar explanation is inferred
+   from that output and the runner/@actions/core protocol.
+
 4. **The hostile-environment leg.** The invocation under a planted ambient —
    lying `GITHUB_*` values, `ACTIONS_*`, `RUNNER_*`, `CI=true`,
    `INPUT_WORLD` naming a different document, `GIT_DIR` pointing elsewhere,
