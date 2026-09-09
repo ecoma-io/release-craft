@@ -534,15 +534,56 @@ export const ladderExtraTags = (
   ];
 };
 
+/** The git scenarios' world documents — one builder per scenario, the
+ * recorded world serialized once (§6): the process transport carries the
+ * bytes on stdin, the Action transport carries the SAME bytes as the world
+ * file. One builder, both transports — the scenario data cannot drift. */
+
+/** The promote scenario's document — the staged ladder recorded in the
+ * world's history (git-01 and action-01's subject). */
+export const gitPromoteDocument = (heads: Readonly<Record<string, string>>) =>
+  gitDoc("main", [promote], heads, ladderExtraTags(heads));
+
+/** The beta scenario's document — the prerelease walk's plain document. */
+export const gitBetaDocument = (heads: Readonly<Record<string, string>>) =>
+  gitDoc("main", [beta], heads);
+
+/** The planner-fault document — the declared lie the range classification
+ * faults over (the unobserved feedRef). */
+export const gitPlannerFaultDocument = (heads: Readonly<Record<string, string>>) => {
+  const honest = gitBetaDocument(heads);
+  return {
+    ...honest,
+    lines: honest.lines.map((line) =>
+      line.id === "main" ? { ...line, feedRef: "no-such-ref" } : line,
+    ),
+  };
+};
+
+/** The mint-fault document — the ref head the repository does not observe
+ * (the unobserved target; the mint faults after the walk's records stand).
+ * The lying head is a fixed 40-hex-shape value, never a real oid. */
+export const gitMintFaultDocument = () => gitDoc("main", [beta], { main: "e".repeat(40) });
+
+/** The pre-walk-refusal document — the minting line's feedRef names a ref
+ * the document does not record, so the CLI derives no target (I12). */
+export const gitUnrefedDocument = (heads: Readonly<Record<string, string>>) => {
+  const doc = gitPromoteDocument(heads);
+  return {
+    ...doc,
+    repository: {
+      ...doc.repository,
+      refs: doc.repository.refs.filter((ref) => ref.name !== "main"),
+    },
+  };
+};
+
 /** git-01's scenario: the promote walk through the process over the staged
  * ladder document — the flagship envelope. */
 export const gitPromoteScenario = (
   repo: string,
   heads: Readonly<Record<string, string>>,
-): CliResult =>
-  runBin(gitRunArgs(repo, "main"), {
-    input: docBytes(gitDoc("main", [promote], heads, ladderExtraTags(heads))),
-  });
+): CliResult => runBin(gitRunArgs(repo, "main"), { input: docBytes(gitPromoteDocument(heads)) });
 
 /** git-02's scenario: the maintenance cut through the process — the
  * side line's run with no intents. */
@@ -556,16 +597,10 @@ export const gitFaultScenarios = (
   repo: string,
   heads: Readonly<Record<string, string>>,
 ): { readonly planner: CliResult; readonly mint: CliResult } => {
-  const honest = gitDoc("main", [beta], heads);
-  const ghost = {
-    ...honest,
-    lines: honest.lines.map((line) =>
-      line.id === "main" ? { ...line, feedRef: "no-such-ref" } : line,
-    ),
-  };
-  const planner = runBin(gitRunArgs(repo, "main"), { input: docBytes(ghost) });
-  const lying = gitDoc("main", [beta], { main: "e".repeat(40) });
-  const mint = runBin(gitRunArgs(repo, "main"), { input: docBytes(lying) });
+  const planner = runBin(gitRunArgs(repo, "main"), {
+    input: docBytes(gitPlannerFaultDocument(heads)),
+  });
+  const mint = runBin(gitRunArgs(repo, "main"), { input: docBytes(gitMintFaultDocument()) });
   return { planner, mint };
 };
 
