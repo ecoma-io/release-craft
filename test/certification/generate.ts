@@ -25,9 +25,15 @@
  */
 
 import {
+  gitCutScenario,
+  gitFaultScenarios,
+  gitPromoteScenario,
   memoryPlanScenario,
   memoryRunScenario,
   memoryDenialScenario,
+  project,
+  PROJECTION_RULE,
+  withSeededRepo,
   writeExpected,
 } from "./drive.js";
 
@@ -80,9 +86,71 @@ const generateMemory = (): void => {
   });
 };
 
+/** The git family's writers: the process envelopes ride the recorded
+ * projection (§4.3) — the repository path becomes REPO and the claim
+ * token's whole value becomes CLAIM, applied identically at generation and
+ * at comparison, so `memory-10`'s no-projection pairing proves the
+ * projection is the only delta. */
+const generateGit = (): void => {
+  withSeededRepo("generate-git-01", (repo, _git, heads) => {
+    const child = gitPromoteScenario(repo, heads);
+    writeExpected("git-01", {
+      cell: "git-01",
+      projection: PROJECTION_RULE,
+      scenarios: [
+        {
+          label: "promote (the process envelope)",
+          exit: child.status,
+          stdout: project(child.stdout, repo),
+          stderr: child.stderr,
+        },
+      ],
+    });
+  });
+
+  withSeededRepo("generate-git-02", (repo, _git, heads) => {
+    const child = gitCutScenario(repo, heads);
+    writeExpected("git-02", {
+      cell: "git-02",
+      projection: PROJECTION_RULE,
+      scenarios: [
+        {
+          label: "cut (the process envelope)",
+          exit: child.status,
+          stdout: project(child.stdout, repo),
+          stderr: child.stderr,
+        },
+      ],
+    });
+  });
+
+  withSeededRepo("generate-git-12", (repo, _git, heads) => {
+    const { planner, mint } = gitFaultScenarios(repo, heads);
+    writeExpected("git-12", {
+      cell: "git-12",
+      projection: PROJECTION_RULE,
+      scenarios: [
+        {
+          label: "the unobserved feedRef (planner fault)",
+          exit: planner.status,
+          stdout: planner.stdout,
+          stderr: project(planner.stderr, repo),
+        },
+        {
+          label: "the unobserved ref head (mint fault)",
+          exit: mint.status,
+          stdout: mint.stdout,
+          stderr: project(mint.stderr, repo),
+        },
+      ],
+    });
+  });
+};
+
 /** Regenerates every recorded byte cell. Each family's writer is added with
  * that family's suite (the build order: the suites and their recorded bytes
  * land together). */
 export const generateAll = (): void => {
   generateMemory();
+  generateGit();
 };

@@ -29,6 +29,7 @@ import {
   assembleGitBinding,
   assembleMemoryStores,
   type AttemptHandle,
+  type ChannelStore,
   type Engine,
   type ExecutionLedger,
   type Attribution,
@@ -45,7 +46,10 @@ import {
 import {
   channelRefFor,
   GitChannelStore,
+  GitClaimStore,
+  GitLedger,
   openGitBinding,
+  openGitRun,
   type GitRun,
 } from "../../src/adapters/git/index.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
@@ -65,7 +69,7 @@ import {
   runInput,
   standingChannelStates,
 } from "../vertical/matrix.js";
-import { naming, seedLineHeads } from "../vertical/matrix-git.js";
+import { naming, seedLineHeads, tailBytes } from "../vertical/matrix-git.js";
 import { FIXTURE_DIR } from "./manifest.js";
 
 // ---------------------------------------------------------------------------
@@ -216,6 +220,67 @@ export const lockChannelRefs = (repo: string, channelIds: readonly string[]): vo
  * the CLI's selection module. */
 export const gitAssembly = (repo: string, maxRetries = 2): Engine =>
   assembleGitBinding(openGitBinding({ repo, tagNaming: naming }), { maxRetries });
+
+/** The git boundary engine with one port overridden — the fixture's seat
+ * for a caller-side fault at that port (the memory suite's declared-effect
+ * posture, applied at the channel store because the git binding's walk
+ * exposes no hook anchor mid-stage). The port is the caller's to seat:
+ * the fixture wires it, the product never does. */
+export const gitAssemblyWithChannels = (repo: string, channels: ChannelStore): Engine =>
+  assembleGitBinding(
+    { ...openGitBinding({ repo, tagNaming: naming }), channels },
+    { maxRetries: 2 },
+  );
+
+/** The repository's durable ledger, constructed the vertical fixture's own
+ * way (`new GitLedger` over the repo's runner, exactly `gitStores` builds
+ * it) — the tail a crashed walk left behind (the fixture's own crash
+ * windows escape the door, so the identity comes from the repo, the only
+ * survivor). */
+export const gitLedger = (repo: string): GitLedger => new GitLedger(openGitRun(repo));
+
+/** The repository's claim store itself — `gitStores`'s own construction,
+ * no wrapper. The binding's namespace-gated wrapper refuses the
+ * `release-line` scope (policy data the binding's naming never mints), so
+ * the fold-parity seeding acquires through the store itself — the same
+ * register refs the wrapper's engine reads. */
+export const rawGitClaims = (repo: string): GitClaimStore => new GitClaimStore(repo);
+
+/** The attempt's recorded ledger tail, read fresh from the repository. */
+export const ledgerTail = (repo: string, attemptId: string): readonly LedgerRecord[] =>
+  gitLedger(repo).tail(attemptId);
+
+/** The attempt's ledger tail as canonical bytes, read fresh from the
+ * repository — the byte-pinned durability comparison. */
+export const ledgerTailBytes = (repo: string, attemptId: string): readonly string[] =>
+  tailBytes(gitLedger(repo), attemptId);
+
+/** The attempt's recorded plan fingerprint, guarded — the resume handle's
+ * plan half, recovered from the repository. */
+export const ledgerPlanId = (repo: string, attemptId: string): string => {
+  const planId = gitLedger(repo).planFingerprint(attemptId);
+  if (planId === null) {
+    throw new Error(`fixture broken: no recorded plan fingerprint for ${attemptId}`);
+  }
+  return planId;
+};
+
+/** The exact inverse of the adapter's ref-component encoding (upper-case
+ * percent escapes, ASCII only) — the ref name back into the engine id. */
+const decodeRefComponent = (value: string): string =>
+  value.replace(/%([0-9A-F]{2})/g, (_whole, hex: string) =>
+    String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+
+/** The attempt ids the repository's ledger refs carry — the repo itself is
+ * the story a fresh process reads (there is no register read door). The
+ * refs are named by attempt id under the adapter's percent encoding; the
+ * ids decode back to the engine's spelling (`attempt_sha256:<hex>`). */
+export const ledgerAttemptIds = (repo: string): readonly string[] =>
+  openGitRun(repo)(["for-each-ref", "--format=%(refname)", "refs/ecoma/ledger/"])
+    .split("\n")
+    .filter((ref) => ref.length > 0)
+    .map((ref) => decodeRefComponent(ref.slice("refs/ecoma/ledger/".length)));
 
 /** The mint target per line: the recorded base the tag door mints onto —
  * the run line's own ref head from the same world. */
@@ -418,6 +483,93 @@ export const memoryDenialScenario = (): {
 };
 
 // ---------------------------------------------------------------------------
+// The git cells' drivers — the process transport's grammar and the boundary
+// transport's requests over the hermetic repository
+// ---------------------------------------------------------------------------
+
+/** One seeded head from the hermetic repository, guarded. */
+export const seededHead = (heads: Readonly<Record<string, string>>, lineId: string): string => {
+  const head = heads[lineId];
+  if (head === undefined) {
+    throw new Error(`fixture broken: no seeded head for ${lineId}`);
+  }
+  return head;
+};
+
+/** The git cells' run-line CLI arguments — the process transport's grammar
+ * (the declared tag namespace, the world on stdin, the fail-closed bound
+ * unless raised). */
+export const gitRunArgs = (
+  repo: string,
+  line: string,
+  options: { maxRetries?: number } = {},
+): string[] => [
+  "run",
+  "--assembly",
+  "git",
+  "--repo",
+  repo,
+  "--tag-namespace",
+  "",
+  "--world",
+  "-",
+  "--actor",
+  "automation",
+  "--line",
+  line,
+  "--json",
+  ...(options.maxRetries === undefined ? [] : ["--max-retries", String(options.maxRetries)]),
+];
+
+/** The §3.2 ladder's three staged prerelease tags, recorded at the run
+ * line's head — the history a promote document carries. */
+export const ladderExtraTags = (
+  heads: Readonly<Record<string, string>>,
+): readonly { readonly name: string; readonly commit: string }[] => {
+  const head = seededHead(heads, "main");
+  return [
+    { name: "5.0.0-beta.1", commit: head },
+    { name: "5.0.0-beta.2", commit: head },
+    { name: "5.0.0-rc.1", commit: head },
+  ];
+};
+
+/** git-01's scenario: the promote walk through the process over the staged
+ * ladder document — the flagship envelope. */
+export const gitPromoteScenario = (
+  repo: string,
+  heads: Readonly<Record<string, string>>,
+): CliResult =>
+  runBin(gitRunArgs(repo, "main"), {
+    input: docBytes(gitDoc("main", [promote], heads, ladderExtraTags(heads))),
+  });
+
+/** git-02's scenario: the maintenance cut through the process — the
+ * side line's run with no intents. */
+export const gitCutScenario = (repo: string, heads: Readonly<Record<string, string>>): CliResult =>
+  runBin(gitRunArgs(repo, "4.8.x"), { input: docBytes(gitDoc("4.8.x", [], heads)) });
+
+/** git-12's scenario: the declared lie's two fault bands in one repository —
+ * the unobserved feedRef (faults at the planner's range classification)
+ * and the unobserved ref head (faults at the mint, records standing). */
+export const gitFaultScenarios = (
+  repo: string,
+  heads: Readonly<Record<string, string>>,
+): { readonly planner: CliResult; readonly mint: CliResult } => {
+  const honest = gitDoc("main", [beta], heads);
+  const ghost = {
+    ...honest,
+    lines: honest.lines.map((line) =>
+      line.id === "main" ? { ...line, feedRef: "no-such-ref" } : line,
+    ),
+  };
+  const planner = runBin(gitRunArgs(repo, "main"), { input: docBytes(ghost) });
+  const lying = gitDoc("main", [beta], { main: "e".repeat(40) });
+  const mint = runBin(gitRunArgs(repo, "main"), { input: docBytes(lying) });
+  return { planner, mint };
+};
+
+// ---------------------------------------------------------------------------
 // The expected bytes — committed data, compared at test time
 // ---------------------------------------------------------------------------
 
@@ -457,4 +609,22 @@ export const readExpected = (cell: string): ExpectedDoc | null => {
 export const writeExpected = (cell: string, doc: ExpectedDoc): void => {
   mkdirSync(join(FIXTURE_DIR, "expected"), { recursive: true });
   writeFileSync(expectedPath(cell), `${JSON.stringify(doc, null, 2)}\n`);
+};
+
+/** The committed bytes for one scenario, compared at test time. A missing
+ * file or label is a fixture defect (the manifest's orphan laws find it);
+ * it is never an excuse to snapshot fresh bytes. */
+export const expectedScenario = (cell: string, label: string): ExpectedScenario => {
+  const doc = readExpected(cell);
+  if (doc === null) {
+    throw new Error(
+      `no committed expected bytes for ${cell} — the reviewed file must exist ` +
+        `(generate once with test/certification/generate.ts; never snapshot at test time)`,
+    );
+  }
+  const scenario = doc.scenarios.find((candidate) => candidate.label === label);
+  if (scenario === undefined) {
+    throw new Error(`${cell} records no scenario labelled "${label}"`);
+  }
+  return scenario;
 };
