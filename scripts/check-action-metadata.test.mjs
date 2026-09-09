@@ -129,6 +129,22 @@ test("the file-keyed toolchain mechanism is refused on executable lines, named f
   assert.deepEqual(analyzeActionMetadata(CLEAN), []);
 });
 
+test("a missing toolchain pin row is a finding — presence is the gate's, the value the suite's", () => {
+  const noNode = CLEAN.replace("        node-version: 24\n", "");
+  assert.ok(
+    analyzeActionMetadata(noNode).some((violation) => violation.includes('"node-version:"')),
+  );
+  const noPnpm = CLEAN.replace("        version: 11.25.0\n", "");
+  assert.ok(analyzeActionMetadata(noPnpm).some((violation) => violation.includes('"version:"')));
+  // A commented-out row does not count: the presence check reads executable
+  // lines only, the same exemption the refusal rules honor.
+  const commented = CLEAN.replace("        node-version: 24", "      # node-version: 24");
+  assert.ok(
+    analyzeActionMetadata(commented).some((violation) => violation.includes('"node-version:"')),
+  );
+  assert.deepEqual(analyzeActionMetadata(CLEAN), []);
+});
+
 test("a secret interpolation, a token name, and the second-checkout spellings are findings", () => {
   const secreted = CLEAN.replace("RC_WORLD: ${{ inputs.world }}", "RC_WORLD: ${{ secrets.WORLD }}");
   assert.ok(analyzeActionMetadata(secreted).some((violation) => violation.includes("secret")));

@@ -13,7 +13,10 @@
 //   - every `uses:` is pinned to a full 40-character commit SHA (a tag can
 //     be moved; a digest cannot — the org's workflow law, one layer down);
 //   - the toolchain is pinned by VALUE: a `node-version:` row and a
-//     `version:` row are present, and the file-keyed mechanism
+//     `version:` row must EXIST on executable lines (presence only — the
+//     exact values are the artifact suite's to bind to this repository's
+//     own `.node-version` / `packageManager`, so the pin has one
+//     definition, not two), and the file-keyed mechanism
 //     (`node-version-file`, `package_json_file`) appears on no executable
 //     line (§2.2 — a file input cannot reach the materialized tree, and the
 //     mangled join must stay unrepresentable, not merely unused);
@@ -115,6 +118,17 @@ export function analyzeActionMetadata(source) {
     violations.push(
       'runs: does not declare "using: composite" — the contract decided the kind (§2.2)',
     );
+  }
+
+  // — the toolchain pins exist, by value (§2.2): presence on executable
+  // lines only. The VALUES are not judged here — the artifact suite binds
+  // them to this repository's own `.node-version` and `packageManager` and
+  // goes red on drift, so the pin keeps one definition, not two.
+  if (!executable.some(({ line }) => /^\s+node-version:\s*\S/.test(line))) {
+    violations.push('no "node-version:" row — the node toolchain is not pinned by value (§2.2)');
+  }
+  if (!executable.some(({ line }) => /^\s+version:\s*\S/.test(line))) {
+    violations.push('no "version:" row — the pnpm toolchain is not pinned by value (§2.2)');
   }
 
   for (const { line, number } of executable) {
