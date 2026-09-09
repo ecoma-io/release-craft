@@ -6,7 +6,8 @@
  * value serialized with no reshaping, and the human text is a projection
  * of the same value, never a different verdict. Diagnostics (usage
  * faults, escaped throws) render on stderr only; a faulted process puts
- * nothing on stdout (§3.2's bands never render as outcomes).
+ * nothing on stdout (phase 12 §3.3's fault-band law — the bands never
+ * render as outcomes).
  */
 
 import type { PlanningOutcome, RunOutcome } from "../index.js";

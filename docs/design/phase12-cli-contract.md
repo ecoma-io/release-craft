@@ -521,6 +521,10 @@ row → 10.
   (phase 4 §2.2's split, phase 11 §2.8's carried law). The CLI catches the
   throw, prints it verbatim, and stops — it does not convert the throw into
   the outcome vocabulary to keep its table tidy.
+- **A faulted process puts nothing on stdout.** Both fault rows (64, 70)
+  render their text on stderr only, and stdout stays empty: stdout carries
+  outcomes, and a fault is the invocation that never produced one, so a
+  caller can never read stdout as a partial verdict.
 - The plan door's purity is visible at the process: `plan` touches no
   store, and a double `plan` renders byte-identical JSON and the same exit
   code (phase 2 §2.14's law, inherited twice — once by the boundary, once
@@ -623,9 +627,18 @@ already covers the doors; phase 11 §5).
 3. **Pass-through equality — the generalization posture made executable.**
    For each fixture: the CLI's `--json` stdout, parsed, equals the direct
    `Engine`-door outcome serialized — same assembly, same world document,
-   same inputs. The CLI is the thinnest possible pass-through, and this
-   fixture is how the suite proves it rather than asserts it: any
-   translation, default, or gate the CLI adds breaks the equality loudly.
+   same inputs. The equality proves the rendering is a pass-through — no
+   translation, default, or gate stands between the door's value and
+   stdout, and any one the CLI adds breaks the equality loudly. What it
+   cannot judge, named honestly (Refs #128): both sides are built through
+   the same derivation — `selectEngine`'s assembly selection and the
+   declared naming of
+   [§2.3](#23-the-git-assemblys-declared-naming) — so a drift inside that
+   shared derivation moves both sides and the equality stays green.
+   Judging the derivation itself needs an independently constructed direct
+   side, which is the certification fixture's job
+   ([§7](#7-the-other-slices)); the phase 14 contract supersedes this
+   posture there.
 4. **The grammar's negative inventory.** A flag that maps onto no boundary
    value fails the suite that names the flag inventory
    ([§2.2](#22-the-grammar-one-command-per-door)'s table, executable); the
