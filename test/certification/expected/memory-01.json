@@ -1,0 +1,12 @@
+{
+  "cell": "memory-01",
+  "projection": "none — the memory envelope is the zero-random assembly's",
+  "scenarios": [
+    {
+      "label": "plan (first of the double)",
+      "exit": 0,
+      "stdout": "{\"kind\":\"planned\",\"plan\":{\"supersedes\":null,\"policyDigest\":\"sha256:mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\",\"inputsFingerprint\":\"inputs_sha256:17da3a3eee06680b323fc9677363a963512afbfa7c909f89e5f9701c79424002\",\"lines\":[{\"lineId\":\"main\",\"stable\":null,\"streams\":[{\"identifier\":\"beta\",\"version\":{\"major\":5,\"minor\":0,\"patch\":0},\"tag\":\"5.0.0-beta.1\",\"seed\":\"1\",\"pointerBase\":\"4.9.2\",\"movesPointer\":true}],\"changes\":[{\"id\":\"m4\",\"lineage\":[\"m4\"],\"type\":\"feat\",\"bump\":\"major\"},{\"id\":\"m5\",\"lineage\":[\"m5\"],\"type\":\"fix\",\"bump\":\"patch\"}],\"propagation\":{\"edges\":[],\"order\":[\"app\"],\"notMoved\":[]},\"preconditions\":[{\"kind\":\"tag-absent\",\"tag\":\"5.0.0-beta.1\"}],\"artifacts\":[\"5.0.0-beta.1\"]}],\"refusedIntents\":[],\"explanation\":{\"foreignTags\":[],\"conflicts\":[],\"excluded\":[],\"withheld\":[]},\"planId\":\"plan_sha256:f53164f58559a0050e7366ca9e08b6dd76916ff84893cda7163c306b872d6a5e\"},\"decisions\":[{\"kind\":\"release\",\"bump\":\"major\",\"changes\":[{\"sha\":\"m4\",\"classification\":\"change\",\"type\":\"feat\",\"subject\":\"the breaking rewrite\",\"breaking\":true,\"change\":{\"id\":\"m4\",\"lineage\":{\"originCommit\":\"m4\"}},\"identitySource\":\"commit-sha\"},{\"sha\":\"m5\",\"classification\":\"change\",\"type\":\"fix\",\"subject\":\"the carried fix\",\"breaking\":false,\"change\":{\"id\":\"m5\",\"lineage\":{\"originCommit\":\"m5\"}},\"identitySource\":\"commit-sha\"}],\"lineId\":\"main\",\"range\":{\"lineId\":\"main\",\"releasedUpTo\":\"m3\",\"head\":\"m5\"},\"policyDigest\":\"sha256:mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm\",\"detail\":\"2 release-worthy change(s) imply a major bump\"}]}\n",
+      "stderr": ""
+    }
+  ]
+}

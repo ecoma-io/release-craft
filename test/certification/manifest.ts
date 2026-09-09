@@ -125,7 +125,7 @@ export const MANIFEST: readonly ManifestRow[] = [
     assembly: "A-memory",
     transports: ["CLI"],
     classes: ["exit codes", "envelope bytes"],
-    expectedFiles: [],
+    expectedFiles: ["expected/memory-01.json"],
     provenance: ["phase 14 §3.3", "phase 2 §2.14 (the planner's purity at the process)"],
     status: "live",
   },
@@ -137,7 +137,7 @@ export const MANIFEST: readonly ManifestRow[] = [
     assembly: "A-memory",
     transports: ["CLI", "boundary"],
     classes: ["exit codes", "envelope bytes", "outcome kinds and envelope shapes", "tag mints"],
-    expectedFiles: [],
+    expectedFiles: ["expected/memory-02.json"],
     provenance: [
       "phase 14 §3.3",
       "R2 (memory's published-without-mint distinction; `assembleMemoryStores` wires `mint: null`, verified)",
@@ -150,10 +150,19 @@ export const MANIFEST: readonly ManifestRow[] = [
     walk: "W5",
     windows: ["I1"],
     assembly: "A-memory",
-    transports: ["CLI", "boundary"],
+    transports: ["boundary"],
     classes: ["exit codes", "envelope bytes", "outcome kinds and envelope shapes"],
-    expectedFiles: [],
-    provenance: ["phase 14 §3.3", "phase 4 §2.4 (E-07 at the process; the pass-through on a stop)"],
+    expectedFiles: ["expected/memory-03.json"],
+    provenance: [
+      "phase 14 §3.3",
+      "phase 4 §2.4 (E-07 at the process; the pass-through on a stop)",
+      // Recorded transport narrowing: the contract's CLI half is
+      // unreachable on A-memory — a one-shot process builds a FRESH
+      // MemoryClaimStore (selectEngine) whose seed is constructor-only, so
+      // no process can ever render another run's denial; empirically the
+      // second identical CLI run publishes with exit 0, never 11. The exit
+      // 11 row is earned at the CLI by git-04 over the durable register.
+    ],
     status: "live",
   },
   {
@@ -162,12 +171,18 @@ export const MANIFEST: readonly ManifestRow[] = [
     walk: "W5",
     windows: ["I2"],
     assembly: "A-memory",
-    transports: ["CLI", "boundary"],
+    transports: ["boundary"],
     classes: ["exit codes"],
     expectedFiles: [],
     provenance: [
       "phase 14 §3.3",
       "phase 4 §2.4 item 5 (E-08's declared bound, both sides; the flag-to-kernel-clause crossing)",
+      // Recorded transport narrowing: the contract's CLI half is
+      // unreachable on A-memory for the same reason as memory-03 — the
+      // fresh per-process claim store never denies, so the retry bound is
+      // never crossed and exit 14 cannot render; empirically confirmed.
+      // The exit 14 row is earned at the CLI by git-05 over the durable
+      // register; the raised-bound side publishes here (the 0 row).
     ],
     status: "live",
   },

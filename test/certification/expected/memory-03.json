@@ -1,0 +1,12 @@
+{
+  "cell": "memory-03",
+  "projection": "none — the memory envelope is the zero-random assembly's",
+  "scenarios": [
+    {
+      "label": "promote loser (the denied door value)",
+      "exit": null,
+      "stdout": "{\"kind\":\"denied\",\"holder\":\"attempt_sha256:13625b45dde1e38cede3ec90d13466b6df46e90f14ea486c0108a200eebce102\",\"planId\":\"plan_sha256:1a3cdecbea50535b37f5aa133257ef6408d40f461023e545644fe99adabae844\",\"handle\":{\"planId\":\"plan_sha256:1a3cdecbea50535b37f5aa133257ef6408d40f461023e545644fe99adabae844\",\"attemptId\":\"attempt_sha256:d2bce59ae823ca1ad89dc0f5dd34a5cd5fe9fa64c3d44c63f2166f51978b2db9\",\"actor\":\"automation\"},\"drives\":[]}",
+      "stderr": ""
+    }
+  ]
+}
