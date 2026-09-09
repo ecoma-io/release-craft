@@ -57,8 +57,9 @@ Non-goals:
   hermeticity envelope are inherited; where this contract needs something the
   grammar does not offer, it says "a phase 12 amendment" and refuses the side
   door ([§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar)).
-- **No publication.** The tag mint is a local ref write (verified:
-  `src/adapters/git/git-refs.ts`), and remote publication is the adapter's
+- **No publication.** The tag mint is a local `git tag --no-sign` (verified:
+  `src/adapters/git/tag-door.ts`; `git-refs.ts` is the CAS family), and
+  remote publication is the adapter's
   and the publishing slice's territory ([ADR-0010](../adr/0010-github-adapter.md);
   phase 11 §6; phase 12 §1). The Action does not push, does not create
   releases, and does not enumerate refs for anyone
@@ -182,13 +183,28 @@ Runner posture: consumers run the Action on `ubuntu-latest` — linux, x64,
 bash, `git` preinstalled on the image. Windows and macOS are refused in v1:
 the invocation shell is bash, the composite is written for it, and promising
 runners the suite never exercised is the kind of claim this repository does
-not make. Node is pinned by `.node-version` (24 — matching the package's
-`engines.node >= 24`), pnpm by `packageManager` through the same
-`pnpm/action-setup` pin the repo's own CI uses; the composite's provisioning
-actions (`pnpm/action-setup`, `actions/setup-node` — no checkout step exists,
-[§2.7](#27-the-invocation-the-constructed-command)) are
-reused from `.github/workflows/ci.yml`'s 40-character pins, re-pinned to
-current at implementation time by the slice that lands the file.
+not make. Node is pinned by this repository's `.node-version` (24 — matching
+the package's `engines.node >= 24`), pnpm by its `packageManager` field —
+but under the no-checkout posture
+([§2.7](#27-the-invocation-the-constructed-command)) those files exist only
+at `github.action_path`, and neither provisioning action resolves a version
+file from its process cwd: `actions/setup-node` searches the **workspace**
+for `.node-version`/`.nvmrc` (or takes an explicit `node-version-file`),
+`pnpm/action-setup` reads the `packageManager` of an explicit
+`package_json_file` (default `package.json` resolved as a file input, not
+from cwd) — and `working-directory` does not deliver the pins either, its
+justification being scoped to `run:` steps while these are `uses:` steps.
+The mechanism is therefore explicit, not implicit: the composite passes
+`node-version-file: ${{ github.action_path }}/.node-version` and
+`package_json_file: ${{ github.action_path }}/package.json`, keying both
+actions to the Action's own materialized pins. The implicit alternative —
+no inputs, letting the actions key on the workspace — is refused: the
+workspace is the **consumer's** repository, so the Action would provision
+the Node/pnpm pair the consumer's pin files name (or fault when none
+exist), its own pins silently disengaged — a pin that reads the host
+workspace is not a pin. The provisioning actions are reused from
+`.github/workflows/ci.yml`'s 40-character pins, re-pinned to current at
+implementation time by the slice that lands the file.
 
 ### 2.3 The inputs — action metadata onto the closed grammar
 
@@ -398,7 +414,12 @@ node <action>/dist/src/cli/index.js run \
   `github.action_path`; provisioning stands there (the steps set
   `working-directory: ${{ github.action_path }}` explicitly — a composite's
   `run:` steps stand in the caller's workspace by default, and the build
-  must stand in the Action's own tree). The alternative — a second
+  must stand in the Action's own tree). The same tree is what the
+  provisioning actions resolve their toolchain pins from — keyed by
+  explicit inputs (`node-version-file`, `package_json_file`;
+  [§2.2](#22-the-kind-composite-hermeticity-deciding)), because
+  `working-directory` governs `run:` steps only and an input-less
+  provisioning action keys on the consumer's workspace. The alternative — a second
   `actions/checkout` of this repository at `github.action_ref` — was weighed
   and refused: the materialization **is** the pin's guarantee (the runner
   resolves the consumer's reference once and hands the composite that exact
@@ -771,7 +792,15 @@ already cover those; phase 11 §5, phase 12 §6).
    may not drift, and pins the runner-behavior facts provisioning rests on
    ([§2.7](#27-the-invocation-the-constructed-command)): the materialized
    `github.action_path` tree is what the build stands in, and the invocation
-   executes the bin built from it.
+   executes the bin built from it. The version-resolution mechanism joins
+   that list: the provisioning actions are pinned to their explicit
+   resolution inputs keyed at the materialization (`node-version-file:
+${{ github.action_path }}/.node-version`, `package_json_file:
+${{ github.action_path }}/package.json` —
+   [§2.2](#22-the-kind-composite-hermeticity-deciding)), so a consumer
+   workspace planting its own `.node-version` or `packageManager` provably
+   cannot re-pin the Action's toolchain (the metadata rows enforced by
+   fixture 8's gate).
 2. **The conclusion table, pinned kind by kind.** Every
    [§3.2](#32-the-conclusion-table) row asserted by envelope kind, expected
    conclusion, and annotation content. The rows the declarations-less
