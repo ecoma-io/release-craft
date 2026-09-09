@@ -60,15 +60,32 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
         // The defect's exact condition: without the flag, pnpm runs the
         // package's own `prepare` (`lefthook install`), whose git probe
         // faults in the materialization — the install fails, the door is
-        // never reached. The spawn-error guard keeps the leg honest: an
-        // unresolvable pnpm arrives as `status: null`, which must not read
-        // as the failure this leg asserts.
+        // never reached. The guards keep the leg honest: a pnpm that never
+        // spawns, or dies before exiting, must not read as the failure this
+        // leg asserts (`error` set, or `status: null`).
         const scriptsRun = install(bare, []);
         expect(scriptsRun.error, `pnpm failed to run: ${String(scriptsRun.error)}`).toBeUndefined();
+        expect(scriptsRun.status, `pnpm was killed before exiting:\n${scriptsRun.stderr}`).toEqual(
+          expect.any(Number),
+        );
         expect(
           scriptsRun.status,
           `the unflagged install exited 0 — the materialization shape no longer reproduces the defect:\n${scriptsRun.stdout}${scriptsRun.stderr}`,
         ).not.toBe(0);
+        // And the failure must be THE cause, not merely nonzero: pnpm ran
+        // the prepare script's body (`$ lefthook install`) and reported its
+        // lifecycle failure — the same pair the dogfood's log carries
+        // (`. prepare$ lefthook install` → `[ELIFECYCLE]`). An unrelated
+        // install error would leave the flag's value unproven.
+        const witnessed = `${scriptsRun.stdout}${scriptsRun.stderr}`;
+        expect(
+          witnessed,
+          "the unflagged install failed without running lefthook — not the defect's cause",
+        ).toMatch(/lefthook install/);
+        expect(
+          witnessed,
+          "the unflagged install failed without pnpm's ELIFECYCLE marker — the cause is not a lifecycle script",
+        ).toMatch(/\[ELIFECYCLE\]/);
       });
       withMaterialization((materialized) => {
         // The composite's run line: the provisioning's product installs
@@ -78,6 +95,12 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
           scriptsFree.error,
           `pnpm failed to run: ${String(scriptsFree.error)}`,
         ).toBeUndefined();
+        // Same honesty on this leg: only a real exit code reads as the
+        // completion the composite's step promises.
+        expect(
+          scriptsFree.status,
+          `pnpm was killed before exiting:\n${scriptsFree.stderr}`,
+        ).toEqual(expect.any(Number));
         expect(
           scriptsFree.status,
           `the scripts-free install failed (exit ${String(scriptsFree.status)}):\n${scriptsFree.stdout}${scriptsFree.stderr}`,
