@@ -1,5 +1,5 @@
 {
-  "$comment": "The typechecking baseline for the TypeScript sources — it never emits (`pnpm typecheck` is `tsc --noEmit`); the emit half lives in tsconfig.build.json. Every exactness flag that has bitten a TypeScript codebase is on from the first commit, because a strictness flag added later is set to whatever the code already happens to be. The gate scripts under scripts/ are plain .mjs checked through their own config (scripts/tsconfig.json).",
+  "$comment": "The typechecking baseline for the TypeScript sources — it never emits (`pnpm typecheck` is `tsc --noEmit`); the emit half lives in tsconfig.build.json. Every exactness flag that has bitten a TypeScript codebase is on from the first commit, because a strictness flag added later is set to whatever the code already happens to be. The gate scripts under scripts/ are plain .mjs checked through their own config (scripts/tsconfig.json); the Action's invocation script (action/invoke.mjs) is plain .mjs too and belongs to this project — it is typed by JSDoc and checked here through allowJs/checkJs, because the artifact suite drives the same file the composite's step runs and nothing may typecheck a drifted copy.",
   "compilerOptions": {
     "target": "es2024",
     "lib": ["es2024"],
@@ -16,12 +16,14 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "checkJs": true,
     "noEmit": true,
     "skipLibCheck": true,
     "paths": {
       "@ecoma-io/release-craft/domain": ["./core/domain/index.ts"]
     }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "action/**/*.mjs", "vitest.config.ts"],
   "exclude": ["node_modules", "dist", "coverage"]
 }

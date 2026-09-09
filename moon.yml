@@ -69,6 +69,7 @@ tasks:
     inputs:
       - "src/**/*"
       - "test/**/*"
+      - "action/**/*"
       - "project://core-domain?group=sources"
       - "vitest.config.ts"
       - "/tsconfig.json"
@@ -79,13 +80,19 @@ tasks:
     command: vitest run --coverage
     # The CLI's subprocess suite (test/cli/) executes the built bin —
     # dist/src/cli/index.js — because the process surface, not the module,
-    # is the subject (phase 12 contract §6). The build task is a dependency,
-    # so the suite never executes a stale dist.
+    # is the subject (phase 12 contract §6). The Action artifact suite
+    # (test/action/) does the same and also drives action/invoke.mjs, the one
+    # script the composite's step runs (phase 13 contract §6), and reads the
+    # action.yml metadata itself — so both the script and the metadata are
+    # hashed inputs. The build task is a dependency, so the suite never
+    # executes a stale dist.
     dependsOn:
       - build
     inputs:
       - "src/**/*"
       - "test/**/*"
+      - "action/**/*"
+      - "/action.yml"
       - "project://core-domain?group=sources"
       - "/vitest.config.ts"
       - "/tsconfig.json"

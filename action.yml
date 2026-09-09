@@ -1,0 +1,144 @@
+# The release-craft GitHub Action — the automation surface above the
+# application boundary (phase 13 contract, §2). One product, one repository,
+# one pin: a consumer references `ecoma-io/release-craft@<40-character-sha>`
+# and the pinned SHA carries this metadata, the sources it builds, the
+# lockfile the build installs from, and the grammar table the inputs map
+# onto — one commit, one behavior (§2.1). The SHA is the only supported
+# reference; moving tags are documentation, never trust.
+#
+# The shape is decided, not sketched here:
+#
+#   - a COMPOSITE action (§2.2) — provision inside the runner's own
+#     materialization of this repository, then invoke the built bin under a
+#     constructed environment. Hermeticity is achievable by construction: the
+#     ambient layer ends at a shell line this repository owns;
+#   - ONE door: `run` (§2.3). Every input below maps onto an exact decided
+#     grammar row (`GRAMMAR.run` in src/cli/grammar.ts) or is refused; the
+#     closed grammar is the validation, the metadata is not the enforcement
+#     layer;
+#   - `--assembly git` is pinned (§2.6): a memory run in CI is a walk whose
+#     every record evaporates with the runner;
+#   - no token input, no secret, no checkout (§2.8) — the mint is a local
+#     `git tag --no-sign`, the run's writes are the walk's local writes, and
+#     the credential row a checkout would carry holds vacuously because this
+#     composite performs no checkout of any repository;
+#   - the toolchain is pinned by VALUE, not by file path (§2.2):
+#     `node-version: 24` and `version: 11.25.0` mirror this repository's own
+#     `.node-version` and `packageManager` — a join of a file input onto
+#     `GITHUB_WORKSPACE` mangles the absolute `github.action_path` path (the
+#     actions' `path.join` does not reset on an absolute segment), so the
+#     file-keyed mechanism is made unrepresentable rather than unused;
+#   - one output, `outcome`, carrying the `--json` envelope byte-for-byte
+#     (§3.1), and one conclusion table keyed on the envelope kind (§3.2) —
+#     both rendered by `action/invoke.mjs`, the one script this composite's
+#     invocation step drives and the artifact suite drives as a subprocess.
+name: release-craft
+description: Runs the release-craft engine's run door over a declared world.
+inputs:
+  world:
+    required: true
+    description: Path to the world document
+  line:
+    required: true
+    description: Release line id to run
+  actor:
+    required: true
+    description: Attribution string recorded on every record
+  tag-namespaces:
+    required: true
+    description: Declared namespace roots, one per line
+  intents:
+    default: ""
+    description: Operator intents, one per line
+  repo:
+    default: "."
+    description: Repository path the binding walks
+  max-retries:
+    default: "0"
+    description: Claim sequence retry bound
+  working-directory:
+    default: "${{ github.workspace }}"
+    description: Where the run stands
+# §3.1: ONE output, `outcome`, carrying the --json envelope byte-for-byte.
+# A composite exposes a step's $GITHUB_OUTPUT value to the consuming
+# workflow only through this declaration — the plumbing `steps.<id>.outputs.
+# outcome` presupposes, no shaped outputs beside it (a consumer extracts
+# with jq from the verbatim envelope, in the workflow that owns the reading).
+outputs:
+  outcome:
+    description: The run outcome's --json envelope, byte for byte
+    value: ${{ steps.invoke.outputs.outcome }}
+runs:
+  using: composite
+  steps:
+    # — provisioning (§2.2) — runs before and outside the hermetic envelope,
+    # inside the runner's own materialization of this repository at the
+    # consumer's pin. There is no checkout step and must never be one: the
+    # materialization IS the pin's guarantee, a second checkout would fork it
+    # (§2.7), and skipping checkout is what makes `persist-credentials`
+    # vacuous (§2.8). Values, never file paths (§2.2): the declared values
+    # are single-sourced to this repository's own pin files by obligation —
+    # the artifact suite's drift rows bind them to `.node-version` and
+    # `packageManager` — not by mechanism.
+    - name: Provision Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24
+
+    - name: Provision pnpm
+      uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      with:
+        version: 11.25.0
+
+    # The provisioning steps stand in the materialized tree explicitly: a
+    # composite's `run:` steps stand in the caller's workspace by default,
+    # and the build must stand in the Action's own tree (§2.7).
+    - name: Install the lockfile
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: pnpm install --frozen-lockfile
+
+    # The build command is the moon graph's own (`release-craft:build` runs
+    # `tsc -p tsconfig.build.json`), run without moon — the dev graph stays
+    # out of the runner's critical path, and the artifact suite pins the two
+    # definitions of "build" equal so they may not drift (§2.7, §6.1).
+    - name: Build the bin
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: pnpm exec tsc -p tsconfig.build.json
+
+    # — the invocation (§2.7, §4) — the one step past the outer hermeticity
+    # line. The declared inputs enter as argv through this step's `env:` block
+    # (reviewed metadata, one shell-quoted word per expansion — the runner's
+    # own `INPUT_*` injection is never read) and the script constructs the
+    # child's allowlisted environment, captures the envelope, writes the
+    # `outcome` output through the preserving write, annotates per the
+    # conclusion table, and exits with the conclusion. `GITHUB_OUTPUT` is
+    # written by this outer shell only; the child sees no `GITHUB_*` at all.
+    # The step's cwd is the declared `working-directory` input — a declared
+    # runner fact resolved by the runner into reviewed metadata — and the
+    # `repo` and `world` paths resolve against it (§4's stated cwd
+    # resolution: declared on both sides, nothing inferred at any layer).
+    - name: Invoke the run door
+      id: invoke
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        RC_WORLD: ${{ inputs.world }}
+        RC_LINE: ${{ inputs.line }}
+        RC_ACTOR: ${{ inputs.actor }}
+        RC_TAG_NAMESPACES: ${{ inputs.tag-namespaces }}
+        RC_INTENTS: ${{ inputs.intents }}
+        RC_REPO: ${{ inputs.repo }}
+        RC_MAX_RETRIES: ${{ inputs.max-retries }}
+      run: |
+        node "${{ github.action_path }}/action/invoke.mjs" \
+          --bin "${{ github.action_path }}/dist/src/cli/index.js" \
+          --outputs-file "$GITHUB_OUTPUT" \
+          --world "$RC_WORLD" \
+          --line "$RC_LINE" \
+          --actor "$RC_ACTOR" \
+          --tag-namespaces "$RC_TAG_NAMESPACES" \
+          --intents "$RC_INTENTS" \
+          --repo "$RC_REPO" \
+          --max-retries "$RC_MAX_RETRIES"
