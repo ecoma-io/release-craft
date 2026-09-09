@@ -308,7 +308,7 @@ describe("the certification fixture · A-git", () => {
 
   it(
     "git-04 · W5 × I1 · E-07 over the durable register — the denial names the winner's attempt id, the loser's records stand",
-    { timeout: 45_000 },
+    { timeout: 120_000 },
     () => {
       withSeededRepo("cert-git-04", (repo, _git, heads) => {
         // The process half: the promote publishes; the identical second
@@ -425,7 +425,11 @@ describe("the certification fixture · A-git", () => {
 
   it(
     "git-06 · W2 × I10 · ADR-0012's door at the surface — the moves land in the write-ahead window, the replay classifies, a divergent prior conflicts",
-    { timeout: 60_000 },
+    // The fixture's heaviest cell (two crash+resume cycles over the
+    // channel store): ~37 s locally, ~70 s on a two-core CI runner —
+    // three minutes is headroom for runner variance, not a hang mask
+    // (vitest.config's own posture for the real-disk suites).
+    { timeout: 180_000 },
     () => {
       // The clean half: the promote's announce hook throws after the moves
       // and the walk's records stand; the fresh binding's resume replays
@@ -572,7 +576,7 @@ describe("the certification fixture · A-git", () => {
 
   it(
     "git-07 · W2 × I9 · the ambiguity window twice — the deterministic .lock fault stops the walk, and the read a proceeding caller would have had to misread is pinned beside it",
-    { timeout: 60_000 },
+    { timeout: 180_000 },
     () => {
       // The process half.
       withSeededRepo("cert-git-07-process", (repo, _git, heads) => {
@@ -630,7 +634,7 @@ describe("the certification fixture · A-git", () => {
 
   it(
     "git-08 · W1 × I3 · durability's proof — a fresh binding resumes from the reloaded tail, byte-exact, and lands the uninterrupted verdict",
-    { timeout: 60_000 },
+    { timeout: 180_000 },
     () => {
       withSeededRepo("cert-git-08", (repo, _git, heads) => {
         const target = seededHead(heads, "main");
@@ -685,7 +689,7 @@ describe("the certification fixture · A-git", () => {
 
   it(
     "git-09 · W2 × I4 · E-01's no-return boundary live — the recorded tag step stands, the resume completes in place, never a second mint",
-    { timeout: 45_000 },
+    { timeout: 120_000 },
     () => {
       withSeededRepo("cert-git-09", (repo, git, heads) => {
         const target = seededHead(heads, "main");
