@@ -184,27 +184,78 @@ bash, `git` preinstalled on the image. Windows and macOS are refused in v1:
 the invocation shell is bash, the composite is written for it, and promising
 runners the suite never exercised is the kind of claim this repository does
 not make. Node is pinned by this repository's `.node-version` (24 — matching
-the package's `engines.node >= 24`), pnpm by its `packageManager` field —
-but under the no-checkout posture
-([§2.7](#27-the-invocation-the-constructed-command)) those files exist only
-at `github.action_path`, and neither provisioning action resolves a version
-file from its process cwd: `actions/setup-node` searches the **workspace**
-for `.node-version`/`.nvmrc` (or takes an explicit `node-version-file`),
-`pnpm/action-setup` reads the `packageManager` of an explicit
-`package_json_file` (default `package.json` resolved as a file input, not
-from cwd) — and `working-directory` does not deliver the pins either, its
-justification being scoped to `run:` steps while these are `uses:` steps.
-The mechanism is therefore explicit, not implicit: the composite passes
-`node-version-file: ${{ github.action_path }}/.node-version` and
-`package_json_file: ${{ github.action_path }}/package.json`, keying both
-actions to the Action's own materialized pins. The implicit alternative —
-no inputs, letting the actions key on the workspace — is refused: the
-workspace is the **consumer's** repository, so the Action would provision
-the Node/pnpm pair the consumer's pin files name (or fault when none
-exist), its own pins silently disengaged — a pin that reads the host
-workspace is not a pin. The provisioning actions are reused from
+the package's `engines.node >= 24`), pnpm by its `packageManager` field
+(`pnpm@11.25.0`) — and the composite pins **values**, not file paths:
+`actions/setup-node` gets `node-version: 24`, `pnpm/action-setup` gets
+`version: 11.25.0`.
+
+The file-keyed mechanism is decided against, and the reason is a platform
+fact, verified against the actions' sources at the pins this repository's
+CI carries today (and identical from `setup-node` v4.0.0 through the pinned
+v7.0.0): **neither action joins its file input as-given — both join it onto
+`GITHUB_WORKSPACE` with `path.join`, which does not reset on an absolute
+segment** (only `path.resolve` does). Under the no-checkout posture
+([§2.7](#27-the-invocation-the-constructed-command)) the Action's pin files
+exist only at `github.action_path`, so the natural spelling
+`${{ github.action_path }}/.node-version` arrives as an absolute path and
+is **mangled**: `actions/setup-node`'s `resolveVersionInput` builds
+`path.join(process.env.GITHUB_WORKSPACE, versionFileInput)` (`src/main.ts`)
+and `getNodeVersionFromFile` throws when the joined path does not exist
+(`src/util.ts`) — the first consumer run hard-faults on a nested
+nonsense path; `pnpm/action-setup`'s `parseInputPath` expands only a tilde
+(`src/inputs/index.ts`), and `readTargetVersion` does
+`readFileSync(path.join(GITHUB_WORKSPACE, packageJsonFile))` inside a catch
+that **swallows** the ENOENT (`src/install-pnpm/run.ts`, "Swallow error if
+package.json doesn't exist in root") — `packageManager` stays undefined
+and, with no `version` input, the pnpm pin silently disengages. The
+explicit-value spelling is robust in both directions: `node-version`
+returns from `resolveVersionInput` before any file read, and `version`
+returns from `readTargetVersion` regardless of what the workspace probe
+found. `working-directory` does not deliver the pins either — its
+justification is scoped to `run:` steps, and these are `uses:` steps.
+
+The refused alternatives, in order of distance:
+
+- **File-keyed inputs at the materialization**
+  (`node-version-file: ${{ github.action_path }}/.node-version`,
+  `package_json_file: ${{ github.action_path }}/package.json`) — the
+  mangled-join fault above; it was this contract's first draft and is
+  recorded refused so the mistake is not re-derived.
+- **Relative spellings** — nothing relative from the consumer's workspace
+  reaches the materialized tree; a relative path resolves to the
+  consumer's files or to nothing, never to the Action's pins.
+- **Overriding `GITHUB_WORKSPACE`** — a global the runner owns; its blast
+  radius (caching keys, matchers, every other action in the job) is
+  unreviewable from this repository.
+- **A run-step provisioner standing in `github.action_path`** (cwd
+  resolution is real for `run:` steps) — workable, but it re-implements the
+  two actions' reviewed logic (mirror selection, `PNPM_HOME` wiring,
+  caching) as a script this repository then owns; the same
+  second-implementation drift the build-command pin exists to kill, now for
+  provisioning.
+
+One residual is owned rather than hidden: `readTargetVersion` probes the
+consumer's workspace-root `package.json` unconditionally (default
+`package_json_file`), and if that file exists, declares a
+`packageManager`, and disagrees with the declared `version`, the action
+**throws** ("Multiple versions of pnpm specified"). That is a loud
+provisioning fault on a consumer repository that pins its own pnpm — never
+a silent different-toolchain install — and it resolves like any step that
+dies before the invocation: no envelope, the no-verdict annotated failure
+([§3.2](#32-the-conclusion-table)). A consumer repo whose root manifest
+carries no `packageManager`, or none at all, probes clean.
+
+The declared values are single-sourced to the repository's own pin files by
+obligation, not by mechanism:
+[§6](#6-test-obligations), fixture 1's drift row binds `node-version: 24`
+to the materialized `.node-version`'s content and `version: 11.25.0` to the
+materialized `packageManager`'s value — the same
+declared-value-versus-repo-file shape as the build-command pin — so a
+toolchain bump that edits the repo files but not the composite goes red.
+The provisioning actions are reused from
 `.github/workflows/ci.yml`'s 40-character pins, re-pinned to current at
-implementation time by the slice that lands the file.
+implementation time by the slice that lands the file, which re-verifies the
+join behavior above against whatever SHAs it pins.
 
 ### 2.3 The inputs — action metadata onto the closed grammar
 
@@ -415,11 +466,11 @@ node <action>/dist/src/cli/index.js run \
   `working-directory: ${{ github.action_path }}` explicitly — a composite's
   `run:` steps stand in the caller's workspace by default, and the build
   must stand in the Action's own tree). The same tree is what the
-  provisioning actions resolve their toolchain pins from — keyed by
-  explicit inputs (`node-version-file`, `package_json_file`;
-  [§2.2](#22-the-kind-composite-hermeticity-deciding)), because
-  `working-directory` governs `run:` steps only and an input-less
-  provisioning action keys on the consumer's workspace. The alternative — a second
+  toolchain pins are held against: the provisioning actions take explicit
+  **values** (`node-version`, `version` — their file inputs cannot reach
+  this tree; [§2.2](#22-the-kind-composite-hermeticity-deciding)), and the
+  materialized `.node-version` and `packageManager` are the drift reference
+  fixture 1 binds the declared values to. The alternative — a second
   `actions/checkout` of this repository at `github.action_ref` — was weighed
   and refused: the materialization **is** the pin's guarantee (the runner
   resolves the consumer's reference once and hands the composite that exact
@@ -792,15 +843,22 @@ already cover those; phase 11 §5, phase 12 §6).
    may not drift, and pins the runner-behavior facts provisioning rests on
    ([§2.7](#27-the-invocation-the-constructed-command)): the materialized
    `github.action_path` tree is what the build stands in, and the invocation
-   executes the bin built from it. The version-resolution mechanism joins
-   that list: the provisioning actions are pinned to their explicit
-   resolution inputs keyed at the materialization (`node-version-file:
-${{ github.action_path }}/.node-version`, `package_json_file:
-${{ github.action_path }}/package.json` —
-   [§2.2](#22-the-kind-composite-hermeticity-deciding)), so a consumer
-   workspace planting its own `.node-version` or `packageManager` provably
-   cannot re-pin the Action's toolchain (the metadata rows enforced by
-   fixture 8's gate).
+   executes the bin built from it. The toolchain pin joins that list as a
+   **drift row**: the composite's declared values (`node-version`,
+   `version` — [§2.2](#22-the-kind-composite-hermeticity-deciding)) are
+   asserted equal to the repository's own pin files at the materialization
+   (`node-version` = `.node-version`'s content, `version` =
+   `packageManager`'s `pnpm@<version>` value), the same
+   declared-value-versus-repo-file shape as the build-command pin above — a
+   toolchain bump that edits the repo files but not the composite (or the
+   reverse) goes red. The adversarial form is retained structurally: the
+   composite declares no file-path input at all, so a consumer workspace's
+   own `.node-version` is provably unread, and its root `packageManager`
+   cannot re-pin the Action's toolchain — the declared `version` wins; a
+   disagreement makes provisioning throw loudly
+   ([§2.2](#22-the-kind-composite-hermeticity-deciding)'s owned residual), a
+   fault, never a silent different-toolchain install. The metadata rows are
+   enforced by fixture 8's gate.
 2. **The conclusion table, pinned kind by kind.** Every
    [§3.2](#32-the-conclusion-table) row asserted by envelope kind, expected
    conclusion, and annotation content. The rows the declarations-less
@@ -854,10 +912,15 @@ ${{ github.action_path }}/package.json` —
    slice extends the policy suite (or the required-files gate) to validate
    the action metadata: schema, the org-law rows (40-character SHA pins on
    any `uses:` step, `persist-credentials: false` on any checkout, no
-   secrets in `run:`), and the input inventory of
-   [§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar). Without
-   this, the contract's metadata decisions are gated by nothing the day the
-   slice merges — the gate is part of the slice, not a follow-up.
+   secrets in `run:`), the input inventory of
+   [§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar), and the
+   provisioning steps' `with:` rows by name — the declared toolchain values
+   (`node-version`, `version`) and the absence of any file-path resolution
+   input (`node-version-file`, `package_json_file` — the mangled-join
+   mechanism of [§2.2](#22-the-kind-composite-hermeticity-deciding) must be
+   unrepresentable, not merely unused). Without this, the contract's
+   metadata decisions are gated by nothing the day the slice merges — the
+   gate is part of the slice, not a follow-up.
 
 ## 7. The other slices
 
