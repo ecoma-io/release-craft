@@ -198,12 +198,21 @@ function firstStderrLine(stderr) {
 
 /**
  * The preserving write (§3.1): the one `outcome` output, carrying the
- * captured stdout byte-for-byte. The runner's file-command parser takes each
- * content line without its trailing newline and drops the delimiter line, so
- * the write is the value, then one empty content line, then the delimiter —
- * the parser eats the empty line's terminator instead of the value's own
- * final newline, and the replayed value equals the captured stdout exactly.
- * An empty stdout is written as a zero-content value, which replays to "".
+ * captured stdout byte-for-byte. The runner's file-command grammar recognises
+ * `NAME<<DELIM` as a heredoc header; `NAME=VALUE` is its single-line form, so
+ * the `<<` header must not contain `=`. The parser takes each heredoc content
+ * line without its trailing newline and drops the delimiter line. For non-empty
+ * stdout, the bytes are exactly `outcome<<ghadelimiter_<uuid>\n`, then the
+ * captured stdout, then `\nghadelimiter_<uuid>\n`: the empty content line
+ * absorbs the parser's newline consumption, so the replayed value equals stdout
+ * exactly, including stdout's own trailing newline. Empty stdout is a separate
+ * branch: it writes the header immediately followed by the delimiter
+ * (`outcome<<ghadelimiter_<uuid>\n<delimiter>\n`), with no empty content line,
+ * and replays to "".
+ *
+ * This is the same multiline shape emitted by `@actions/core`'s canonical
+ * `setOutput` writer; keeping the runner grammar and raw bytes explicit here
+ * prevents the single-line `NAME=VALUE` form from being mistaken for heredoc.
  *
  * @param {string} file the `$GITHUB_OUTPUT` path (passed by the step)
  * @param {Buffer} stdout the child's captured stdout
@@ -214,7 +223,7 @@ function writeOutcomeOutput(file, stdout) {
   // that could collide with the value would truncate it. This program is the
   // outer line — its own entropy touches nothing the bin reads.
   const delimiter = `ghadelimiter_${randomUUID()}`;
-  const head = Buffer.from(`outcome=<<${delimiter}\n`);
+  const head = Buffer.from(`outcome<<${delimiter}\n`);
   const body =
     stdout.length > 0
       ? Buffer.concat([stdout, Buffer.from(`\n${delimiter}\n`)])

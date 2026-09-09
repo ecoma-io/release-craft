@@ -112,11 +112,14 @@ export const runInvoke = (
 
 /**
  * The runner's file-command parse, replayed over the written bytes (§3.1's
- * platform fact, actions/runner#1182): the parser takes each content line
- * WITHOUT its trailing newline and drops the delimiter line — content joined
- * by newline is the value. This replay is what makes the preserving write's
- * empty content line load-bearing: without it the value's own final newline
- * is consumed and byte-equality fails.
+ * platform fact, actions/runner#1182): the runner gives `NAME=VALUE` precedence
+ * when `=` occurs before `<<`, and recognises a heredoc only when `<<` occurs
+ * before `=` (or when no `=` exists). This matters because `outcome=<<DELIM`
+ * is a single-line assignment whose value is `<<DELIM`, not a heredoc header;
+ * the old writer is rejected here instead of being silently accepted by the
+ * fixture. For the canonical `outcome<<DELIM` heredoc, each content line is
+ * taken WITHOUT its trailing newline and the delimiter line is dropped — the
+ * empty content line is load-bearing so the value's own final newline survives.
  *
  * @param {Buffer} bytes the file-command bytes
  * @returns {string} the value the runner would deliver as outputs.outcome
@@ -124,10 +127,33 @@ export const runInvoke = (
 export const replayOutcome = (bytes: Buffer): string => {
   const lines = bytes.toString("utf8").split("\n");
   const head = lines[0] ?? "";
-  if (!head.startsWith(`${OUTCOME_OUTPUT}=<<`)) {
+  const equals = head.indexOf("=");
+  const heredoc = head.indexOf("<<");
+
+  // Match the runner's precedence: an equals sign before `<<` is NAME=VALUE.
+  // In particular, the former `outcome=<<DELIM` shape must not mask the
+  // protocol defect by being treated as a heredoc by this test harness.
+  if (equals !== -1 && (heredoc === -1 || equals < heredoc)) {
+    if (head.startsWith(`${OUTCOME_OUTPUT}=<<`)) {
+      throw new Error(
+        `malformed outcome header ${JSON.stringify(head)}: '=' precedes '<<'; expected outcome<<DELIM`,
+      );
+    }
+    throw new Error(
+      `not a delimited outcome heredoc: runner parses ${JSON.stringify(head)} as NAME=VALUE`,
+    );
+  }
+  if (heredoc === -1 || (equals !== -1 && heredoc > equals)) {
     throw new Error(`not a delimited file-command write: ${JSON.stringify(head)}`);
   }
-  const delimiter = head.slice(`${OUTCOME_OUTPUT}=<<`.length);
+
+  const name = head.slice(0, heredoc);
+  const delimiter = head.slice(heredoc + 2);
+  if (name !== OUTCOME_OUTPUT || delimiter.length === 0) {
+    throw new Error(
+      `not a delimited outcome write: expected outcome<<DELIM, got ${JSON.stringify(head)}`,
+    );
+  }
   const end = lines.indexOf(delimiter, 1);
   if (end === -1) {
     throw new Error(`the delimiter line is missing — the write is malformed`);

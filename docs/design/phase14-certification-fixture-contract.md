@@ -677,14 +677,21 @@ harness — so the standard is class-shaped, not byte-shaped:
    cells, `git-01`/`git-06`, are the shape).
 4. **The Action leg** — the output-write replay re-proven on the runner
    itself, with the compared bytes stated exactly so a conforming Action
-   cannot fail the standard: the written output carries the run's CLI
-   stdout plus the empty line (phase 13 §3.1's preserving write); the
-   runner's file-command parse consumes exactly one trailing newline; the
-   surviving value therefore equals the stdout byte for byte, trailing
-   newline included, and that equality — survivor against the child's
-   stdout — is what the dogfood compares (phase 13 §6's fixture 3 names
-   this first real run as the re-proof). The step conclusion equals the
-   conclusion table's row for the envelope's kind.
+   cannot fail the standard: the written output begins with the canonical
+   `outcome<<ghadelimiter_<uuid>` heredoc header (no `=`), carries the run's
+   CLI stdout plus the empty line, then the delimiter (phase 13 §3.1's
+   preserving write). The runner's grammar treats `=` before `<<` as the
+   single-line `NAME=VALUE` form, so `outcome=<<ghadelimiter_<uuid>` is
+   malformed and cannot be substituted. The header follows `@actions/core`'s
+   canonical writer. The runner's file-command parse consumes exactly one
+   trailing newline; the surviving value therefore equals the stdout byte for
+   byte, trailing newline included, and that equality — survivor against the
+   child's stdout — is what the dogfood compares (phase 13 §6's fixture 3
+   will be re-proven by the next successful hosted run). The step conclusion equals the
+   conclusion table's row for the envelope's kind. Run 34397333332 observed
+   the old malformed header's delimiter fragment being stored before the
+   runner rejected the following JSON; that evidence is kept distinct from
+   this inferred grammar explanation.
 
 One mismatch is a filed defect against the owning slice, never a waived
 row — that sentence is the gate's wording, and it is the whole wording. The
