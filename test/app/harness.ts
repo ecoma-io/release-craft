@@ -24,6 +24,8 @@ import {
   type ExecutionLedger,
   type LedgerRecord,
   type LedgerStepState,
+  type MemoryClaimStore,
+  type MemoryLedger,
   type OperatorIntent,
   type ReleaseAttempt,
   type Attribution,
@@ -75,9 +77,12 @@ export function fullDeclaration(): RunDeclarations {
 
 export interface Assembly {
   readonly engine: Engine;
-  /** The fixtures' reference stores — the bundle's own values, kept so a
-   * test can read the recorded evidence and (for the seeded-fault windows)
-   * wrap or seed a store before the run. */
+  /** The stores the assembly wired — the bundle's own fresh fixtures for
+   * the ports left alone, the caller's overrides for the ports overridden —
+   * kept so a test can read the recorded evidence and (for the
+   * seeded-fault windows) wrap or seed a store before the run. An evidence
+   * read through this bundle always observes the store the engine writes:
+   * never a private default (issue #118). */
   readonly stores: Stores;
 }
 
@@ -88,26 +93,39 @@ export interface AssemblyOptions {
   /** E-08's declared retry bound (default 2). */
   readonly maxRetries?: number;
   /** Port overrides for the shared-store scenarios: two assemblies over
-   * one register or one claim store, exactly as two hosts would. */
-  readonly register?: AttemptRegister;
-  readonly ledger?: ExecutionLedger;
-  readonly claims?: ClaimStore;
+   * one register or one claim store, exactly as two hosts would. An
+   * overridden port is the assembly's port: the returned `Assembly.stores`
+   * holds the override itself, never a fresh stand-in (issue #118) — which
+   * is why an override is typed as the reference store it becomes. A
+   * wrapper store (a seeded-fault window) is not bundle-grade: it enters
+   * through `assembleMemoryStores` directly. */
+  readonly register?: MemoryAttemptRegister;
+  readonly ledger?: MemoryLedger;
+  readonly claims?: MemoryClaimStore;
 }
 
 /** One memory assembly through the public factory. The fixture stores are
- * the bundle: the assembly wires them, it does not rebuild them. */
+ * the bundle: the assembly wires them, it does not rebuild them — and the
+ * returned bundle is exactly what was wired, overrides included. */
 export function freshAssembly(options: AssemblyOptions = {}): Assembly {
   const stores = freshStores();
+  // The wired ports: the caller's override where one is given, the
+  // bundle's own fixture where not. The returned bundle holds these same
+  // stores (issue #118), so an evidence read through `.stores` can never
+  // silently observe an unwired default.
+  const wired = {
+    register: options.register ?? stores.register,
+    ledger: options.ledger ?? stores.ledger,
+    claims: options.claims ?? stores.claims,
+  };
   const engine = assembleMemoryStores(
     {
-      register: options.register ?? stores.register,
-      ledger: options.ledger ?? stores.ledger,
-      claims: options.claims ?? stores.claims,
+      ...wired,
       ...(options.withChannels === false ? {} : { channels: stores.channels }),
     },
     { maxRetries: options.maxRetries ?? 2 },
   );
-  return { engine, stores };
+  return { engine, stores: { ...stores, ...wired } };
 }
 
 /** A fresh register that allocates a plan's SECOND ordinal — the shared

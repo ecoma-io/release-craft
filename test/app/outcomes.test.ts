@@ -574,8 +574,9 @@ describe("the durable abandonment — restart visibility (issue #111; ADR-0013 d
 
     // Nothing was written: the fresh attempt's own tail is still empty —
     // the refusal happened before claim acquisition and the walk. The read
-    // goes to the SHARED ledger (the one the engine wired), not the
-    // restarted assembly's fresh default.
+    // goes to the SHARED ledger, the one the engine wired — the restart
+    // assembly's own bundle holds that same store (issue #118), so either
+    // door observes the same silence.
     expect(aborted.stores.ledger.tail(attemptIdentity(aborted.planId, 2))).toStrictEqual([]);
   });
 
