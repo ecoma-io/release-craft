@@ -46,6 +46,7 @@ import {
   type ExecutionLedger,
   type HookAnchorPosition,
   type LedgerRecord,
+  type MutationOutcome,
   type ReleaseAttempt,
   type RequestStepOutcome,
   type StageKey,
@@ -275,6 +276,9 @@ const runBoundary = (ctx: WalkContext, stage: StageKey, position: HookAnchorPosi
     );
     ctx.attempt = run.attempt;
   }
+  if (ctx.attempt.state !== "executing") {
+    return;
+  }
   const mutationsHere = (ctx.attempt.mutations ?? []).filter(
     (mutation) => mutation.anchor.stage === stage && mutation.anchor.position === position,
   );
@@ -294,6 +298,19 @@ const runBoundary = (ctx: WalkContext, stage: StageKey, position: HookAnchorPosi
       updaterFs,
     );
     ctx.attempt = run.attempt;
+    // A refused mutation is a §2.5 escalation, not a pass: the attempt
+    // blocks with the refusal as the recorded cause, and the walk's own
+    // executing-state checks stop it — the half-mutated tree is never
+    // published beside the refusal.
+    if (ctx.attempt.state === "executing") {
+      const refused = run.outcomes.find(
+        (outcome): outcome is Extract<MutationOutcome, { readonly kind: "refused" }> =>
+          outcome.kind === "refused",
+      );
+      if (refused !== undefined) {
+        ctx.attempt = block(ctx.attempt, `refused:updater:${refused.mutationId}:${refused.detail}`);
+      }
+    }
   }
 };
 
