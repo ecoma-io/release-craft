@@ -18,4 +18,4 @@ minimumReleaseAgeExclude:
   # release-age floor must waive the same versions or the waived bump cannot
   # install. The list is version-specific on purpose: a new pin edits this line
   # in the same commit.
-  - "@ecoma-io/archkeep@0.24.1"
+  - "@ecoma-io/archkeep@0.27.1"
