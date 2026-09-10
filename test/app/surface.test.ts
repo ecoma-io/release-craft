@@ -72,6 +72,8 @@ const ALLOWED_APP_IMPORTS: readonly string[] = [
   "./claims.js",
   "./channels.js",
   "./engine.js",
+  "./release-pr-types.js",
+  "./release-pr.js",
   "./assemble.js",
   "./index.js",
   "@ecoma-io/release-craft/execution",
@@ -206,10 +208,15 @@ describe("obligation 2 — the surface is doors and records, never a store or a 
   it("the boundary barrel's runtime exports are exactly the contract's closed set", () => {
     expect(Object.keys(app).sort()).toStrictEqual([
       "InvalidAssemblyConfigError",
+      "MemoryRecordSink",
+      "ReleasePRScopeError",
       "assembleGitBinding",
       "assembleMemoryStores",
       "claimScopeForLine",
+      "openReleasePRGate",
+      "parseIdentityClaim",
       "plannedChannelMoves",
+      "renderReleasePRProjection",
     ]);
     // The one class the boundary throws is an error like the kernel's own.
     expect(new app.InvalidAssemblyConfigError("detail") instanceof Error).toBe(true);

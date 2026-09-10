@@ -12,6 +12,21 @@
  * door around exactly the moves the engine exists to gate.
  */
 export * from "./types.js";
+export * from "./release-pr-types.js";
+export {
+  ReleasePRScopeError,
+  MemoryRecordSink,
+  openReleasePRGate,
+  renderReleasePRProjection,
+  parseIdentityClaim,
+  type ParsedIdentityClaim,
+  type ReleasePRRender,
+  type ReleasePRGateAction,
+  type ReleasePRRecord,
+  type ReleasePRRecordSink,
+  type ReleasePRGateOptions,
+  type ReleasePRGate,
+} from "./release-pr.js";
 export { claimScopeForLine, type ClaimAcquisition } from "./claims.js";
 export { plannedChannelMoves } from "./channels.js";
 export { assembleMemoryStores, assembleGitBinding } from "./assemble.js";
