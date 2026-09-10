@@ -1,12 +1,15 @@
 /**
  * The API transport's one failure classification (the Phase 9 contract
- * §2.3, issue #66): every unit that reads the API transport classifies a
- * response through this module, so the failure classes mean the same
- * thing on every door — a rate limit is a rate limit, an expired
- * credential is an expired credential, and everything else that is not a
- * 200 is the same retryable failure. The git-path half of §2.3 (the
- * sync unit's stderr classification) lives beside it, not in it: that
- * path speaks git's sideband, not HTTP statuses.
+ * §2.3, issue #66; the vocabulary split of issues #176/#178): every unit
+ * that reads the API transport classifies a response through this
+ * module, so the failure classes mean the same thing on every door — a
+ * rate limit (primary or secondary) is a rate limit, an expired
+ * credential is an expired credential, a credential that authenticated
+ * but may not act is a permission denial, an invisible repository is an
+ * unobservable remote, and only what the provider did not answer for is
+ * the retryable failure. The git-path half of §2.3 (the sync unit's
+ * stderr classification) lives beside it, not in it: that path speaks
+ * git's sideband, not HTTP statuses.
  */
 
 import type { GitHubResponse, ReadRefusalReason } from "./adapter-types.js";
@@ -28,10 +31,30 @@ const headerValue = (
   return undefined;
 };
 
-/** The rate-limit shape GitHub answers with: a 429, or a 403 whose
- *  rate-limit budget is spent (the same limit arriving under the other
- *  status). */
-const isRateLimited = (response: GitHubResponse): boolean => {
+/** The body's `message` field, when the response carries one — the
+ *  provider's own words for the refusal detail. A body that is not JSON,
+ *  or carries no string message, reads as no message. */
+export const bodyMessage = (body: string): string | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (
+    parsed !== null &&
+    typeof parsed === "object" &&
+    "message" in parsed &&
+    typeof parsed.message === "string"
+  ) {
+    return parsed.message;
+  }
+  return undefined;
+};
+
+/** The primary rate limit's shape: a 429, or a 403 whose rate-limit
+ *  budget is spent (the same limit arriving under the other status). */
+const isPrimaryRateLimit = (response: GitHubResponse): boolean => {
   if (response.status === 429) {
     return true;
   }
@@ -42,33 +65,115 @@ const isRateLimited = (response: GitHubResponse): boolean => {
   return remaining !== undefined && remaining.trim() === "0";
 };
 
+/** The secondary rate limit's shape (issue #178): a 403 that names the
+ *  secondary limit — by the `Retry-After` header or by its own words —
+ *  while the primary budget stands. The rate-limits reference
+ *  ("Exceeding the rate limit",
+ *  docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)
+ *  documents the answer as "a `403` or `429` response and an error
+ *  message that indicates that you exceeded a secondary rate limit",
+ *  with the `Retry-After` header only conditionally present ("If the
+ *  `retry-after` response header is present …"), so the header alone is
+ *  not the shape — the body's secondary/abuse phrasing is the other
+ *  documented signal, the git path's phrase keying mirrored on the API
+ *  side. The reference also documents a secondary response carrying
+ *  `x-ratelimit-remaining: 0` (and arriving as a `429`): those shapes
+ *  read through the primary predicate first — the same `rate-limited`
+ *  class, the primary-worded detail. */
+const SECONDARY_RATE_LIMIT_PHRASE = /secondary rate limit|abuse detection mechanism/i;
+
+const isSecondaryRateLimit = (response: GitHubResponse): boolean => {
+  if (response.status !== 403) {
+    return false;
+  }
+  if (headerValue(response.headers, "retry-after") !== undefined) {
+    return true;
+  }
+  const message = bodyMessage(response.body);
+  return message !== undefined && SECONDARY_RATE_LIMIT_PHRASE.test(message);
+};
+
+/** The rate-limit refusal's detail, per the limit the headers name: the
+ *  primary limit's reset timestamp (ADR-0010 decision 9), or the
+ *  secondary limit's `Retry-After`. A 403 carries `x-ratelimit-*`
+ *  headers even with budget standing, so the primary/secondary split is
+ *  decided by the same predicates the classification used — never by
+ *  the reset header's mere presence. */
+const rateLimitDetail = (response: GitHubResponse): string => {
+  const reset = headerValue(response.headers, "x-ratelimit-reset");
+  const retryAfter = headerValue(response.headers, "retry-after");
+  if (!isPrimaryRateLimit(response)) {
+    return retryAfter === undefined
+      ? "the API's secondary rate limit is engaged; wait at least one minute before retrying"
+      : `the API's secondary rate limit is engaged; retry after ${retryAfter} seconds`;
+  }
+  if (reset !== undefined) {
+    return `the API's rate limit is exhausted; it resets at ${reset}`;
+  }
+  if (retryAfter !== undefined) {
+    return `the API's rate limit is engaged; retry after ${retryAfter} seconds`;
+  }
+  return "the API's rate limit is exhausted";
+};
+
 /** The failure a response carries once it is not the status the read
  *  wanted: a provider refusal with the operator-intervention reason, or
  *  the one retryable class. Reads have no `ambiguous`: nothing can have
  *  landed unseen (issue #66; contract §2.3's read narrowing). The write
  *  path's post-write window (status 0 after the create → `ambiguous`)
- *  stays the publication unit's own rule, layered on this one. */
+ *  stays the publication unit's own rule, layered on this one.
+ *
+ * The one table (contract §2.3; issue #178's split):
+ * - 429, a 403 with the budget spent, or a 403 naming the secondary
+ *   limit (`Retry-After`, or the body's secondary/abuse phrasing) —
+ *   `rate-limited` (primary or secondary, per the same predicates);
+ * - 404 on a repo-scoped read — `unobservable-remote` (issue #176): the
+ *   resource is invisible to this credential, and an observation that
+ *   never happened is never a determinate absence. The one 404 with a
+ *   narrower reading — the release-tag read, where the release's own
+ *   absence is the common case — is intercepted by the publication unit
+ *   (the repository probe) before this table sees it;
+ * - 401 — `auth-expired`: the credential itself was rejected;
+ * - any other 403 — `permission-denied`: the credential authenticated
+ *   and the request is not authorized (rotating it fixes nothing);
+ * - status 0 and every other non-200 — `transport-failure`, the one
+ *   retryable class. */
 export type ReadFailure =
   | { readonly kind: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
   | { readonly kind: "transport-failure" };
 
 export const readFailure = (response: GitHubResponse): ReadFailure => {
-  if (isRateLimited(response)) {
-    const reset = headerValue(response.headers, "x-ratelimit-reset");
+  if (isPrimaryRateLimit(response) || isSecondaryRateLimit(response)) {
     return {
       kind: "refused",
       reason: "rate-limited",
-      detail:
-        reset === undefined
-          ? "the API's rate limit is exhausted"
-          : `the API's rate limit is exhausted; it resets at ${reset}`,
+      detail: rateLimitDetail(response),
     };
   }
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 404) {
+    return {
+      kind: "refused",
+      reason: "unobservable-remote",
+      detail:
+        "the remote answered 404 — the repository or resource is not visible to this credential; " +
+        "the owner, repository, or token scope may be wrong",
+    };
+  }
+  if (response.status === 401) {
     return {
       kind: "refused",
       reason: "auth-expired",
-      detail: `the credential was rejected with HTTP ${String(response.status)}`,
+      detail: "the credential was rejected with HTTP 401",
+    };
+  }
+  if (response.status === 403) {
+    const message = bodyMessage(response.body);
+    return {
+      kind: "refused",
+      reason: "permission-denied",
+      detail: `the credential is not authorized for this request (HTTP 403${
+        message === undefined ? "" : `: ${message}`
+      })`,
     };
   }
   // Status 0 is the transport's "no determinate response"; on a read

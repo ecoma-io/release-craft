@@ -439,6 +439,108 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
     });
   });
 
+  it("#178 — a permission denial on a listing is permission-denied, never auth-expired", () => {
+    withReconcileRepo("permission-denied", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? rawResponse(
+              403,
+              { "x-ratelimit-remaining": "4998" },
+              JSON.stringify({ message: "Resource not accessible by personal access token" }),
+            )
+          : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({
+        state: "refused",
+        reason: "permission-denied",
+        detail: expect.stringContaining("Resource not accessible") as string,
+      });
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+      });
+    });
+  });
+
+  it("#178 — a secondary rate limit on a listing is rate-limited with the Retry-After detail", () => {
+    withReconcileRepo("secondary-rate-limit", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([])
+          : rawResponse(403, { "retry-after": "45", "x-ratelimit-remaining": "4998" }, "{}"),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+        verifiedTags: [],
+      });
+      expect(report.releases).toEqual({
+        state: "refused",
+        reason: "rate-limited",
+        detail: expect.stringContaining(
+          "secondary rate limit is engaged; retry after 45",
+        ) as string,
+      });
+    });
+  });
+
+  it("#178 — a listing's 403 that names the secondary limit in the body, with no Retry-After, is rate-limited", () => {
+    withReconcileRepo("secondary-rate-limit-phrase", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([])
+          : rawResponse(
+              403,
+              { "x-ratelimit-remaining": "4998" },
+              JSON.stringify({
+                message:
+                  "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+              }),
+            ),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.releases).toEqual({
+        state: "refused",
+        reason: "rate-limited",
+        detail: expect.stringContaining(
+          "secondary rate limit is engaged; wait at least one minute before retrying",
+        ) as string,
+      });
+    });
+  });
+
+  it("#176 — a repo-scoped listing's 404 is the unobservable-remote refusal, never a retryable failure", () => {
+    withReconcileRepo("unobservable", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([])
+          : rawResponse(404, {}, JSON.stringify({ message: "Not Found" })),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+        verifiedTags: [],
+      });
+      // The collection exists whenever the repository is observable, so
+      // its 404 is the repository's invisibility — an operator-intervention
+      // refusal, not a retryable failure.
+      expect(report.releases).toEqual({
+        state: "refused",
+        reason: "unobservable-remote",
+        detail: expect.stringContaining("not visible to this credential") as string,
+      });
+    });
+  });
+
   it("an empty listing is a determinate clean observation, not a failure (D28's listing twin)", () => {
     withReconcileRepo("empty", (fixture) => {
       const { transport } = fakeTransport((call) =>

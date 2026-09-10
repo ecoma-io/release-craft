@@ -1210,11 +1210,21 @@ describe("V8 — concurrency, github-backed (the hostile transport)", () => {
           throw new Error("fixture broken: the recorded tree holds no changelog");
         }
         remote.armConcurrentWriter(recorded);
-        expect(adapter.publishRelease(tag)).toStrictEqual({ kind: "transport-failure" });
+        // The provider answers the raced create determinately (422
+        // already_exists, issue #178) — the recorded conflict decision,
+        // never the retryable class the collapse wore.
+        const first = adapter.publishRelease(tag);
+        if (first.kind !== "refused" || first.reason !== "release-conflict") {
+          throw new Error(
+            `expected the raced create's release-conflict refusal, got ${JSON.stringify(first)}`,
+          );
+        }
+        expect(first.detail).toContain("already exists");
         expect(remote.concurrentWriterFired()).toBe(true);
-        // The lost write re-evaluates: the idempotency read now finds the
-        // remote already satisfied — the retried write lands as ok, and no
-        // second create is ever issued (never both-accept).
+        // The conflict decision's caller action — the idempotent re-run —
+        // re-evaluates: the idempotency read now finds the remote already
+        // satisfied — the re-run lands as ok, and no second create is ever
+        // issued (never both-accept).
         expect(adapter.publishRelease(tag)).toStrictEqual({
           kind: "ok",
           url: `https://github.fake/ecoma-io/release-craft/releases/tag/${tag}`,
@@ -1246,7 +1256,14 @@ describe("V8 — concurrency, github-backed (the hostile transport)", () => {
         expect(adapter.syncRemote().refs.every((row) => row.outcome.state === "pushed")).toBe(true);
         // Writer B publishes a DIFFERENT body for the same tag in the window.
         remote.armConcurrentWriter(DIVERGENT_BODY);
-        expect(adapter.publishRelease(tag)).toStrictEqual({ kind: "transport-failure" });
+        // The raced create is answered determinately (issue #178): the
+        // recorded conflict decision, never a retryable failure.
+        const raced = adapter.publishRelease(tag);
+        if (raced.kind !== "refused" || raced.reason !== "release-conflict") {
+          throw new Error(
+            `expected the raced create's release-conflict refusal, got ${JSON.stringify(raced)}`,
+          );
+        }
         expect(remote.concurrentWriterFired()).toBe(true);
         // The re-evaluation reads B's release, compares it against the
         // recorded changelog, and denies — the recorded conflict decision.

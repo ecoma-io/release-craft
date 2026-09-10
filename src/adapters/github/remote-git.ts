@@ -115,20 +115,37 @@ export function openRemoteGit(config: {
 
 /**
  * Maps a failed remote git call's stderr onto the contract's refusal
- * vocabulary (§2.3): the rate-limit check runs first (GitHub reports rate
- * limits over HTTP 403, which would otherwise read as an auth failure),
- * then the authentication patterns — a rejected credential is
- * `auth-expired`, the one refusal an expired token can produce. Anything
- * else is `transport-failure`: the remote's own state is unknown, the
- * caller retries.
+ * vocabulary (§2.3; issue #178's git-path half), anchored on the shapes
+ * git and GitHub actually print — never on a bare status substring:
+ *
+ * - the rate-limit phrases run first (GitHub reports both limits over
+ *   HTTP 403, which would otherwise read as a permission fault);
+ * - `permission-denied` — the credential authenticated and the push was
+ *   declined: GitHub's own valid-credential denial ("Permission to
+ *   `<repo>` denied to `<user>`") and the http transport's structured
+ *   403 ("The requested URL returned error: 403", "HTTP 403"). Distinct
+ *   from an expired credential: rotating the token fixes nothing;
+ * - `auth-expired` — the rejected-credential patterns: the negotiation
+ *   failed outright, the username/password was refused, no credential
+ *   could be read;
+ * - anything else is `transport-failure`: the remote's own state is
+ *   unknown, the caller retries.
+ *
+ * Statuses classify only where the transport prints them structurally
+ * ("returned error: 403", "HTTP 403"): a number in git's progress lines
+ * ("Total 403 (delta 0)") is bytes moved, not a status, and classifies
+ * nothing.
  */
 export function classifyGitFailure(stderr: string): RefusalReason | "transport-failure" {
   const text = stderr.toLowerCase();
   if (text.includes("rate limit") || text.includes("secondary rate")) {
     return "rate-limited";
   }
+  if (/permission to .* denied|returned error: 403\b|http 403\b/.test(text)) {
+    return "permission-denied";
+  }
   if (
-    /authentication|401|403|access denied|could not read username|invalid credentials|invalid username|permission to .* denied/.test(
+    /authentication|access denied|could not read username|invalid credentials|invalid username|returned error: 401\b|http 401\b/.test(
       text,
     )
   ) {

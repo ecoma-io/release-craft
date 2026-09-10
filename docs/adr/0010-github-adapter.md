@@ -2,7 +2,7 @@
 id: 0010-github-adapter
 status: proposed
 created: 2026-09-07
-updated: 2026-09-10
+updated: 2026-09-11
 ---
 
 # ADR-0010: The GitHub adapter — remote synchronization, tag publication, and release publication
@@ -143,6 +143,16 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    determinate read, never a retryable transport failure and never a
    refusal of a write; the caller's action is the publication itself (the
    create path is idempotent).
+   Amendment for #176 (D50): the `absent` verdict is discriminated
+   before it is claimed — a release read's 404 also answers a repository
+   the credential cannot observe (GitHub answers 404, not 403, for
+   resources invisible to the caller), so the 404 read probes the
+   repository itself (`GET /repos/{owner}/{repo}`): an observable
+   repository makes the absence determinate; an unobservable one is
+   `refused(reason: "unobservable-remote")`. The probe is the absence
+   claim's discriminator alone — the create path pays no probe, and the
+   create's own 404 is the same unobservable refusal (a determinate
+   non-land, never a retryable failure).
 
 7. **Failure classes are returned values, never exceptions.** Every remote
    operation returns a discriminated union:
@@ -169,6 +179,12 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
      a compared field that is not a string) is `transport-failure` —
      never a thrown exception and never an empty listing, which would
      read as a clean observation.
+     Amendment for #178 (D51): the operator-intervention reasons are
+     `auth-expired`, `rate-limited`, `permission-denied`, and
+     `unobservable-remote` — a 403 whose credential authenticated is
+     the permission denial, never an expired credential, and a
+     repo-scoped listing's 404 is the unobservable remote (#176),
+     never a retryable failure.
 
 8. **Pre-existing remote state is discovered at open time and reconciled
    with the binding's recorded state.** On `openGitHubAdapter`, the adapter
@@ -214,6 +230,21 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    decides whether to retry. If the adapter's credential expires mid-
    operation, the adapter returns `refused(reason: "auth-expired")` and
    does not retry — the caller must supply a fresh credential.
+   Amendment for #176/#178 (D50, D51): the semantics extend to the
+   shapes the collapse had folded into those two classes — a secondary
+   rate limit (a 403 with `Retry-After`, the primary budget standing)
+   is the same `rate-limited` refusal with the `Retry-After` detail; a
+   403 whose credential authenticated is
+   `refused(reason: "permission-denied")` — grant the scope, rotating
+   the token fixes nothing; a repo-level 404 is
+   `refused(reason: "unobservable-remote")` — an observation that never
+   happened, never a determinate absence and never a retryable failure
+   (decision 6's probe amendment); and the create's determinate
+   refusals (422 `already_exists`, 409) are
+   `refused(reason: "release-conflict")` with the provider's own words,
+   never the retryable class — a caller honouring
+   "transport-failure is retryable" must never loop on a permanent
+   refusal.
 
 10. **The adapter owns no second claim or ledger state.** Every remote
     write is driven by the binding's recorded state. The adapter reads
