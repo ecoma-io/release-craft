@@ -92,6 +92,31 @@ const recordHook = (ledger: MemoryLedger, attempt: ReleaseAttempt, id: string): 
   });
 };
 
+/** Record a hook completion with an explicit contentFingerprint —
+ * simulates the second completion a crash-restart leaves when the effect
+ * re-runs and produces different proof bytes. */
+const recordHookWithFingerprint = (
+  ledger: MemoryLedger,
+  attempt: ReleaseAttempt,
+  id: string,
+  contentFingerprint: string,
+): void => {
+  const stepKey = hookStepKey(id);
+  ledger.appendStart(attempt, stepKey, actor(attempt), undefined, "release-line");
+  ledger.append({
+    kind: "step",
+    record: {
+      attemptId: attempt.attemptId,
+      stepKey,
+      from: "started",
+      to: "completed",
+      guards: [{ guard: "release-line", passed: true }],
+      attribution: actor(attempt),
+      contentFingerprint,
+    },
+  });
+};
+
 const completeStage = (ledger: MemoryLedger, attempt: ReleaseAttempt, stage: StageKey): void => {
   ledger.appendStart(attempt, stage, actor(attempt));
   ledger.append({
@@ -474,6 +499,91 @@ describe("kill-anywhere with hooks (§4.2): truncation at every effective bounda
       expect(first).toStrictEqual(expectedVerdict);
       expect(second).toStrictEqual(expectedVerdict);
     }
+  });
+});
+
+describe("content-fingerprint conflict on replay (§2.2): two completions, differing content", () => {
+  it("refuses with a conflict when two completions disagree on the recorded content (#193)", () => {
+    const attempt = executing([hookDecl("scan", "publish", "before")]);
+    const ledger = new MemoryLedger();
+    // The crash-restart window: the effect ran twice, each run appending
+    // its completion — the two records disagree on the content proof.
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:v1");
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:v2");
+    const effect = recordingEffect();
+    const run = scheduleHooks(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["scan", effect]]),
+    );
+    // Replay answers from the ledger — the effect never re-runs.
+    expect(effect.calls).toHaveLength(0);
+    // Pre-fix this was a silent `completed`; the parity contract (§2.2,
+    // E-02) refuses — done-vs-conflict, never a silent pass.
+    const refused = refusedOutcome(run.outcomes);
+    expect(refused.stepKey).toBe("hook:scan");
+    expect(refused.detail).toMatch(/content-fingerprint-conflict/);
+    expect(refused.detail).toContain("scan");
+  });
+
+  it("completes when two completions agree on the recorded content", () => {
+    const attempt = executing([hookDecl("scan", "publish", "before")]);
+    const ledger = new MemoryLedger();
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:stable");
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:stable");
+    const run = scheduleHooks(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["scan", recordingEffect()]]),
+    );
+    const completed = completedOutcome(run.outcomes);
+    expect(completed.stepKey).toBe("hook:scan");
+    expect(completed.record.contentFingerprint).toBe("content_sha256:stable");
+  });
+
+  it("refuses when a fingerprinted completion sits beside a fingerprint-less one (#193 mixed presence)", () => {
+    const attempt = executing([hookDecl("scan", "publish", "before")]);
+    const ledger = new MemoryLedger();
+    // Fingerprinted first, fingerprint-less second: the undefined-dropping
+    // filter once saw the second alone and replayed `completed` silently —
+    // fail-closed doctrine makes the mixed presence the same conflict (a
+    // missing side is a disagreement).
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:v1");
+    recordHook(ledger, attempt, "scan");
+    const run = scheduleHooks(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["scan", recordingEffect()]]),
+    );
+    const refused = refusedOutcome(run.outcomes);
+    expect(refused.stepKey).toBe("hook:scan");
+    expect(refused.detail).toMatch(/content-fingerprint-conflict/);
+  });
+
+  it("refuses when a fingerprint-less completion sits beside a fingerprinted one (#193 mixed presence, reverse order)", () => {
+    const attempt = executing([hookDecl("scan", "publish", "before")]);
+    const ledger = new MemoryLedger();
+    // The reverse arrangement recompletes the discriminating surface —
+    // the old filter saw the fingerprinted completion alone and replayed
+    // `completed`, again silently.
+    recordHook(ledger, attempt, "scan");
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:v1");
+    const run = scheduleHooks(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["scan", recordingEffect()]]),
+    );
+    const refused = refusedOutcome(run.outcomes);
+    expect(refused.stepKey).toBe("hook:scan");
+    expect(refused.detail).toMatch(/content-fingerprint-conflict/);
   });
 });
 

@@ -17,6 +17,7 @@
  * identically, provable by double-run.
  */
 import { block, InvalidExecutionTransitionError } from "./attempt.js";
+import { completionRecords } from "./completions.js";
 import { effectiveSteps } from "./hooks.js";
 import { artifactStepKey, isArtifactStepKey } from "./step-keys.js";
 import {
@@ -40,18 +41,6 @@ export const generationComplete = (attempt: ReleaseAttempt, ledger: ExecutionLed
   (attempt.artifacts ?? []).every(
     (declared) => ledger.step(attempt.attemptId, artifactStepKey(declared.id)) === "completed",
   );
-
-/** The completion records one artifact step has accumulated, append order
- * — the digest reconciliation's raw material (§2.4). */
-const completionRecords = (
-  ledger: ExecutionLedger,
-  attemptId: string,
-  stepKey: StepKey,
-): readonly TransitionRecord[] =>
-  ledger
-    .tail(attemptId)
-    .flatMap((appended) => (appended.kind === "step" ? [appended.record] : []))
-    .filter((record) => record.stepKey === stepKey && record.to === "completed");
 
 /** The recorded generation record for a completed artifact step (§2.3):
  * the last completion record's content half, or null when the step has
