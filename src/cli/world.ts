@@ -1,6 +1,7 @@
 /**
- * The world document (phase 12 contract §2.4): the CLI's `--world` value
- * is a verbatim `PlanningInput` in JSON — the same value the direct
+ * The world document (phase 12 contract §2.4; issue #208 adds the
+ * bootstrap half): the CLI's `--world` value for the planning doors is a
+ * verbatim `PlanningInput` in JSON — the same value the direct
  * boundary caller would have constructed, with `intents` present or
  * absent exactly as the document declares. The check here is structural
  * only: field names, shapes, and kinds — never semantics (a semantically
@@ -14,7 +15,7 @@
 import { readFileSync } from "node:fs";
 
 import type { PlanningInput } from "@ecoma-io/release-craft/planner";
-
+import type { BootstrapObservations } from "@ecoma-io/release-craft/app";
 import { UsageFault } from "./parse.js";
 
 const notShaped = (at: string, problem: string): UsageFault =>
@@ -232,8 +233,9 @@ const checkChannels = (value: unknown): void => {
 };
 
 /** Read the `--world` value: a filesystem path, or `-` for stdin
- * (§2.2). Returns the parsed, structurally-checked boundary value. */
-export const readWorldDocument = (location: string): PlanningInput => {
+ * (§2.2). Returns the parsed JSON object, or a usage fault when the
+ * document cannot be delivered or parsed. */
+const readJsonObject = (location: string): Record<string, unknown> => {
   let text: string;
   try {
     text = readFileSync(location === "-" ? 0 : location, "utf8");
@@ -244,13 +246,124 @@ export const readWorldDocument = (location: string): PlanningInput => {
         : `the world document at "${location}" could not be read`,
     );
   }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text) as unknown;
-  } catch {
-    throw new UsageFault("the world document is not valid JSON");
+    return asObject(JSON.parse(text) as unknown, "the world document");
+  } catch (error) {
+    if (error instanceof UsageFault && error.message.includes("not valid JSON")) {
+      throw error;
+    }
+    if (error instanceof SyntaxError) {
+      throw new UsageFault("the world document is not valid JSON");
+    }
+    throw error;
   }
-  const document = asObject(parsed, "the world document");
+};
+
+/** The bootstrap document's policy half (issue #208): every field is
+ * individually optional — the door proposes the baseline for the absent
+ * ones and demands the digest by name. Same structural posture as
+ * `checkPolicy`, minus the demands. */
+const checkBootstrapPolicy = (value: unknown): void => {
+  const at = "policy";
+  const policy = asObject(value, at);
+  const digest = asOptional(policy, "digest");
+  if (digest !== undefined) {
+    asString(digest, `${at}.digest`);
+  }
+  const bumpMappingId = asOptional(policy, "bumpMappingId");
+  if (bumpMappingId !== undefined) {
+    asString(bumpMappingId, `${at}.bumpMappingId`);
+  }
+  const namespace = asOptional(policy, "selfReferenceNamespace");
+  if (namespace !== undefined) {
+    asString(namespace, `${at}.selfReferenceNamespace`);
+  }
+  const ladder = asOptional(policy, "prereleaseLadder");
+  if (ladder !== undefined) {
+    asStrings(ladder, `${at}.prereleaseLadder`);
+  }
+  const seed = asOptional(policy, "prereleaseSeed");
+  if (seed !== undefined) {
+    const seedValue = asString(seed, `${at}.prereleaseSeed`);
+    if (seedValue !== "0" && seedValue !== "1") {
+      throw notShaped(`${at}.prereleaseSeed`, 'must be "0" or "1"');
+    }
+  }
+  const dampening = asOptional(policy, "pre10Dampening");
+  if (dampening !== undefined) {
+    asBoolean(dampening, `${at}.pre10Dampening`);
+  }
+  const tagFormats = asOptional(policy, "tagFormats");
+  if (tagFormats !== undefined) {
+    const formats = asObject(tagFormats, `${at}.tagFormats`);
+    for (const lineId of Object.keys(formats)) {
+      asString(formats[lineId], `${at}.tagFormats["${lineId}"]`);
+    }
+  }
+};
+
+/** Read the bootstrap door's `--world` value (issue #208): the closed
+ * observations (`repository`, `history` — demanded, the door proposes
+ * nothing without evidence) plus whatever declaration halves the
+ * operator already made (`policy`, `lines`, `components`, `bootstrap`,
+ * `intents`, `channels` — each optional as a whole, each field of
+ * `policy` optional in turn). Structurally checked, then returned for
+ * `proposeBootstrap`; a document missing the observations is a usage
+ * fault before any proposal runs. */
+export const readBootstrapDocument = (location: string): BootstrapObservations => {
+  const document = readJsonObject(location);
+  const repository = asObject(document.repository, "repository");
+  checkCommits(repository.commits);
+  checkRefs(repository.refs);
+  const history = asObject(document.history, "history");
+  checkTags(history.tags);
+  const policy = asOptional(document, "policy");
+  if (policy !== undefined) {
+    checkBootstrapPolicy(policy);
+  }
+  const lines = asOptional(document, "lines");
+  if (lines !== undefined) {
+    checkLines(lines);
+  }
+  const components = asOptional(document, "components");
+  if (components !== undefined) {
+    checkComponents(components);
+  }
+  const bootstrap = asOptional(document, "bootstrap");
+  if (bootstrap !== undefined) {
+    checkBootstrap(bootstrap);
+  }
+  const intents = asOptional(document, "intents");
+  if (intents !== undefined) {
+    checkIntents(intents);
+  }
+  const channels = asOptional(document, "channels");
+  if (channels !== undefined) {
+    checkChannels(channels);
+  }
+  // The conditional spreads normalize to `field?: T | undefined` under
+  // `exactOptionalPropertyTypes`; the single cast at the boundary is the
+  // same posture `readWorldDocument` takes for its document.
+  return {
+    repository: repository as BootstrapObservations["repository"],
+    history: history as BootstrapObservations["history"],
+    ...(policy !== undefined ? { policy: policy as BootstrapObservations["policy"] } : {}),
+    ...(lines !== undefined ? { lines: lines as BootstrapObservations["lines"] } : {}),
+    ...(components !== undefined
+      ? { components: components as BootstrapObservations["components"] }
+      : {}),
+    ...(bootstrap !== undefined
+      ? { bootstrap: bootstrap as BootstrapObservations["bootstrap"] }
+      : {}),
+    ...(intents !== undefined ? { intents: intents as BootstrapObservations["intents"] } : {}),
+    ...(channels !== undefined ? { channels: channels as BootstrapObservations["channels"] } : {}),
+  } as BootstrapObservations;
+};
+
+/** Read the `--world` value: a filesystem path, or `-` for stdin
+ * (§2.2). Returns the parsed, structurally-checked boundary value. */
+export const readWorldDocument = (location: string): PlanningInput => {
+  const document = readJsonObject(location);
   checkPolicy(document.policy);
   const repository = asObject(document.repository, "repository");
   checkCommits(repository.commits);

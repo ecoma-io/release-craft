@@ -54,6 +54,10 @@ const FORBIDDEN: readonly {
   {
     name: "filesystem writes",
     pattern: /\bwriteFileSync\(|\bappendFileSync\(|\bmkdirSync\(|\brmSync\(|\bunlinkSync\(/,
+    // issue #208: the bootstrap door's `--out` write is the door's one
+    // declared effect — reached only after a `planned` first plan, writing
+    // the proposed world document and nothing else.
+    except: (file) => file.endsWith("bootstrap.ts"),
   },
   {
     name: "filesystem reads beyond the --world read",

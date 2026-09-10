@@ -212,13 +212,30 @@ describe("fixture 5 — the token journey is empty", () => {
 });
 
 describe("fixture 6 — the refused inputs are absent from the metadata", () => {
-  it.each(["assembly", "command", "json", "token", "declarations", "naming-module", "target"])(
-    "no `%s` input exists — the refused side door does not re-enter through metadata",
-    (name) => {
-      const inputs = inputsBlock(ACTION_METADATA);
-      expect(inputs.has(name)).toBe(false);
-    },
-  );
+  // `target-branch` is release-pr's own CLI flag (issue #208) but no
+  // Action input — the Action drives `run` alone; the release-please
+  // vocabulary is refused by name at the metadata boundary.
+  it.each([
+    "assembly",
+    "command",
+    "json",
+    "token",
+    "declarations",
+    "naming-module",
+    "target",
+    "release-type",
+    "draft-pull-request",
+    "label",
+    "target-branch",
+    "bootstrap-sha",
+    "last-release-sha",
+    "initial-version",
+    "package-name",
+    "separate-pull-requests",
+  ])("no `%s` input exists — the refused side door does not re-enter through metadata", (name) => {
+    const inputs = inputsBlock(ACTION_METADATA);
+    expect(inputs.has(name)).toBe(false);
+  });
 });
 
 /** The input names declared under the top-level `inputs:` block. */

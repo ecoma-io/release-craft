@@ -16,3 +16,13 @@ export { claimScopeForLine, type ClaimAcquisition } from "./claims.js";
 export { plannedChannelMoves } from "./channels.js";
 export { stageContentFingerprint } from "./engine.js";
 export { assembleMemoryStores, assembleGitBinding } from "./assemble.js";
+export {
+  BOOTSTRAP_BASELINE_POLICY,
+  proposeBootstrap,
+  type BootstrapGap,
+  type BootstrapInference,
+  type BootstrapObservations,
+  type BootstrapProposal,
+  type BootstrapProposeResult,
+  type BootstrapRefusal,
+} from "./bootstrap.js";

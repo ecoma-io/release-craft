@@ -147,6 +147,59 @@ describe("§3.1 — the human projection names the kind and the payload", () => 
     const observation = renderHuman({ kind: "refused", detail: "no channel store is wired" });
     expect(observation).toContain("detail no channel store is wired");
   });
+
+  it("issue #208's CLI-door rows render their own payloads (issue #208's surface)", () => {
+    const identity = { component: "lib-a", releaseLine: "main", targetBranch: "main" };
+    const projection = renderHuman({
+      kind: "projection",
+      identity,
+      planId: "plan_x",
+      projection: { title: "chore: release", body: "b", labels: ["l"], files: [] },
+      pendingLines: [],
+    } as never);
+    expect(projection.startsWith("projection")).toBe(true);
+    expect(projection).toContain("component lib-a");
+    expect(projection).toContain("target-branch main");
+    expect(projection).toContain("plan plan_x");
+    expect(exitCodeFor({ kind: "projection" } as never)).toBe(0);
+
+    const nothing = renderHuman({ kind: "nothing-pending", identity, planId: "plan_x" } as never);
+    expect(nothing.startsWith("nothing-pending")).toBe(true);
+    expect(exitCodeFor({ kind: "nothing-pending" } as never)).toBe(0);
+
+    const plannedPlan = { kind: "planned", plan: { planId: "plan_x", policyDigest: "d" } };
+    const proposed = renderHuman({
+      kind: "proposed",
+      input: {},
+      inferences: [],
+      plan: plannedPlan,
+    } as never);
+    expect(proposed.startsWith("proposed")).toBe(true);
+    expect(proposed).toContain("plan plan_x");
+    expect(proposed).toContain("inferences 0");
+    expect(exitCodeFor({ kind: "proposed" } as never)).toBe(0);
+
+    const bootstrapped = renderHuman({
+      kind: "bootstrapped",
+      out: "world.json",
+      input: {},
+      inferences: [{ field: "f", kind: "baseline", evidence: "e" }],
+      plan: plannedPlan,
+    } as never);
+    expect(bootstrapped.startsWith("bootstrapped")).toBe(true);
+    expect(bootstrapped).toContain("out world.json");
+    expect(bootstrapped).toContain("inferences 1");
+    expect(exitCodeFor({ kind: "bootstrapped" } as never)).toBe(0);
+
+    const bootstrapRefusal = renderHuman({
+      kind: "refused",
+      gaps: [{ field: "policy.digest", problem: "record it" }],
+      plan: null,
+      proposed: null,
+    } as never);
+    expect(bootstrapRefusal).toContain("policy.digest: record it");
+    expect(exitCodeFor({ kind: "refused", gaps: [] } as never)).toBe(10);
+  });
 });
 
 describe("§3.1 — the human spelling through the built bin", () => {

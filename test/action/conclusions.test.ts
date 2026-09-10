@@ -40,13 +40,34 @@ import {
   type InvokeInputs,
 } from "./harness.js";
 
-/** The run union's kinds, derived from the compiled exit table: every door
- * kind minus the plan and observation doors' — the twelve rows §3.2's table
- * is total over. */
-type RunKind = Exclude<keyof typeof EXIT_CODES, "planned" | "attempt" | "channels">;
+/** The run union's kinds, derived from the compiled exit table: every
+ * door kind minus the plan and observation doors' and minus the two CLI
+ * compatibility doors' own rows (`release-pr`'s projection /
+ * nothing-pending, `bootstrap`'s proposed / bootstrapped — issue #208):
+ * the Action drives `run` alone, so those outcomes never cross its
+ * envelope — the twelve rows §3.2's table is total over. */
+type RunKind = Exclude<
+  keyof typeof EXIT_CODES,
+  | "planned"
+  | "attempt"
+  | "channels"
+  | "projection"
+  | "nothing-pending"
+  | "proposed"
+  | "bootstrapped"
+>;
 
 const RUN_KINDS = (Object.keys(EXIT_CODES) as (keyof typeof EXIT_CODES)[])
-  .filter((kind) => kind !== "planned" && kind !== "attempt" && kind !== "channels")
+  .filter(
+    (kind) =>
+      kind !== "planned" &&
+      kind !== "attempt" &&
+      kind !== "channels" &&
+      kind !== "projection" &&
+      kind !== "nothing-pending" &&
+      kind !== "proposed" &&
+      kind !== "bootstrapped",
+  )
   .sort() as RunKind[];
 
 /** §3.2's decided table, as the fixture's expectation: the proceed band

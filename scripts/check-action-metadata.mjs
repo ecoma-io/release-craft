@@ -184,12 +184,29 @@ export function analyzeActionMetadata(source) {
       );
     }
     for (const refused of [
+      // — this surface's own closed grammar (§2.3): the Action drives
+      // `run` alone, so its inputs never spell the CLI's cross-door
+      // vocabulary —
       "assembly",
       "command",
       "token",
       "declarations",
       "naming-module",
       "target",
+      // — release-please's vocabulary (issue #208): the runner refuses
+      // nothing undeclared on a composite — it annotates
+      // `Unexpected input(s) ...` as a warning and drops them — so a
+      // migrating workflow's leftover vocabulary is silently ignored;
+      // this gate keeps the surface from ever declaring those names —
+      "release-type",
+      "draft-pull-request",
+      "label",
+      "target-branch",
+      "bootstrap-sha",
+      "last-release-sha",
+      "initial-version",
+      "package-name",
+      "separate-pull-requests",
     ]) {
       if (new RegExp(`^\\s+${refused}:`).test(line)) {
         violations.push(`line ${number}: the refused input "${refused}" is declared (§2.3)`);

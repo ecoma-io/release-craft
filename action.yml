@@ -13,9 +13,26 @@
 #     constructed environment. Hermeticity is achievable by construction: the
 #     ambient layer ends at a shell line this repository owns;
 #   - ONE door: `run` (§2.3). Every input below maps onto an exact decided
-#     grammar row (`GRAMMAR.run` in src/cli/grammar.ts) or is refused; the
-#     closed grammar is the validation, the metadata is not the enforcement
-#     layer;
+#     grammar row (`GRAMMAR.run` in src/cli/grammar.ts); the closed
+#     grammar is the validation, the metadata is not the enforcement
+#     layer, and a value the grammar refuses surfaces as the CLI's usage
+#     fault, never a defaulted input (issue #208). The action surface
+#     refuses nothing undeclared: the runner does not fail a composite
+#     on inputs it does not declare — it emits an `Unexpected input(s)
+#     ...` warning annotation and drops them, and only a missing
+#     *required* input fails the workflow. This surface declares no
+#     `release-type`, no `draft-pull-request`, no `label`, no
+#     `target-branch`, no `bootstrap-sha`, no `last-release-sha`, no
+#     `initial-version`, no `package-name`, no `separate-pull-requests`,
+#     so a workflow that expects release-please's vocabulary gets that
+#     warning and a silently dropped input while the run door still
+#     executes with release-craft semantics — the migration to this
+#     surface is manual. What the engine itself refuses at ITS boundary
+#     (unknown flags and rows outside `GRAMMAR.run`: exit 64; the
+#     unsupported band, exit 65) is pinned by the grammar and release-pr
+#     suites and by the refused-inputs fixture
+#     (test/action/metadata.test.ts, fixture 6) proving this surface
+#     never declares the vocabulary.
 #   - `--assembly git` is pinned (§2.6): a memory run in CI is a walk whose
 #     every record evaporates with the runner;
 #   - no token input, no secret, no checkout (§2.8) — the mint is a local
@@ -62,8 +79,25 @@ inputs:
 # §3.1: ONE output, `outcome`, carrying the --json envelope byte-for-byte.
 # A composite exposes a step's $GITHUB_OUTPUT value to the consuming
 # workflow only through this declaration — the plumbing `steps.<id>.outputs.
-# outcome` presupposes, no shaped outputs beside it (a consumer extracts
-# with jq from the verbatim envelope, in the workflow that owns the reading).
+# outcome` presupposes, no shaped outputs beside it. The extraction guide
+# over the verbatim envelope (issue #208): the envelope's `kind` is
+# machine-decidable, and the consumer reads the fields it needs from the
+# same document the run door returned — never from derived side channels.
+# jq over `steps.<this>.outputs.outcome`:
+#
+#   # the verdict — the envelope's own discriminant:
+#   jq -r '.kind'
+#   # the published tag (null unless kind == "published"):
+#   jq -r '.tag'
+#   # the plan the run executed (present on every drive):
+#   jq -r '.planId'
+#   # the attempt's handle (null unless a claim was minted):
+#   jq -r '.handle.attemptId'
+#   # the drive trace — every step and its outcome, in order:
+#   jq -r '.drives[] | "\(.stepKey) \(.outcome.kind)"'
+#
+# The fields above are the recorded envelope's own names (src/app/types.ts's
+# RunOutcome); this metadata derives no second vocabulary.
 outputs:
   outcome:
     description: The run outcome's --json envelope, byte for byte

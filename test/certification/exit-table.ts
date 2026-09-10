@@ -15,8 +15,18 @@
 
 import type { Observation, PlanningOutcome, RunOutcome } from "../../src/index.js";
 
-/** Every door value the process renders — the three outcome unions. */
-type DoorOutcome = PlanningOutcome | RunOutcome | Observation;
+/** Every door value the process renders — the three engine unions plus
+ * issue #208's two CLI doors' own unions. The CLI doors' unions live in
+ * `src/cli/` (the import law bars importing them here), so their rows are
+ * recorded structurally — the cross-pin in the CLI's own suite proves the
+ * equality. */
+type CliDoorOutcome =
+  | { readonly kind: "projection" }
+  | { readonly kind: "nothing-pending" }
+  | { readonly kind: "proposed" }
+  | { readonly kind: "bootstrapped" };
+
+type DoorOutcome = PlanningOutcome | RunOutcome | Observation | CliDoorOutcome;
 
 /** §3.2's table, the fixture's recorded copy. */
 export const RECORDED_EXIT_TABLE: Readonly<Record<DoorOutcome["kind"], number>> = {
@@ -26,6 +36,10 @@ export const RECORDED_EXIT_TABLE: Readonly<Record<DoorOutcome["kind"], number>> 
   "satisfied-externally": 1,
   resolved: 2,
   abandoned: 3,
+  projection: 0,
+  "nothing-pending": 0,
+  proposed: 0,
+  bootstrapped: 0,
   // — the stop band —
   refused: 10,
   denied: 11,

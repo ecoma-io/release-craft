@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 import {
   EXIT_CODES,
   EXIT_FAULT,
+  EXIT_UNSUPPORTED,
   EXIT_USAGE,
 } from "@ecoma-io/release-craft/__internal__/cli/exit-codes.js";
 import { RECORDED_EXIT_TABLE } from "../certification/exit-table.js";
@@ -66,9 +67,17 @@ describe("§3.2 — the table, exhaustively", () => {
     expect(EXIT_CODES).toStrictEqual(RECORDED_EXIT_TABLE);
   });
 
-  it("the fault bands are the two named constants", () => {
+  it("the fault bands are the three named constants", () => {
     expect(EXIT_USAGE).toBe(64);
+    expect(EXIT_UNSUPPORTED).toBe(65);
     expect(EXIT_FAULT).toBe(70);
+  });
+
+  it("issue #208's CLI-door rows ride the proceed band: projection, nothing-pending, proposed, bootstrapped", () => {
+    expect(EXIT_CODES.projection).toBe(0);
+    expect(EXIT_CODES["nothing-pending"]).toBe(0);
+    expect(EXIT_CODES.proposed).toBe(0);
+    expect(EXIT_CODES.bootstrapped).toBe(0);
   });
 });
 

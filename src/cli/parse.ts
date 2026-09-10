@@ -12,6 +12,7 @@ import type { ObservationQuery } from "@ecoma-io/release-craft/app";
 import type { OperatorIntent } from "@ecoma-io/release-craft/planner";
 
 import { parseIntents } from "./intents.js";
+import { type ReleasePRIdentity } from "./exit-codes.js";
 import { ASSEMBLIES, COMMANDS, GRAMMAR, type CommandName, usageText } from "./grammar.js";
 
 /** A usage fault — the grammar's own refusal. Rendered to stderr with the
@@ -21,6 +22,19 @@ export class UsageFault extends Error {
   constructor(detail: string) {
     super(detail);
     this.name = "UsageFault";
+  }
+}
+
+/** An unsupported fault (issue #208) — a well-formed invocation naming a
+ * capability this surface cannot serve. Rendered to stderr with the
+ * synopsis and mapped to exit 65 (the unsupported band, not usage: the
+ * invocation's shape is fine; the capability is absent). The message
+ * names the door or issue that carries the wiring, so a caller scripts
+ * against a fact, not a guess. */
+export class UnsupportedFault extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = "UnsupportedFault";
   }
 }
 
@@ -88,6 +102,40 @@ export type Invocation =
       readonly attemptId: string;
       readonly actor: string;
       readonly reason: string;
+      readonly selection: AssemblySelection;
+      readonly json: boolean;
+    }
+  | {
+      readonly command: "release-pr";
+      readonly world: string;
+      readonly identity: ReleasePRIdentity;
+      readonly scopeLines: readonly string[];
+      readonly dryRun: true;
+      readonly selection: AssemblySelection;
+      readonly json: boolean;
+    }
+  | {
+      readonly command: "release-pr";
+      readonly world: string;
+      readonly identity: ReleasePRIdentity;
+      readonly scopeLines: readonly string[];
+      readonly dryRun: false;
+      readonly selection: AssemblySelection;
+      readonly json: boolean;
+    }
+  | {
+      readonly command: "bootstrap";
+      readonly world: string;
+      readonly out: null;
+      readonly dryRun: true;
+      readonly selection: AssemblySelection;
+      readonly json: boolean;
+    }
+  | {
+      readonly command: "bootstrap";
+      readonly world: string;
+      readonly out: string;
+      readonly dryRun: false;
       readonly selection: AssemblySelection;
       readonly json: boolean;
     }
@@ -415,6 +463,61 @@ export const parseArgv = (argv: readonly string[]): Invocation => {
         "names an attempt's holder — the channels query takes none",
       );
       return { command, query: { kind: "channels" }, selection, json };
+    }
+    case "release-pr": {
+      const identity = {
+        component: string("component"),
+        releaseLine: string("line"),
+        targetBranch: string("target-branch"),
+      };
+      const base = {
+        command,
+        world: string("world"),
+        identity,
+        scopeLines: tokens.repeats.get("scope-line") ?? [],
+        selection,
+        json,
+      };
+      return tokens.booleans.has("dry-run")
+        ? { ...base, dryRun: true }
+        : { ...base, dryRun: false };
+    }
+    case "bootstrap": {
+      // The write pairing (issue #208): a dry run renders the proposal
+      // and refuses `--out` — a "dry" run that names a write target is
+      // the worst kind of silent failure waiting to happen — while a
+      // real run demands it. `out` is typed by the `dryRun` row so the
+      // door cannot write on a dry run even by accident.
+      const dryRun = tokens.booleans.has("dry-run");
+      if (dryRun) {
+        refuseIfPresent(
+          "out",
+          tokens.values.has("out"),
+          "feeds the write; --dry-run renders without writing",
+        );
+        return {
+          command,
+          world: string("world"),
+          out: null,
+          dryRun: true,
+          selection,
+          json,
+        };
+      }
+      demandExact(
+        command,
+        "out",
+        tokens.values.has("out"),
+        "the bootstrap write names its document; --dry-run renders without writing",
+      );
+      return {
+        command,
+        world: string("world"),
+        out: string("out"),
+        dryRun: false,
+        selection,
+        json,
+      };
     }
   }
 };

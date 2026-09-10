@@ -8,17 +8,26 @@
  * for a returned outcome, diagnostics on stderr otherwise).
  *
  * Exit bands (§3.2): 0–3 the door's proceed band, 10–17 its stop band —
- * both rendering the outcome on stdout — 64 a usage fault (with the
- * synopsis, on stderr, stdout empty), 70 an escaped throw (name and
- * message verbatim on stderr, stdout empty). An outcome is never
+ * both rendering the outcome on stdout — 64 a usage fault, 65 an
+ * unsupported invocation (issue #208: well-formed, capability absent —
+ * named on stderr, stdout empty), 70 an escaped throw. Both fault bands
+ * print with the synopsis, on stderr, stdout empty. An outcome is never
  * translated into a fault and a fault never renders as an outcome.
  */
 
 import type { StepKey } from "@ecoma-io/release-craft/execution";
-import { EXIT_FAULT, EXIT_USAGE, exitCodeFor, type DoorOutcome } from "./exit-codes.js";
+import { executeBootstrap } from "./bootstrap.js";
+import {
+  EXIT_FAULT,
+  EXIT_UNSUPPORTED,
+  EXIT_USAGE,
+  exitCodeFor,
+  type DoorOutcome,
+} from "./exit-codes.js";
 import { usageText } from "./grammar.js";
 import { overlayIntents } from "./intents.js";
-import { parseArgv, UsageFault, type Invocation } from "./parse.js";
+import { parseArgv, UnsupportedFault, UsageFault, type Invocation } from "./parse.js";
+import { executeReleasePr } from "./release-pr.js";
 import { renderHuman, renderJson } from "./render.js";
 import { selectEngine } from "./selection.js";
 import { deriveTargets } from "./targets.js";
@@ -29,6 +38,16 @@ import { readWorldDocument } from "./world.js";
  * including the `refused` row for a plan this engine does not carry
  * (§2.7): the surface runs no capability gate, it passes values through. */
 const execute = (invocation: Invocation): DoorOutcome => {
+  // The compatibility doors compose their own world reads (issue #208):
+  // release-pr reads nothing before the lifecycle wiring lands — its
+  // refusal is up-front and loud — and bootstrap reads the bootstrap
+  // document, not a verbatim PlanningInput.
+  if (invocation.command === "release-pr") {
+    return executeReleasePr(invocation);
+  }
+  if (invocation.command === "bootstrap") {
+    return executeBootstrap(invocation);
+  }
   if (invocation.command === "resolve") {
     const engine = selectEngine(invocation.selection);
     return engine.resolve(
@@ -86,6 +105,10 @@ const faultOrUsage = (error: unknown): number => {
   if (error instanceof UsageFault) {
     process.stderr.write(`usage: ${error.message}\n\n${usageText()}\n`);
     return EXIT_USAGE;
+  }
+  if (error instanceof UnsupportedFault) {
+    process.stderr.write(`unsupported: ${error.message}\n\n${usageText()}\n`);
+    return EXIT_UNSUPPORTED;
   }
   const name = error instanceof Error ? error.name : "Error";
   const message = error instanceof Error ? error.message : String(error);

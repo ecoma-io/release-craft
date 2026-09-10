@@ -73,10 +73,16 @@ const ALLOWED_APP_IMPORTS: readonly string[] = [
   "./channels.js",
   "./engine.js",
   "./assemble.js",
-  "./index.js",
+  "./bootstrap.js",
+  "./claims.js",
   "@ecoma-io/release-craft/execution",
   "@ecoma-io/release-craft/planner",
   "@ecoma-io/release-craft/adapters/git",
+  // issue #208: the bootstrap door parses candidate tag suffixes with the
+  // kernel's own version grammar (Version.parse / InvalidVersionError) —
+  // the planner barrel does not re-export it and the door never recomputes
+  // what the kernel already owns.
+  "@ecoma-io/release-craft/domain",
 ];
 
 function importViolations(file: string, text: string): Violation[] {
@@ -204,12 +210,16 @@ function render(violations: readonly Violation[]): string[] {
 
 describe("obligation 2 — the surface is doors and records, never a store or a primitive", () => {
   it("the boundary barrel's runtime exports are exactly the contract's closed set", () => {
+    // issue #208 adds the bootstrap door's two runtime values; the rest is
+    // the pre-existing closed set, unchanged.
     expect(Object.keys(app).sort()).toStrictEqual([
+      "BOOTSTRAP_BASELINE_POLICY",
       "InvalidAssemblyConfigError",
       "assembleGitBinding",
       "assembleMemoryStores",
       "claimScopeForLine",
       "plannedChannelMoves",
+      "proposeBootstrap",
       "stageContentFingerprint",
     ]);
     // The one class the boundary throws is an error like the kernel's own.
