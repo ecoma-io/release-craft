@@ -62,6 +62,9 @@ export default defineConfig({
     ],
   },
   test: {
+    // Fail fast when the built CLI is missing (#144) — the CLI, action,
+    // and certification suites spawn dist/src/cli/index.js as a subprocess.
+    globalSetup: "./globalSetup.ts",
     environment: "node",
     include: ["test/**/*.test.ts"],
     // A glob that stops matching anything is a suite nobody ran. Without this,
