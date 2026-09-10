@@ -93,6 +93,7 @@ interface FakePort extends ReleasePRPort {
   readonly created: { pr: ExistingPR; draft: boolean }[];
   readonly updates: { prNumber: number; draft: boolean; title: string }[];
   shouldThrow: boolean;
+  findPRThrows: boolean;
 }
 
 function fakePort(existing: ExistingPR | null = null): FakePort {
@@ -101,6 +102,7 @@ function fakePort(existing: ExistingPR | null = null): FakePort {
     updates: [] as { prNumber: number; draft: boolean; title: string }[],
     existing,
     shouldThrow: false,
+    findPRThrows: false,
   };
   return {
     get created() {
@@ -115,7 +117,16 @@ function fakePort(existing: ExistingPR | null = null): FakePort {
     set shouldThrow(v: boolean) {
       state.shouldThrow = v;
     },
-    findPR: () => state.existing,
+    get findPRThrows() {
+      return state.findPRThrows;
+    },
+    set findPRThrows(v: boolean) {
+      state.findPRThrows = v;
+    },
+    findPR: () => {
+      if (state.findPRThrows) throw new Error("findPR failed");
+      return state.existing;
+    },
     createPR: (params) => {
       if (state.shouldThrow) throw new Error("create failed");
       const pr: ExistingPR = {
@@ -268,6 +279,22 @@ describe("openReleasePRGate.detect", () => {
     gate.detect(identity, makePlan());
     expect(sink.tail()).toEqual([]);
   });
+  it("returns a recorded transport-failure when findPR throws", () => {
+    const sink = new MemoryRecordSink();
+    const port = fakePort();
+    port.findPRThrows = true;
+    const gate = openReleasePRGate(port, sink);
+    const outcome = gate.detect(identity, makePlan());
+    expect(outcome.kind).toBe("transport-failure");
+    if (outcome.kind !== "transport-failure") throw new Error("expected transport-failure");
+    expect(outcome.detail).toContain("findPR failed");
+    const end = sink.tail()[0];
+    if (end === undefined || end.kind !== "gate-outcome") {
+      throw new Error("expected gate-outcome record");
+    }
+    expect(end.action).toBe("detect");
+    expect(end.outcome.kind).toBe("transport-failure");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -330,6 +357,23 @@ describe("openReleasePRGate.create", () => {
     }
     expect(end.outcome.kind).toBe("transport-failure");
   });
+  it("records transport-failure when findPR throws (no mutation, no duplicate)", () => {
+    const sink = new MemoryRecordSink();
+    const port = fakePort();
+    port.findPRThrows = true;
+    const gate = openReleasePRGate(port, sink);
+    const outcome = gate.create(identity, makePlan());
+    expect(outcome.kind).toBe("transport-failure");
+    if (outcome.kind !== "transport-failure") throw new Error("expected transport-failure");
+    expect(outcome.detail).toContain("findPR failed");
+    const end = sink.tail()[0];
+    if (end === undefined || end.kind !== "gate-outcome") {
+      throw new Error("expected gate-outcome record");
+    }
+    expect(end.action).toBe("create");
+    expect(end.outcome.kind).toBe("transport-failure");
+    expect(port.created).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -381,6 +425,23 @@ describe("openReleasePRGate.update", () => {
     if (outcome.kind !== "updated") throw new Error("expected updated");
     expect(port.updates).toEqual([{ prNumber: 13, draft: true, title: render.projection.title }]);
     expect(port.created).toHaveLength(0);
+  });
+  it("returns a recorded transport-failure when findPR throws", () => {
+    const sink = new MemoryRecordSink();
+    const port = fakePort();
+    port.findPRThrows = true;
+    const gate = openReleasePRGate(port, sink);
+    const outcome = gate.update(identity, makePlan());
+    expect(outcome.kind).toBe("transport-failure");
+    if (outcome.kind !== "transport-failure") throw new Error("expected transport-failure");
+    expect(outcome.detail).toContain("findPR failed");
+    const end = sink.tail()[0];
+    if (end === undefined || end.kind !== "gate-outcome") {
+      throw new Error("expected gate-outcome record");
+    }
+    expect(end.action).toBe("update");
+    expect(end.outcome.kind).toBe("transport-failure");
+    expect(port.updates).toHaveLength(0);
   });
 
   it("refuses when the body has drifted from the plan it claims", () => {

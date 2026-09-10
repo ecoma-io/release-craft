@@ -32,6 +32,7 @@ import type {
   ReleasePRPort,
   ReleasePRProjection,
   ReleasePROutcome,
+  ReleasePRTransportFailure,
 } from "./release-pr-types.js";
 
 // ---------------------------------------------------------------------------
@@ -213,13 +214,17 @@ export const renderReleasePRProjection = (
 // §3 — the write-ahead sink (the ledger's discipline, ADR-0006)
 // ---------------------------------------------------------------------------
 
-/** Which mutating door the record belongs to. */
-export type ReleasePRGateAction = "create" | "update";
+/** Which door the record belongs to: `gate-start` records belong to a
+ * mutating door (create, update); `gate-outcome` records a verdict of
+ * any door — a read-only `detect` records only when its port lookup
+ * itself fails. */
+export type ReleasePRGateAction = "create" | "update" | "detect";
 
 /** A gate record: the write-ahead `gate-start` appended before a port
- * mutation, and the `gate-outcome` appended after — for mutations and
- * for recorded refusals alike. A `gate-start` with no matching outcome
- * is a crash mid-mutation, visible in the sink. */
+ * mutation, and the `gate-outcome` appended after — for mutations, for
+ * recorded refusals, and for recorded transport failures alike. A
+ * `gate-start` with no matching outcome is a crash mid-mutation,
+ * visible in the sink. */
 export type ReleasePRRecord =
   | {
       readonly kind: "gate-start";
@@ -284,7 +289,8 @@ export interface ReleasePRGateOptions {
  * scope throws at the door. */
 export interface ReleasePRGate {
   /** Detect a pending release and any existing PR for the identity.
-   * Read-only: no records, no mutations. */
+   * Read-only — it never mutates and writes no records on the happy
+   * path; a port transport failure is the one recorded verdict. */
   detect(
     identity: ReleasePRIdentity,
     plan: ReleasePlan,
@@ -310,6 +316,13 @@ export interface ReleasePRGate {
   ): ReleasePROutcome;
 }
 
+/** The identity lookup's result: the found PR, none, or a recorded
+ * transport failure — the lookup never throws across the door. */
+type FoundExistingPR =
+  | { readonly kind: "existing"; readonly pr: ExistingPR }
+  | { readonly kind: "none" }
+  | ReleasePRTransportFailure;
+
 /** Open the gate over an injected port (and optionally a record sink).
  * The door wires; it owns nothing — consistent with the assembled
  * adapter's injection discipline. */
@@ -324,6 +337,27 @@ export const openReleasePRGate = (
     outcome: ReleasePROutcome,
   ): void => {
     sink?.append({ kind: "gate-outcome", action, identity, planId, outcome });
+  };
+
+  /** The identity lookup, wrapped like every other port call: a
+   * transport error is a recorded `transport-failure` verdict, never a
+   * raw exception crossing the door (the outcomes-only contract). */
+  const findExistingPR = (
+    identity: ReleasePRIdentity,
+    plan: ReleasePlan,
+    action: ReleasePRGateAction,
+  ): FoundExistingPR => {
+    try {
+      const existing = port.findPR(identity);
+      return existing === null ? { kind: "none" } : { kind: "existing", pr: existing };
+    } catch (error) {
+      const outcome: ReleasePRTransportFailure = {
+        kind: "transport-failure",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+      recordOutcome(action, identity, plan.planId, outcome);
+      return outcome;
+    }
   };
 
   const performCreate = (
@@ -397,24 +431,28 @@ export const openReleasePRGate = (
     detect: (identity, plan, options) => {
       const rendered = renderReleasePRProjection(identity, plan, options);
       if (rendered === null) return { kind: "nothing-pending" };
-      const existing = port.findPR(identity);
-      if (existing === null) return { kind: "detected", identity, plan };
-      return { kind: "found", pr: existing, plan };
+      const found = findExistingPR(identity, plan, "detect");
+      if (found.kind === "transport-failure") return found;
+      if (found.kind === "none") return { kind: "detected", identity, plan };
+      return { kind: "found", pr: found.pr, plan };
     },
 
     create: (identity, plan, options) => {
       const rendered = renderReleasePRProjection(identity, plan, options);
       if (rendered === null) return { kind: "nothing-pending" };
-      const existing = port.findPR(identity);
-      if (existing !== null) return { kind: "found", pr: existing, plan };
+      const found = findExistingPR(identity, plan, "create");
+      if (found.kind === "transport-failure") return found;
+      if (found.kind === "existing") return { kind: "found", pr: found.pr, plan };
       return performCreate(identity, plan, rendered.projection, options?.draft ?? false);
     },
 
     update: (identity, plan, options) => {
       const rendered = renderReleasePRProjection(identity, plan, options);
       if (rendered === null) return { kind: "nothing-pending" };
-      const existing = port.findPR(identity);
-      if (existing === null) return { kind: "detected", identity, plan };
+      const found = findExistingPR(identity, plan, "update");
+      if (found.kind === "transport-failure") return found;
+      if (found.kind === "none") return { kind: "detected", identity, plan };
+      const existing = found.pr;
 
       const claim = parseIdentityClaim(existing.body);
       if (claim === null) {
