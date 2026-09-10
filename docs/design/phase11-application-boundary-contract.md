@@ -187,9 +187,20 @@ record and the advancing completion, in ADR-0012 decision 3's order:
 ```text
 the walk, at the channel-transition stage:
   ledger.appendStart(attempt, "channel-transition", attribution, …)  // durable first
-  for each planned move: channels.applyTransition(move)              // the wired store's CAS,
-                                                                     // under the held claim
-  ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the completion records
+  ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the claim guard — only a
+                                                                     // rule-6-verified advance
+                                                                     // proceeds to the store; a
+                                                                     // claim-lost (E-07) or any
+                                                                     // other verdict stops the walk
+                                                                     // before a store CAS runs
+  for each planned move: channels.applyTransition(move)              // the wired store's CAS, on
+                                                                     // that verified advance — each
+                                                                     // move record carries the claim
+                                                                     // verdict a check actually
+                                                                     // performed; the completion
+                                                                     // record appends after every
+                                                                     // move (started < moves <
+                                                                     // completed)
 ```
 
 - The kernel names the step; the boundary executes it. The kernel
@@ -207,9 +218,20 @@ the walk, at the channel-transition stage:
   cannot determine whether a move landed yields `ambiguous`, never
   `completed` — the walk stops, the promotion does not race forward on
   uncertainty, and the resume re-judges from the recorded started record.
-- A completed transition replays `noop` and a divergent prior target
-  conflicts exactly as ADR-0012 decisions 3–4 key them — the boundary
-  drives the ledger's replay doors; it re-implements neither.
+- **A COMPLETED channel stage is not re-executed on re-entry.** Its replay
+  verdict is `noop` and the walk proceeds past it — later stages and their
+  anchors still run — but no store CAS runs: every planned move was already
+  decided and recorded in the run that completed the stage (the completion
+  appends after every move), and re-applying them would mutate the store
+  and write a second generation of move records over a verdict no check
+  performed (the silent second move the replay ladder forbids). Only the
+  crash-window path re-applies: a `started` stage whose write-ahead start
+  stands replays the verified advance, and each already-landed move answers
+  `noop` (an advancing stage's own replay case).
+- A landed move's replay classifies `noop` and a divergent prior target
+  conflicts exactly as ADR-0012 decisions 3–4 key them — per-move rows of
+  the store's CAS, reached only through the verified advance above — and
+  the boundary drives the ledger's replay doors; it re-implements neither.
 
 ### 2.5 The walk — the generalized fixture drive
 

@@ -274,11 +274,18 @@ const runBoundary = (ctx: WalkContext, stage: StageKey, position: HookAnchorPosi
  * 4): extension steps at their anchors before and after the stage, the
  * write-ahead start, the `channel-transition` executor at §2.4's point,
  * the completion through `ledgerRequestStep`, the advancing record
- * appended. The start is never re-appended when one already stands (E-02:
- * the crash window's replay lands the effect and its completion beside the
- * durable start, and the completion's replay is `noop`, walked past); a
- * completed step replays only on proven content. Any other non-advance
- * stops the walk, in order.
+ * appended. The shipped order at the channel stage is the guard first: the
+ * planned moves land through the wired store's CAS only on a rule-6-verified
+ * advance — the claim held and re-verified — and any other verdict stops the
+ * walk before a CAS runs. A completed channel stage is not re-executed: its
+ * replay (`noop`) is walked past without a CAS, because every planned move
+ * was already decided in the run that completed the stage; only the crash
+ * window's replay — a stage whose `started` record stands — advances under
+ * the verified claim and idempotently re-applies. The start is never
+ * re-appended when one already stands (E-02: the crash window's replay lands
+ * the effect and its completion beside the durable start, and the
+ * completion's replay is `noop`, walked past); a completed step replays only
+ * on proven content. Any other non-advance stops the walk, in order.
  */
 const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
   const entry =
@@ -320,7 +327,32 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
         contentFingerprintFor(stage, ctx.handle.attemptId),
       );
     }
-    if (stage === "channel-transition") {
+    const outcome: RequestStepOutcome = ledgerRequestStep(
+      ctx.attempt,
+      {
+        stepKey: stage,
+        attribution: attributionFor(ctx.handle),
+        contentFingerprint: contentFingerprintFor(stage, ctx.handle.attemptId),
+        ...(preconditions === undefined ? {} : { preconditions }),
+      },
+      claimViewFor(ctx.claim, ctx.ports.claims, ctx.handle.attemptId),
+      ctx.ports.ledger,
+    );
+    ctx.drives.push({ stepKey: stage, outcome });
+    // §2.4's point: the channel stage's moves land only on a rule-6-verified
+    // advance — the guard's claim-lost (E-07) or any other non-advancing
+    // outcome stops the walk before a store CAS runs, never ahead of it, and
+    // a completed stage's noop replay is not re-applied. Every planned move
+    // was already decided and recorded in the run that completed the stage
+    // (the completion appends after every move), so a re-entry re-applying
+    // them would mutate the store and write a second generation of move
+    // records over a verdict no check performed — the silent second move the
+    // replay ladder forbids (ADR-0012 decisions 3–4). Only the crash-window
+    // replay — a `started` stage whose start stands — walks the verified
+    // advance and lands idempotent re-applies. The walk must still PROCEED
+    // past a stage-noop channel stage: the completion beyond it replays,
+    // and the later stages and their anchors still run.
+    if (stage === "channel-transition" && outcome.kind === "advance") {
       const channels = ctx.ports.channels;
       if (channels === null) {
         if (plannedChannelMoves(ctx.planLine).length > 0) {
@@ -346,18 +378,6 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
         }
       }
     }
-    const outcome: RequestStepOutcome = ledgerRequestStep(
-      ctx.attempt,
-      {
-        stepKey: stage,
-        attribution: attributionFor(ctx.handle),
-        contentFingerprint: contentFingerprintFor(stage, ctx.handle.attemptId),
-        ...(preconditions === undefined ? {} : { preconditions }),
-      },
-      claimViewFor(ctx.claim, ctx.ports.claims, ctx.handle.attemptId),
-      ctx.ports.ledger,
-    );
-    ctx.drives.push({ stepKey: stage, outcome });
     if (outcome.kind === "advance") {
       ctx.ports.ledger.append({ kind: "step", record: outcome.record });
     } else if (outcome.kind !== "noop") {
