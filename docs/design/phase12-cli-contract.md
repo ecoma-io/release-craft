@@ -579,7 +579,17 @@ row → 10.
   claim store's CAS is the only arbitration, met across processes today
   only by a fresh run's fresh ordinal meeting a recorded claim (phase 11
   §2.7's residuals), and the CLI adds no mutex, no queue, no advisory
-  locking of its own.
+  locking of its own. The arbitration the claim store provides extends
+  exactly one shared ref space: it is enforced by compare-and-set over
+  the repository's own `refs/release-craft/*`, so the "one repository"
+  in this law is one checkout's ref space, and two processes in two
+  different checkouts of the same repository each hold their own (#182)
+  — both acquire the same line, both mint locally, and the divergence
+  first surfaces at the consumer's push as a non-fast-forward rejection,
+  a git refusal outside the engine's verdict vocabulary. Serializing
+  across checkouts is a declared precondition of the caller (phase 13
+  §2.9 names the Action's posture), not a mechanism this surface
+  provides.
 - **No retry policy of its own.** E-08's bounded sequence retry is the
   kernel's clause driven by the boundary (phase 11 §2.5 step 3); the CLI
   neither retries a door nor loops a command. A script that wants retries

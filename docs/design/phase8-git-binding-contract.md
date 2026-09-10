@@ -128,7 +128,17 @@ mint(tag, target) — the binding's tag door, not the port —
   the whole set against the observed tip. The exclusion predicate and
   the accept are one atomic transition per line: the same CAS that
   creates the claim checked the line's other claims, and the scan's
-  window (#47) does not exist. A lost CAS re-reads and re-evaluates —
+  window (#47) does not exist. The CAS arbitrates one shared ref space —
+  the writers of one repository, over that repository's own
+  `refs/release-craft/*` — and its reach ends at the ref space's edge
+  (#182): writers in different checkouts of one repository hold disjoint
+  claim refs (a standard clone fetches only `refs/heads/*` and
+  `refs/tags/*`; the adapter never fetches remote claim state — ADR-0010
+  decision 3), so both acquire the same line and both mint, and the
+  divergence surfaces at the consumer's push as a non-fast-forward
+  rejection outside the engine's verdict vocabulary — the declared scope
+  ADR-0011 decision 2 records and the negative capability test pins. A
+  lost CAS re-reads and re-evaluates —
   it never adjudicates against stale state; releasing the last claim of
   a line leaves the empty register in place (the ref is never deleted,
   so the write path stays one primitive); and a claim-namespace blob

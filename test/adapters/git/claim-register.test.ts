@@ -12,6 +12,8 @@ import {
   type ClaimRecord,
   GitClaimStore,
   GitFaultError,
+  hermeticGitEnv,
+  openGitRun,
   readRef,
   readRegister,
   type GitRun,
@@ -25,7 +27,7 @@ import {
   canonicalJson,
   MemoryClaimStore,
 } from "../../../src/index.js";
-import { withTempRepo } from "./temp-repo.js";
+import { createTempRepo, withTempRepo } from "./temp-repo.js";
 
 /**
  * The per-line claim register (ADR-0011) — the pins its Consequences name:
@@ -35,8 +37,11 @@ import { withTempRepo } from "./temp-repo.js";
  * CAS bases on, pinning the single-read base — so the loser re-evaluates
  * against the diverged tip and lands or denies, never both-accept, never a
  * stale adjudication), the release-by-token pin, the crash window, the
- * loud foreign-blob and non-canonical refusals, the #69 denial parity, and
- * the dual-backend scenario list run over both stores.
+ * loud foreign-blob and non-canonical refusals, the #69 denial parity, the
+ * dual-backend scenario list run over both stores, and the decision 2
+ * scope boundary (#182): the exclusion is one shared ref space, pinned as
+ * a negative capability test — two clones of one repository acquire the
+ * same line's claim independently.
  */
 
 const stableVersion = (version: string, lineId = "line-main"): ClaimScope => ({
@@ -698,4 +703,96 @@ describe("the dual-backend scenario list (ADR-0011)", () => {
       });
     });
   }
+});
+
+/**
+ * The declared scope boundary (#182, ADR-0011 decision 2): the register's
+ * exclusion is one shared ref space — compare-and-set over the one
+ * repository's own `refs/release-craft/claims/*` — and extends exactly
+ * that far. Two standard clones of one repository hold disjoint claim
+ * refs (a standard clone's refspec brings only `refs/heads/*` and
+ * `refs/tags/*`; the adapter never fetches remote claim state — ADR-0010
+ * decision 3), so both acquire the same line's claim, each register lists
+ * only its own record, and the divergence first surfaces at the
+ * consumer's push as a non-fast-forward rejection — outside the engine's
+ * verdict vocabulary. The declared precondition of every surface above
+ * the binding; cross-checkout enforcement is deliberately out of scope,
+ * and this pin exists so a change to the boundary moves a test.
+ */
+
+describe("the exclusion is one shared ref space (#182)", () => {
+  /** The hermetic environment the fixture's own `clone`/`push` spawns need
+   *  (the store's runner bakes the same floor). */
+  const CLONE_ENV: NodeJS.ProcessEnv = hermeticGitEnv();
+
+  const spawnGit = (cwd: string, args: readonly string[]): { status: number; stderr: string } => {
+    const result = spawnSync("git", [...args], { cwd, env: CLONE_ENV, encoding: "utf8" });
+    if (result.error !== undefined) {
+      throw new Error(`git ${args.join(" ")} failed to spawn: ${result.error.message}`);
+    }
+    return { status: result.status ?? -1, stderr: result.stderr };
+  };
+
+  it("two clones of one repository acquire the same line's claim independently — each register lists only its own record, neither can observe the other", () => {
+    const scope = releaseLine("line-shared-182");
+    const ref = claimRegisterRefFor(scope.lineId);
+    const origin = createTempRepo();
+    const work = mkdtempSync(join(tmpdir(), "release-craft-register-scope-182-"));
+    try {
+      const checkoutA = join(work, "checkout-a");
+      const checkoutB = join(work, "checkout-b");
+      expect(spawnGit(work, ["clone", origin.repo, checkoutA]).status).toBe(0);
+      expect(spawnGit(work, ["clone", origin.repo, checkoutB]).status).toBe(0);
+      const gitA = openGitRun(checkoutA);
+      const gitB = openGitRun(checkoutB);
+
+      // A standard clone fetches only heads and tags: the claim namespace
+      // is invisible to every checkout but its own.
+      expect(gitA(["config", "--get-all", "remote.origin.fetch"])).toBe(
+        "+refs/heads/*:refs/remotes/origin/*\n",
+      );
+      expect(gitB(["config", "--get-all", "remote.origin.fetch"])).toBe(
+        "+refs/heads/*:refs/remotes/origin/*\n",
+      );
+
+      // The same scope on the same line, two checkouts: both acquire.
+      // Within one checkout the second acquire would be a denial naming
+      // the winner; the ref spaces are disjoint, so neither exclusion
+      // check ever sees the other claim.
+      const storeA = new GitClaimStore(checkoutA);
+      const storeB = new GitClaimStore(checkoutB);
+      const claimA = asClaim(storeA.acquire(scope, "attempt_a"));
+      const claimB = asClaim(storeB.acquire(scope, "attempt_b"));
+      expect(claimA.holder).toBe("attempt_a");
+      expect(claimB.holder).toBe("attempt_b");
+      expect(claimA.token).not.toBe(claimB.token);
+
+      // Each register lists exactly its own record, under the same ref
+      // name (the lineId's digest) at disjoint tips.
+      expect(readRegister(gitA, ref)?.map((record) => record.holder)).toEqual(["attempt_a"]);
+      expect(readRegister(gitB, ref)?.map((record) => record.holder)).toEqual(["attempt_b"]);
+      const tipA = readRef(gitA, ref);
+      const tipB = readRef(gitB, ref);
+      expect(tipA).not.toBeNull();
+      expect(tipA).not.toBe(tipB);
+
+      // Neither checkout can observe the other's claim through the port.
+      expect(storeA.verify(claimB.token)).toEqual({ kind: "lost" });
+      expect(storeB.verify(claimA.token)).toEqual({ kind: "lost" });
+
+      // Where the divergence first surfaces: the consumer's own push. The
+      // first clone's claim ref lands; the second's is a non-fast-forward
+      // rejection — a git refusal, carrying no engine outcome kind.
+      expect(spawnGit(checkoutA, ["push", "origin", `${ref}:${ref}`]).status).toBe(0);
+      const rejected = spawnGit(checkoutB, ["push", "origin", `${ref}:${ref}`]);
+      expect(rejected.status).not.toBe(0);
+      expect(rejected.stderr).toContain("rejected");
+      // The remote holds the first checkout's claim; the loser's mint
+      // never landed.
+      expect(readRef(origin.git, ref)).toBe(tipA);
+    } finally {
+      origin.cleanup();
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
 });
