@@ -35,8 +35,10 @@
  *   already-existing tag family, so there is nothing to mint).
  */
 
-import { formatTag, Version, type ClaimScope } from "../index.js";
+import { Version } from "@ecoma-io/release-craft/domain";
 import type { GitTagNaming } from "../adapters/git/index.js";
+import type { ClaimScope } from "../execution/index.js";
+import { formatTag } from "../planner/index.js";
 
 /** The tag a claim scope derives, rendered exactly as the planner renders
  * the plan's own tag: through `formatTag` over the scope's line's declared
