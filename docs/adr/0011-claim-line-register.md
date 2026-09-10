@@ -126,8 +126,9 @@ nothing less.
    re-evaluates exactly as `acquire` does, so the port's release — like
    the in-memory store's — cannot surface a lost race as an error;
    sustained same-line contention costs retries, not failures.
-   Amendment (issue #194): the release half of that sentence is
-   engine-unreachable on today's main. The token is minted at `acquire`
+   Amendment landed in #231 (issue #194): the release half of that
+   sentence is engine-unreachable on today's main. The token is minted
+   at `acquire`
    and the acquiring process is its only carrier — no engine code path
    calls `claims.release` (the binding's passthrough is the port's only
    caller in `src/`), and a fresh process cannot name the token, so
