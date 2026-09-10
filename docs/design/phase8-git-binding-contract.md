@@ -278,7 +278,13 @@ tagNaming: {
   the tag, the namespace, and the declared source. Refusals and
   conflicts are returned values, not exceptions: the caller records
   them through the ledger's own doors (E-02's conflict vocabulary).
-  Nothing the door refused left state behind.
+  Nothing the door refused left state behind. A supplied target that
+  resolves to no commit is the one exception, deliberately: it is the
+  declared-lie posture (phase 12 §2.4; phase 13 §2.8's mismatch site,
+  exit 70), not a policy race, so the door raises its own classified
+  `GitFaultError` naming the target — caught from the quiet
+  verification's exit-1-empty-stderr shape (D39's absence shape) inside
+  the door, never the raw git wording (D49).
 - `mintTag` is the binding's own door — it is not on the `ClaimStore`
   port. It verifies the token against a held claim whose derived tag
   name matches, requires `target` as a supplied value (a recorded base
@@ -318,6 +324,51 @@ shared `channelStateFingerprint` live in the execution layer beside the
 port. The refs-read seam (§2.7's projection) does not enumerate the
 channel family — consumers reach recorded channels through the port's
 own reads.
+
+### 2.7 The substrate precondition (the open guard; #181, #184; D45–D48)
+
+The guarantees of §2.2 hold only on a substrate whose history git walks
+to its root, in the object format the binding is certified on, with no
+substitution of recorded objects. The runner — the one spawn point every
+door shares — probes the repository once, ahead of its first command on a
+live repository, and refuses a foreign shape as a declared
+`GitFaultError` before any door work runs, never as a mid-walk surprise.
+Opening itself spawns nothing — the CLI builds bindings on paths a run
+may never touch, and a fixture bootstraps `git init` through a fresh
+runner — so the guard rides the first command instead, and re-arms until
+it has seen a repository, so a substrate that comes to exist under a
+bootstrap runner is guarded from its first real command on:
+
+- **Shallow repositories refuse (D45).** In a truncated clone
+  (`fetch-depth: 1`, the common CI posture) `rev-list --first-parent`
+  exits 0 at the shallow boundary and a recorded stream's walk returns a
+  _prefix_ of the records; resume and planning would run over missing
+  history and appends would chain onto the truncated tip. A shallow
+  repository cannot honor the byte-exact reload guarantee, so
+  `rev-parse --is-shallow-repository` returning `true` refuses.
+- **Grafted repositories refuse (D47).** An `info/grafts` file rewrites
+  recorded parentage and nothing disarms it — `GIT_NO_REPLACE_OBJECTS`
+  does not cover the file channel — so its presence refuses
+  (`rev-parse --git-path info/grafts` + existence). The modern
+  `git replace --graft` spelling is a replace ref and is covered by the
+  disarm below; it does not refuse.
+- **Replace objects are disarmed, not refused (D46).** The hermetic floor
+  sets `GIT_NO_REPLACE_OBJECTS=1` on every binding and fixture spawn, so
+  recorded bytes read back as recorded whatever `refs/replace/*` holds;
+  the substitution is never honored and the repository stays usable.
+- **Non-sha1 object formats refuse (D48).** The compare-and-swap's
+  all-zero expected-old value is the sha1 width; on a sha256 repository
+  every first write fails git-side with `not a valid old SHA1` — loud,
+  but mislabeled. `rev-parse --show-object-format` reporting anything but
+  `sha1` refuses; deriving the zero width is the recorded support
+  path for a future consumer (D48).
+
+Only the object-format probe's own failure is swallowed, and only
+because it doubles as the repository detector — a first command on a path
+that is no repository finds nothing to guard, and the command behind the
+probe faults on exactly that condition if it needs one. Every other
+probe failure — a corrupt repository, a missing binary — propagates as
+the fault it is: an unopenable substrate is an open fault.
 
 ## 3. Laws
 

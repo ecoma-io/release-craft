@@ -11,7 +11,12 @@
 
 import { GitFaultError, type GitRun } from "./git-run.js";
 
-/** The all-zero object id — update-ref's "expected old value: absent". */
+/**
+ * The all-zero object id — update-ref's "expected old value: absent".
+ * Deliberately the sha1 width: the runner's open guard refuses any other
+ * object format before a CAS can run (#184; D48), so this constant is
+ * total over every substrate a runner can open on.
+ */
 const ZERO_OID = "0".repeat(40);
 
 /**

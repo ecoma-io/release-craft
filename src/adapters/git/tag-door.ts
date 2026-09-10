@@ -97,8 +97,30 @@ export function GitTagDoor(git: GitRun, naming: GitTagNaming): TagMint {
     // short prefix or a ref spelling mints the same ref and reports
     // `minted` at the full oid — never a conflict against a tag the door
     // itself just created (nothing refused leaves state behind, §2.6).
-    const resolved = git(["rev-parse", "--verify", "--quiet", `${input.target}^{commit}`]).trim();
-    if (resolved === "") {
+    //
+    // The quiet verification's fault shape IS the unresolvable target:
+    // exit 1 with empty stderr, the same one shape `readRef` keys absence
+    // on (D39). That shape is the door's declared-lie classification
+    // (#184; D49) — the supplied target named a commit the declared world
+    // does not hold, so the door raises its own GitFaultError naming the
+    // target rather than letting git's raw rev-parse wording escape
+    // unclassified (the raw fault was the defect: thrown before the
+    // classification could run, it made the branch unreachable). The
+    // fault stays a fault — phase 12 §2.4's declared-lie posture, exit 70
+    // at the surface, phase 13 §2.8's mismatch site — never one of the
+    // returned refusal classes, which name policy races; any other fault
+    // (an unreadable store, a spawn failure) propagates as what it is.
+    let resolved: string | null;
+    try {
+      resolved = git(["rev-parse", "--verify", "--quiet", `${input.target}^{commit}`]).trim();
+    } catch (error) {
+      if (error instanceof GitFaultError && error.status === 1 && error.stderr === "") {
+        resolved = null;
+      } else {
+        throw error;
+      }
+    }
+    if (resolved === null || resolved === "") {
       throw new GitFaultError(
         ["rev-parse", "--verify", `${input.target}^{commit}`],
         null,

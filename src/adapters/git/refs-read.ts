@@ -3,10 +3,12 @@
  * the remote projection's read half. The binding enumerates its own
  * recorded refs — the claim refs under its namespace and the tags within
  * the configuration's declared namespaces — each with the object it
- * names: the line's register blob for a claim ref (ADR-0011), the commit
- * (peeled where git peels) for a tag. Pure reads over `for-each-ref`: no
- * write, no `HEAD` resolution, no working-tree state (ADR-0009 decision
- * 4's discipline, read side).
+ * names: the register ref's tip commit for a claim ref (ADR-0011 — the
+ * register grows one commit per mutation, its envelope blob riding that
+ * commit's tree as `record`, so the ref names a commit, not the blob),
+ * the commit (peeled where git peels) for a tag. Pure reads over
+ * `for-each-ref`: no write, no `HEAD` resolution, no working-tree state
+ * (ADR-0009 decision 4's discipline, read side).
  */
 
 import type { RecordedRef, RefRead } from "./binding-types.js";

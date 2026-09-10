@@ -236,8 +236,11 @@ remote projection reads — proposed in #54, weighing three shapes:
   opened configuration's own repository path) and `GitBinding.refs:
 RefRead`, the recorded refs' read-only enumeration — `claims()`
   (every claim ref under the binding's claim-ref namespace, each with
-  the register blob's oid — D24: a claim ref names a blob,
-  nothing to peel; the per-line claim register of ADR-0011) and
+  the register ref's tip commit — under the per-line claim register of
+  ADR-0011 the register grows one commit per mutation and its envelope
+  blob rides that commit's tree, so the ref names a commit, not the
+  blob; the D24-era "names a blob" wording described the superseded
+  per-scope mapping and is corrected here, #184) and
   `tags()` (every tag within the configuration's
   declared namespaces — the mint door's namespace rule — each with its
   commit: the peeled commit for an annotated tag, the ref's own target

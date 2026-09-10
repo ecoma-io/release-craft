@@ -483,6 +483,7 @@ export const MANIFEST: readonly ManifestRow[] = [
     provenance: [
       "phase 14 §3.3",
       "phase 12 §2.5 and §2.4 (the declared lie's two fault bands, each to its recorded section; two rows that must never collapse into one cell — the second leaves recorded evidence, the first leaves none)",
+      "issues #181/#184 (D49: the mint's unresolvable target is classified inside the door, so the second band's recorded bytes re-recorded — the declared-lie fault names the target, never git's raw quiet wording)",
     ],
     status: "live",
   },

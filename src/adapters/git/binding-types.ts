@@ -63,18 +63,20 @@ export interface BindingConfig {
  * One recorded ref the remote projection reads (the Phase 9 contract
  * §2.7; D26): the binding's own recorded state — a claim ref under its
  * namespace or a tag within the declared namespaces — with the object it
- * names. For a claim ref that object is the register blob (the per-line
- * claim register of ADR-0011); for a tag it is the commit — the tag
- * object itself for a lightweight tag (the mint door's shape), the
- * peeled commit for an annotated one.
+ * names. For a claim ref that object is the register ref's tip commit
+ * (the per-line claim register of ADR-0011 grows one commit per
+ * mutation, the envelope blob riding the commit's tree); for a tag it is
+ * the commit — the tag object itself for a lightweight tag (the mint
+ * door's shape), the peeled commit for an annotated one.
  */
 export interface RecordedRef {
   /** The full ref name — `refs/release-craft/claims/<record>` or
    *  `refs/tags/<tag>`. */
   readonly ref: string;
-  /** The object the ref names — the claim record's blob oid for a claim
-   *  ref; the commit for a tag, peeled from the tag object for an
-   *  annotated one. */
+  /** The object the ref names — the register ref's tip commit for a
+   *  claim ref (not the envelope blob, which sits in that commit's tree
+   *  as `record`); the commit for a tag, peeled from the tag object for
+   *  an annotated one. */
   readonly target: string;
   /** Which recorded namespace the ref came from. */
   readonly kind: "claim" | "tag";
@@ -88,8 +90,9 @@ export interface RecordedRef {
  */
 export interface RefRead {
   /** Every claim ref under the binding's claim-ref namespace, each with
-   *  the register blob's oid as its target (the per-line claim register
-   *  of ADR-0011). */
+   *  the register ref's tip commit as its target (the per-line claim
+   *  register of ADR-0011 — the envelope blob rides that commit's tree,
+   *  and reads as `content.claims`, not here). */
   claims(): readonly RecordedRef[];
   /** Every tag within the configuration's declared namespaces (the mint
    *  door's namespace rule) the repository holds, each with its peeled
