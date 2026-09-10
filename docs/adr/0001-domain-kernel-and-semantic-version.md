@@ -67,6 +67,16 @@ makes every direct external import — Node built-ins included — a
 `bannedExternalImportsViolation`. There is no row that lets the kernel reach
 out, and none that lets gate code or package code reach in.
 
+As the codebase grew from a single domain kernel into six `src/` layers
+(planner, execution, app, cli and two adapter projects), the same table
+extended — not replaced — these three anchor rows with seven additional
+`type-*` tag rows, one per layer project. The complete constraint table now
+lives in [decision 8](#8-the-alias-seam-one-specifier-three-declarations)'s
+companion file `module-boundaries.config.mjs`; the three rows above remain
+the invariant core: the package front door is the package's own edge alone,
+the domain kernel imports nothing, and the gate scripts judge without
+consuming what they audit.
+
 ### 3. Purity is layered because no single checker sees the whole surface
 
 One tool cannot see every way impurity enters:
