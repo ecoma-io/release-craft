@@ -50,7 +50,7 @@ jobs:
           api-url: ${{ secrets.ECOMA_LLM_BASE_URL }}
           api-key: ${{ secrets.ECOMA_LLM_API_KEY }}
           model: triage
-          dry-run: "true"
+          dry-run: "false"
 
       - name: Upload the run record
         if: always()
