@@ -542,7 +542,7 @@ row → 10.
 - **The one environment the process touches is the binding's hermetic
   floor.** The git runner spawns on `process.env` minus the leaked
   repository context (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_NAMESPACE`,
-  `GIT_TRACE*`), plus
+  `GIT_TRACE*`, …), plus
   `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
   `GIT_TERMINAL_PROMPT=0`, and a baked deterministic commit identity —
   verified: `hermeticGitEnv()` in `src/adapters/git/git-run.ts`. The CLI

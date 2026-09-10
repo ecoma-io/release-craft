@@ -173,25 +173,29 @@ describe("the git binding's shared surface", () => {
   it("stays hermetic under a leaked GIT_NAMESPACE export — the claim mints at the real register, not a shadow namespace (#180)", () => {
     process.env.GIT_NAMESPACE = "hostile-probe";
     try {
-      // The floor pin, the leg that bites on every git: the ambient export
-      // never reaches a spawn. Where git honors the variable — every
-      // release before 2.55 removed it, after it sat Dormant and broken
-      // since 2.45 — an unstripped export rewrites the ref namespace's
-      // root, so the reads resolve inside `refs/namespaces/hostile-probe/`
-      // and the mints land in a shadow namespace; 2.55 ignores the
-      // variable entirely, so on such hosts only the floor's own strip
-      // makes the law (a spawned git's repository must come from the
-      // `cwd` alone) verifiable at all.
+      // The floor pin is the leg that bites on every git: the ambient
+      // export never reaches a spawn. The behavioral legs below bite only
+      // where git's plumbing still maps namespaces — the env-driven
+      // namespace-prefixing of ref lookups vanished from refs.c between
+      // v2.53.0 and v2.54.0 without a release-note entry (source
+      // archaeology; the transport paths — upload-pack/receive-pack —
+      // honor the variable on every version, 2.55.0 verified first-hand),
+      // so on a modern git a leaked export does not move a local mint.
+      // CI pins no git version (ubuntu-latest everywhere), so the
+      // behavioral legs silently rot the day the runner image crosses
+      // that plumbing break — the floor pin here and the dogfood world
+      // pin are the teeth that survive it.
       expect(process.env.GIT_NAMESPACE).toBe("hostile-probe");
       expect(hermeticGitEnv().GIT_NAMESPACE).toBeUndefined();
       withRepo((git, repo) => {
         // A real binding write on the floor's own spawn: the claim mint.
-        // On a git that honors the variable, an unstripped export lands
-        // the record under `refs/namespaces/hostile-probe/...` — and the
-        // store's own reads would resolve the same shadow and stay
-        // consistent with it, which is why the assertions below also read
-        // the repository's physical refs: the real register must exist on
-        // disk, and no namespace shadow may.
+        // Where the plumbing still maps namespaces (v2.53.0 and older),
+        // an unstripped export lands the record under
+        // `refs/namespaces/hostile-probe/...` — and the store's own reads
+        // would resolve the same shadow and stay consistent with it,
+        // which is why the assertions below also read the repository's
+        // physical refs: the real register must exist on disk, and no
+        // namespace shadow may.
         const store = new GitClaimStore(repo);
         const outcome = store.acquire(
           { kind: "stable-version", lineId: "line-namespace", version: "1.2.3" },

@@ -82,14 +82,20 @@ const LEAKED_GIT_CONTEXT: ReadonlySet<string> = new Set([
   "GIT_CEILING_DIRECTORIES",
   "GIT_PREFIX",
   "GIT_INTERNAL_SUPER_PREFIX",
-  // GIT_NAMESPACE is repository context by the same law (#180): where git
-  // honors it — every release before 2.55 removed it, after it sat Dormant
-  // and broken since 2.45 — an export rewrites the root of the ref
-  // namespace, so claim, register, and ledger reads resolve inside
-  // `refs/namespaces/<ns>/` and every mint and append lands in a shadow
-  // namespace no fault reports. The namespace is part of the repository's
-  // identity, and a spawned git's repository must come from the `cwd`
-  // alone.
+  // GIT_NAMESPACE is repository context by the same law (#180): an export
+  // rewrites the root of the ref namespace (gitnamespaces(7)) — the
+  // transport paths honor it on every git checked, 2.55.0 included (a
+  // namespaced upload-pack advertises only its namespace's refs, verified
+  // first-hand), so the strip is live protection for any fetch posture the
+  // binding or its callers grow. The plumbing half — namespace-prefixing
+  // of ref lookups and iteration, which is what would shadow a local
+  // mint — vanished from the env path without a release-note entry
+  // between v2.53.0 and v2.54.0 (source archaeology: the "%srefs/"
+  // prefixing in refs.c is present through v2.53.0, gone at v2.54.0),
+  // which is why a local write under an ambient export lands at the
+  // physical path on a modern git. Either way the namespace is part of
+  // the repository's identity, and a spawned git's repository must come
+  // from the `cwd` alone.
   "GIT_NAMESPACE",
   "GIT_CONFIG_PARAMETERS",
   "GIT_CONFIG_COUNT",
