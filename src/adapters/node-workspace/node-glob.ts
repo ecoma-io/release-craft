@@ -10,16 +10,21 @@
  *
  * Supported subset: `*` (within one path segment), `**` (zero-or-more
  * segments), `?` (one character), literal segments. `node_modules` is never
- * traversed, and a `*`/`?` segment does not match dot-directories unless
- * the pattern segment itself starts with `.` — the standard glob posture,
- * and the guard that keeps hoisted dependency trees out of the workspace
- * graph. Character classes, brace expansion, and absolute patterns refuse
- * loudly, naming the declaring manifest — never best-effort, never silent.
+ * traversed — judged on each candidate's RESOLVED path, so a symlink alias
+ * into a hoisted tree is excluded exactly like the entry name would be —
+ * symlinks are still followed to legitimate members, and no directory (nor
+ * the root) is ever entered twice, which kills the symlink cycles that
+ * would otherwise enumerate phantom members forever. A `*`/`?` segment does
+ * not match dot-directories unless the pattern segment itself starts with
+ * `.` — the standard glob posture, and the guard that keeps hoisted
+ * dependency trees out of the workspace graph. Character classes, brace
+ * expansion, and absolute patterns refuse loudly, naming the declaring
+ * manifest — never best-effort, never silent.
  *
  * Gate: `check:package` (invariant 1: no runtime dependencies).
  */
 
-import { existsSync, readdirSync, statSync, type Stats } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import { WorkspaceDetectionError } from "./types.js";
 
@@ -61,7 +66,15 @@ export function resolveWorkspaceGlob(
 
   const segments = pattern.split("/").filter((segment) => segment.length > 0);
   const manifests: string[] = [];
-  walk(root, segments, 0, manifests);
+  // One resolved directory is entered at most once per pattern resolution:
+  // statSync follows symlinks, so a cycle would loop forever and two names
+  // for one real directory would enumerate its members twice. The root is
+  // seeded so a symlink resolving back to it dies on entry.
+  const visited = new Set<string>([resolveReal(root) ?? root]);
+  // A manifest reached under two names (a symlinked member matched by two
+  // branches of one pattern) is one member; keep the first-discovered path.
+  const seenManifests = new Set<string>();
+  walk(root, segments, 0, manifests, visited, seenManifests);
   return manifests;
 }
 
@@ -69,49 +82,67 @@ export function resolveWorkspaceGlob(
  * Depth-first walk interpreting the remaining pattern segments against a
  * concrete base directory. At the end of the pattern the base itself is
  * the candidate member directory: it must exist, be a directory, and
- * contain a `package.json`.
+ * contain a `package.json`. `visited` holds the resolved paths of every
+ * directory already entered (cycle guard); `seenManifests` holds the
+ * resolved paths of already-emitted manifests (alias guard).
  */
-function walk(base: string, segments: readonly string[], depth: number, out: string[]): void {
+function walk(
+  base: string,
+  segments: readonly string[],
+  depth: number,
+  out: string[],
+  visited: Set<string>,
+  seenManifests: Set<string>,
+): void {
   const segment = segments[depth];
   if (segment === undefined) {
     // Pattern exhausted — the base directory is the member candidate.
     const manifest = join(base, "package.json");
-    if (existsSync(manifest)) out.push(manifest);
+    if (existsSync(manifest)) {
+      const identity = resolveReal(manifest) ?? manifest;
+      if (!seenManifests.has(identity)) {
+        seenManifests.add(identity);
+        out.push(manifest);
+      }
+    }
     return;
   }
 
   if (segment === ".") {
     // `.` is the current directory: consume the segment without descending.
-    walk(base, segments, depth + 1, out);
+    walk(base, segments, depth + 1, out, visited, seenManifests);
     return;
   }
 
   if (segment === "**") {
     // Zero segments consumed: the rest of the pattern applies at this level.
-    walk(base, segments, depth + 1, out);
+    walk(base, segments, depth + 1, out, visited, seenManifests);
     // One-or-more segments consumed: descend into every eligible child
     // directory and let `**` keep matching there.
-    for (const child of listDirs(base)) {
-      walk(child, segments, depth, out);
+    for (const child of listDirs(base, visited)) {
+      walk(child, segments, depth, out, visited, seenManifests);
     }
     return;
   }
 
-  for (const child of listDirs(base)) {
+  for (const child of listDirs(base, visited)) {
     const name = basenameOf(child);
     if (matchesSegment(name, segment)) {
-      walk(child, segments, depth + 1, out);
+      walk(child, segments, depth + 1, out, visited, seenManifests);
     }
   }
 }
 
 /**
  * Lists the subdirectories of `base` that traversal may enter: existing
- * directories only, never `node_modules`, and never a dot-directory
- * (dot-directories are matched only by an explicitly dotted pattern
- * segment, judged by `matchesSegment` after this listing).
+ * directories only; never `node_modules`, judged on the RESOLVED path so an
+ * alias into a hoisted tree is excluded exactly like the entry name would
+ * be; never a directory already entered under another name (symlink cycles
+ * die here); and never a dot-directory (dot-directories are matched only by
+ * an explicitly dotted pattern segment, judged by `matchesSegment` after
+ * this listing).
  */
-function listDirs(base: string): readonly string[] {
+function listDirs(base: string, visited: Set<string>): readonly string[] {
   let entries: readonly string[];
   try {
     entries = readdirSync(base).sort();
@@ -122,8 +153,15 @@ function listDirs(base: string): readonly string[] {
   for (const entry of entries) {
     if (entry === "node_modules") continue;
     const child = join(base, entry);
+    const resolved = resolveReal(child);
+    if (resolved === undefined) continue; // Dangling symlink or unreadable — no resolution, no candidate.
+    if (isNodeModulesPath(resolved)) continue; // Alias into a hoisted tree.
+    if (visited.has(resolved)) continue; // Cycle, or a second name for an entered directory.
     const stats = safeStat(child);
-    if (stats !== undefined && stats.isDirectory()) dirs.push(child);
+    if (stats !== undefined && stats.isDirectory()) {
+      visited.add(resolved);
+      dirs.push(child);
+    }
   }
   return dirs;
 }
@@ -165,6 +203,31 @@ function safeStat(path: string): Stats | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * realpathSync guarded like safeStat: a path that cannot be resolved (a
+ * dangling symlink, a too-deep symlink cycle) yields `undefined` so the
+ * caller filters the entry out instead of crashing the walk.
+ */
+function resolveReal(path: string): string | undefined {
+  try {
+    return realpathSync(path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether a RESOLVED path lies inside a `node_modules` directory anywhere
+ * along its segments — the exclusion the entry-name check cannot see
+ * through (`vendor -> node_modules` resolves into the hoisted tree).
+ */
+function isNodeModulesPath(resolved: string): boolean {
+  for (const segment of resolved.split("/")) {
+    if (segment === "node_modules") return true;
+  }
+  return false;
 }
 
 /** The final path segment of a joined child path. */
