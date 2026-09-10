@@ -748,6 +748,114 @@ describe("V7 — recovery, git-backed", () => {
       });
     },
   );
+
+  it(
+    "V7 · channel-transition window · the promote crash re-executes the uncompleted transition exactly once and a second replay classifies noop",
+    { timeout: 60_000 },
+    () => {
+      withTempRepo("v7-channel", (repo) => {
+        const state = openGitState(repo);
+        const stores = gitStores(repo);
+        const world = liveWorld();
+        const declaration = fullDeclaration();
+        // Build the promote-ready world: beta.1, beta.2 (the ladder), then
+        // rc.1 as the in-flight prerelease the promotion will consume.
+        runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+        runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
+        runGitRelease({ state, stores, world, lineId: "main", intents: [rc] });
+        const base: RunOptions = {
+          state,
+          stores,
+          world,
+          lineId: "main",
+          intents: [promote],
+          declarations: declaration,
+        };
+        // The promote crashes between the write-ahead `started` record and
+        // the application's execution of the planned moves (ADR-0012
+        // decision 3): the store still holds the pre-promotion targets.
+        const stopped = runGitRelease({ ...base, crashAfterStartOf: "channel-transition" }, false);
+        expect(stopped.stoppedAt).toBe("channel-transition");
+        // The write-ahead start is a durable git commit — a fresh ledger on
+        // the same repo reloads it and classifies identically.
+        expect(classifyResume(stopped.attempt, gitStores(repo).ledger)).toStrictEqual({
+          kind: "resume",
+          from: "channel-transition",
+        });
+        // The application never ran on the crashed attempt: no
+        // channel-transition record joins the persisted tail yet.
+        const beforeResume = gitStores(repo)
+          .ledger.tail(stopped.attempt.attemptId)
+          .filter((record) => record.kind === "channel-transition");
+        expect(beforeResume).toHaveLength(0);
+        // Resume over the SAME persisted repo: the application re-runs
+        // against the reloaded store, the moves apply cleanly against the
+        // pre-promotion targets (decision 3's E-01 re-execution).
+        const resumed = runGitRelease(base, false);
+        expect(resumed.stoppedAt).toBeNull();
+        // The channel store holds exactly the planned post-promotion
+        // targets; beta, rc, and lts stand at §3.1's seeds.
+        expect(state.binding.channels.read("stable")).toStrictEqual({
+          id: "stable",
+          target: { line: "main", version: "5.0.0" },
+        });
+        expect(state.binding.channels.read("next")).toStrictEqual({
+          id: "next",
+          target: { line: "main", version: "5.0.0" },
+        });
+        expect(state.binding.channels.read("beta")).toStrictEqual({
+          id: "beta",
+          target: { line: "main", version: "4.9.1" },
+        });
+        expect(state.binding.channels.read("rc")).toStrictEqual({
+          id: "rc",
+          target: { line: "main", version: "4.9.1" },
+        });
+        expect(state.binding.channels.read("lts")).toStrictEqual({
+          id: "lts",
+          target: { line: "1.9-lts", version: "1.9.1" },
+        });
+        // The tail carries exactly two channel-transition records from the
+        // resume's application — the E-01 re-execution landed once.
+        const channelRecords = gitStores(repo)
+          .ledger.tail(stopped.attempt.attemptId)
+          .flatMap((record) => (record.kind === "channel-transition" ? [record.record] : []));
+        expect(channelRecords).toHaveLength(2);
+        expect(channelRecords.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
+        for (const record of channelRecords) {
+          expect(record.from).toStrictEqual({ line: "main", version: "4.9.2" });
+          expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+        }
+        // A second replay of the application over the same reloaded store
+        // (the completed transition re-visited) classifies every move noop —
+        // the recorded fingerprint keys the moved state, never a silent
+        // second move (ADR-0012 decisions 3, 4, 5).
+        const replay = applyPlannedChannelTransitions({
+          attempt: resumed.attempt,
+          planLine: resumed.planLine,
+          claim: resumed.token,
+          channels: state.binding.channels,
+          ledger: gitStores(repo).ledger,
+        });
+        expect(replay.map((move) => move.outcome.kind)).toStrictEqual(["noop", "noop"]);
+        const replayedRecords = gitStores(repo)
+          .ledger.tail(stopped.attempt.attemptId)
+          .flatMap((record) => (record.kind === "channel-transition" ? [record.record] : []));
+        expect(replayedRecords).toHaveLength(4);
+        for (const record of replayedRecords.slice(2)) {
+          expect(record.from).toStrictEqual({ line: "main", version: "5.0.0" });
+          expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+          expect(record.contentFingerprint).toBe(
+            channelStateFingerprint({
+              id: record.channelId,
+              target: { line: "main", version: "5.0.0" },
+            }),
+          );
+        }
+        expect(completedKeys(resumed)).toStrictEqual(referenceKeys(declaration));
+      });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
