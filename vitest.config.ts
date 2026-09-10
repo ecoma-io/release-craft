@@ -45,6 +45,17 @@ export default defineConfig({
     // default even though nothing hangs. Give the real-disk suites room
     // instead of making a hang the only failure mode they can express.
     testTimeout: 20_000,
+    // Vitest's default worker count is `availableParallelism - 1`, which on a
+    // shared machine (a PR runner, a dev box running several suites, the
+    // pre-push hook running beside the editor) oversubscribes the CPUs the
+    // moment every worker's fixtures spawn their own subprocesses — git
+    // clones, `pnpm install` storms, node CLI runs — each of which blocks a
+    // core the scheduler cannot reclaim. Capping workers bounds the
+    // concurrency so a loaded run degrades linearly rather than failing
+    // every time-sensitive fixture at once (#154, #132); the 4×-parallel
+    // stress harness (scripts/test-stress.mjs) is the recorded evidence for
+    // this number on 16 logical CPUs.
+    maxWorkers: 4,
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
