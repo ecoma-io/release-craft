@@ -135,9 +135,24 @@ the chain — refused, an unexpected status, a body that is not a list, a
 lying row — carries `transport-failure` for the whole listing, and the
 comparison claims nothing over the pages already read. The `listed`
 outcome records the observation's row count (`listed`) and its
-completeness (`pagination: "complete" | "truncated"`); only the
-adapter's deliberate stop produces `truncated` (none is produced
-today), and a truncated listing is never a passed comparison.
+completeness (`pagination: "complete" | "truncated"`).
+Amendment for #179 (D53): `complete` is claimed from **evidence** the
+chain ended, never from a header's absence — the requested page size is
+the most any page returns, so a final page under it with no `next`
+declared is the end's only observable proof. A final page at full size
+with no `next` is ambiguous (the pagination reference: "if all results
+fit on a single page, the link header will be omitted" — byte-identical
+to a transport or proxy stripping the header), so it reads `truncated`:
+an honest partial observation that still claims the comparison its rows
+really earned, its `pagination` denying the clean-bill reading over the
+rows it never saw — the truncated listing is never a passed
+observation, and never a discarded one either. Two chain shapes have no
+honest end and fault the whole listing `transport-failure` — the
+fail-closed class, the loudest signal the no-throw law leaves: a `next`
+target the walk already requested (a cycle — the walk must never hang),
+and a declared `next` whose target is no requestable API-relative path
+(the header says more pages follow; a blind follow is the request-error
+shape).
 
 - `listed` — the observation is determinate: the comparison over that
   resource ran, and its divergences (and, for tags, its verified tags)
@@ -195,6 +210,15 @@ fixes nothing; `rate-limited` — the primary or the secondary limit,
 wait; `unobservable-remote` (issue #176) — the resource is invisible to
 this credential (a private or missing repository, a token without read
 scope), review the credential and the owner/repo.
+
+The no-throw law is enforced, not remembered (issue #179, D53): every
+`transport.request` call crosses one guarded boundary
+(`response.ts`'s `guardedRequest`) that converts a throwing transport
+into the status-0 response — a read's status 0 classifies
+`transport-failure` through the one table; a write whose response is
+lost mid-call (a throw is indistinguishable from a lost connection) is
+the `ambiguous` window — and conformance tests drive a hostile
+transport against every door.
 
 The classes were minted for the write units and the observation channel
 reuses them narrowed (issue #66): an observation never returns
@@ -402,8 +426,11 @@ global (invariant 6), so the derivation matches at most one claim.
   the binding's recorded state is reported as divergence, never silently
   resolved. (ADR-0010 decision 8)
 - **Failures are values.** Every remote operation returns a discriminated
-  union. No exception crosses the adapter's public surface.
-  (ADR-0010 decision 7)
+  union. No exception crosses the adapter's public surface — the law is
+  enforced at one guarded boundary around the injected transport, which
+  converts a throwing transport into the status-0 response, and pinned
+  by conformance tests that drive a hostile transport against the doors
+  (ADR-0010 decision 7; issue #179, D53).
 - **No ambient credentials.** Authentication is supplied at open and never
   refreshed. (ADR-0010 decision 2)
 - **No ambient HEAD or wall-clock.** The adapter reads its input from the
@@ -480,7 +507,9 @@ The phase's named scenarios:
     comparison, and the report claims nothing over the truncated surface.
     The `listed` outcome carries `listed` (the row count) and
     `pagination` (completeness); a truncated listing is never a passed
-    comparison.
+    comparison. (Amended by issue #179, D53: the completeness verdict
+    reads from evidence — the final page's size against the requested
+    one — and the chain faults are scenarios 22–23.)
 18. **Permission denial** (issue #178) — a 403 with a valid credential
     (the budget standing, no `Retry-After`) — the fine-grained-token
     "resource not accessible" answer, or the git path's "Permission to
@@ -508,3 +537,22 @@ The phase's named scenarios:
     wire, the benign race-loss) and its 409 are `refused("release-conflict")`
     with the provider's own words in the detail — never the detail-less
     retryable class; the idempotent re-run resolves a raced duplicate.
+22. **Completeness evidence** (issue #179, D53) — a listing whose walk
+    ends on a page at the requested full size with no `next` link reads
+    `pagination: "truncated"`: the header's absence is byte-identical
+    between the provider's end-of-chain and a transport or proxy
+    stripping the header, so `complete` is claimed only from a final
+    page **under** the requested size with no `next` declared. The
+    truncated observation claims the comparison its rows really earned
+    — the observed divergences and verified tags stand — and its label
+    denies the clean bill; a full page that _declares_ a `next` is
+    still followed, and the walk reads the final page only.
+23. **The chain's faults and the no-throw law** (issue #179, D53) — a
+    `next` chain that cycles (a target the walk already requested) and
+    a declared `next` whose target is no requestable API-relative path
+    (empty, whitespace/control characters, an absolute URL) fault the
+    whole listing `transport-failure` — loud, never a silent stop that
+    reads as the chain's end, never a hang, never a blind follow — and
+    every door returns its failure value when the transport throws: the
+    guarded boundary converts the escape into status 0 (a read:
+    `transport-failure`; the create: `ambiguous`).

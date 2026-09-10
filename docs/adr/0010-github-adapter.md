@@ -185,12 +185,24 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
      the permission denial, never an expired credential, and a
      repo-scoped listing's 404 is the unobservable remote (#176),
      never a retryable failure.
+     Amendment for #179 (D53): the law is enforced, not remembered —
+     every `transport.request` call crosses one guarded boundary
+     (`response.ts`'s `guardedRequest`) that converts a throwing
+     transport into the status-0 response, whose reading is the
+     existing classification (`transport-failure` on a read; §2.3's
+     `ambiguous` window on a write whose response is lost mid-call —
+     nothing the door can observe separates a thrown transport from a
+     lost connection), and a conformance suite drives a hostile
+     transport against every door to pin the no-escape shape.
 
-8. **Pre-existing remote state is discovered at open time and reconciled
-   with the binding's recorded state.** On `openGitHubAdapter`, the adapter
-   lists the remote's tags (via `git ls-remote` or the API) and GitHub
-   Releases (via the API), compares them against the binding's recorded
-   claim records and tag refs, and reports any divergence:
+8. **Pre-existing remote state is discovered through `reconcile()` and
+   reconciled with the binding's recorded state.** Through the
+   `reconcile()` door (the wording repaired from "at open time" by
+   #179/D53 — the factory opens the doors; nothing reconciles at open
+   time), the adapter lists the remote's tags (via `git ls-remote` or
+   the API) and GitHub Releases (via the API), compares them against
+   the binding's recorded claim records and tag refs, and reports any
+   divergence:
    - Tags the remote has but the binding has no record of → `unadopted`
      (the adapter does not import them as claims; they are noted for
      human review).
@@ -222,6 +234,24 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
      already read. The `listed` outcome records the observation's row
      count (`listed`) and completeness (`pagination: "complete" |
 "truncated"`); a truncated listing is never a passed comparison.
+     Amendment for #179 (D53): the walk's honesty is completed in both
+     directions. `complete` is claimed from **evidence** the chain
+     ended — the requested page size is the most any page returns, so a
+     final page under it with no `next` declared is the end's only
+     observable proof — never from the header's absence, which a
+     stripped `Link` header forges; the ambiguous case (a full-size
+     final page, no `next`) reads `pagination: "truncated"`, an honest
+     partial observation over the rows observed: the truncated listing
+     claims the comparison its rows really earned, never a passed
+     observation and never a discarded one (amending D32's
+     fail-closed reading, which discarded the observed rows' real
+     divergences and hid the ambiguity behind `transport-failure`;
+     D32's unusable-page rule is unchanged). A chain with no honest end
+     — a `next` target the walk already requested (a cycle), or a
+     declared next whose target is no requestable API-relative path —
+     faults the whole listing `transport-failure`: loud within the
+     no-throw law, never a hang, never a silent stop that reads as the
+     end, never a blind follow.
 
 9. **Rate-limit and provider-failure semantics are documented, not
    silently swallowed.** If a GitHub API call returns a rate-limit

@@ -120,12 +120,17 @@ export interface Divergence {
 }
 
 /** The completeness of a listing's observation over pagination (issue
- *  #68; D32): the contract binds the observation to the resource's full
- *  surface. `complete` — the walk followed the page chain to its end and
- *  the comparison ran over every row. `truncated` — the observation
- *  stopped before the surface was fully observed; only the adapter's
- *  deliberate stop (none produced today) may be `truncated`, and it
- *  claims no comparison. */
+ *  #68; D32; issue #179; D53): the contract binds the observation to the
+ *  resource's full surface, and the label is claimed from evidence,
+ *  never from a header's absence. `complete` — the walk followed the
+ *  page chain to a page that could not have a successor (fewer rows
+ *  than the requested page size) with no `next` declared on it, and the
+ *  comparison ran over every row. `truncated` — the chain ended on a
+ *  full-size page with no `next`: end-of-chain and a stripped `Link`
+ *  header are indistinguishable there, so the observation carries the
+ *  comparison its rows really earned (divergences and verified tags
+ *  over the rows observed are real) while the label denies the
+ *  clean-bill reading over the rows it never saw. */
 export type PaginationCompleteness = "complete" | "truncated";
 
 /** The tag listing's observation outcome (issue #66; contract §2.2): the

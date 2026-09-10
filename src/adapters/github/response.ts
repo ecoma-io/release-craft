@@ -12,7 +12,12 @@
  * git's sideband, not HTTP statuses.
  */
 
-import type { GitHubResponse, ReadRefusalReason } from "./adapter-types.js";
+import type {
+  GitHubRequestInit,
+  GitHubResponse,
+  GitHubTransport,
+  ReadRefusalReason,
+} from "./adapter-types.js";
 
 const headerValue = (
   headers: Readonly<Record<string, string>>,
@@ -181,24 +186,98 @@ export const readFailure = (response: GitHubResponse): ReadFailure => {
   return { kind: "transport-failure" };
 };
 
-/** The API-relative path of the `Link` header's `rel="next"` target, when
- *  one is declared (RFC 8288 §3.3). The pagination walk (issue #68; D32)
- *  follows `next` links across pages; any other relation is a header value,
- *  never a request. A header with no `next` link — or a malformed one —
- *  reads as the end of the listing, and the walk stops there. The relation
- *  may be written `rel="next"` (RFC 8288's value form) or `rel=next` (the
- *  unquoted legacy form); both are accepted. */
-export const nextLinkPath = (headers: Readonly<Record<string, string>>): string | undefined => {
+/** The one reading the pagination walk takes of a response's `Link`
+ *  header (issue #68; D32; issue #179; D53). The three are distinct on
+ *  purpose:
+ *
+ * - `absent` — no `rel="next"` is declared (no header, or other
+ *   relations only). This is the header's *claim* that the chain ended —
+ *   never by itself the walk's evidence of it; the listing's
+ *   completeness is decided by the final page's size against the
+ *   requested one (reconciliation.ts's walk).
+ * - `next` — a declared next whose target is a usable API-relative
+ *   path, handed to the walk for its follow-up request.
+ * - `malformed` — a declared next whose target conveys no requestable
+ *   page: an empty target (RFC 8288 §3.1 "Link Target": the link-value
+ *   conveys one target IRI inside the angle brackets — an empty pair
+ *   conveys none), or one that is no API-relative path (whitespace or
+ *   control characters, or an absolute URL — the transport contract's
+ *   "`path` is API-relative; the transport applies the credential and
+ *   the base URL", so a header written in the transport's own absolute
+ *   form belongs to the transport's side of that boundary, and a blind
+ *   follow is the request-error shape issue #179 refuses). A malformed
+ *   next is a *fault*, loudly reported by the walk — never a silent
+ *   stop that reads as the chain's end, and never a request the
+ *   transport never agreed to speak. */
+export type NextLink =
+  | { readonly kind: "absent" }
+  | { readonly kind: "next"; readonly path: string }
+  | { readonly kind: "malformed"; readonly target: string };
+
+/** The target as a usable API-relative request path, or undefined:
+ *  anchored at the API root, and free of the whitespace and control
+ *  characters that would corrupt the request. The characters are
+ *  screened by code point rather than by one regex so the control
+ *  range never appears as a pattern. */
+const asApiRelativePath = (target: string): string | undefined => {
+  if (!target.startsWith("/")) {
+    return undefined;
+  }
+  for (const character of target) {
+    const code = character.codePointAt(0) ?? 0;
+    if (/\s/u.test(character) || code <= 0x1f || code === 0x7f) {
+      return undefined;
+    }
+  }
+  return target;
+};
+
+/** The `Link` header's `rel="next"` link, parsed for the pagination
+ *  walk (RFC 8288 §3 "Link Serialisation in HTTP Headers": the field
+ *  serialises one or more links, each `"<" URI-Reference ">" *( OWS ";"
+ *  OWS link-param )`). The walk follows `next` links across pages; any
+ *  other relation is a header value, never a request — a header
+ *  carrying only `rel="first"`/`rel="last"` is the absent reading, not
+ *  a fault. The relation may be written `rel="next"` (the quoted form)
+ *  or `rel=next` (the token form — RFC 8288 §3: "recipients MUST be
+ *  able to parse both forms"); both are accepted. */
+export const nextLink = (headers: Readonly<Record<string, string>>): NextLink => {
   const link = headerValue(headers, "link");
   if (link === undefined) {
-    return undefined;
+    return { kind: "absent" };
   }
   for (const part of link.split(",")) {
     const trimmed = part.trim();
-    const match = /<([^>]+)>[^,]*\brel\s*=\s*"?next"?/i.exec(trimmed);
+    const match = /<([^>]*)>[^,]*\brel\s*=\s*"?next"?/i.exec(trimmed);
     if (match !== null) {
-      return match[1] ?? undefined;
+      const target = (match[1] ?? "").trim();
+      const path = asApiRelativePath(target);
+      return path === undefined ? { kind: "malformed", target } : { kind: "next", path };
     }
   }
-  return undefined;
+  return { kind: "absent" };
+};
+
+/** The transport's request, taken at the boundary the no-throw law
+ *  names (ADR-0010 decision 7; the Phase 9 contract §3's "Failures are
+ *  values"): the transport is caller-injected — the one component the
+ *  adapter does not own — so a transport that throws, however hostile
+ *  or broken, must never carry its exception past the adapter's doors.
+ *  The guard converts an escape into the transport's own "no
+ *  determinate response" shape (status 0), whose reading is the
+ *  callers' existing one: on a read, §2.3's `transport-failure` through
+ *  the one table; on a write whose response is lost mid-call, §2.3's
+ *  `ambiguous` window — the write may have landed unseen. Nothing the
+ *  door can observe separates a thrown transport from a lost
+ *  connection, so both read through status 0 (issue #179; D53). */
+export const guardedRequest = (
+  transport: GitHubTransport,
+  path: string,
+  init?: GitHubRequestInit,
+): GitHubResponse => {
+  try {
+    return transport.request(path, init);
+  } catch {
+    return { status: 0, headers: {}, body: "" };
+  }
 };

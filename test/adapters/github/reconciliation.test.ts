@@ -676,3 +676,268 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
     });
   });
 });
+
+describe("the walk's completeness evidence and its faults (§4 scenarios 22–23; issue #179, D53)", () => {
+  /** A page of `count` tag rows: row one is the recorded tag, the rest
+   *  are unadopted names at a deterministic target. */
+  const fullPage = (recordedTarget: string, count: number): unknown[] => [
+    tagRow("v1.2.3", recordedTarget),
+    ...Array.from({ length: count - 1 }, (_, i) =>
+      tagRow(`t${String(i).padStart(3, "0")}`, "a".repeat(40)),
+    ),
+  ];
+
+  it("R-22 — a final page at full size with no next link is truncated, never a clean complete (the stripped-header repro)", () => {
+    withReconcileRepo("truncated-final-page", (fixture) => {
+      // The defect's shape: a remote (or a transport or proxy between
+      // it and the adapter) whose page one holds the requested
+      // `per_page` rows and whose `Link` header never arrives. The
+      // header's absence is byte-identical to GitHub's own
+      // end-of-chain signal (the pagination reference: "if all results
+      // fit on a single page, the link header will be omitted"), so
+      // the walk can only claim completion from the page's own size —
+      // a full page is no such evidence.
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse(fullPage(fixture.recordedTarget, 100))
+          : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      if (report.tags.state !== "listed") {
+        throw new Error(`expected the tag listing to be listed, got ${report.tags.state}`);
+      }
+      expect(report.tags.pagination).toBe("truncated");
+      expect(report.tags.listed).toBe(100);
+      // The truncation is honest partial observation, not a discarded
+      // one: the rows actually observed carry their real comparison —
+      // the recorded tag is verified, the unadopted ones reported —
+      // and the `pagination` field is what denies the clean-bill
+      // reading over the unobserved remainder.
+      expect(report.tags.verifiedTags).toEqual(["v1.2.3"]);
+      expect(report.tags.divergences).toHaveLength(99);
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+      });
+    });
+  });
+
+  it("R-22 — a full page that declares a next is still followed; truncation reads the final page only", () => {
+    withReconcileRepo("full-page-with-next", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? call.path.includes("page=2")
+            ? listResponse([tagRow("v9.9.9", "cccccccccccccccccccccccccccccccccccccccc")])
+            : rawResponse(
+                200,
+                {
+                  link: `</repos/ecoma-io/release-craft/tags?per_page=100&page=2>; rel="next"`,
+                },
+                JSON.stringify(fullPage(fixture.recordedTarget, 100)),
+              )
+          : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      // Page one came back at full size, but it *declared* a next — the
+      // declaration, not the size, sends the walk on; the short final
+      // page is the end's evidence and the listing is complete. The
+      // size never decides alone: only the walk's final page does.
+      if (report.tags.state !== "listed") {
+        throw new Error(`expected the tag listing to be listed, got ${report.tags.state}`);
+      }
+      expect(report.tags.pagination).toBe("complete");
+      expect(report.tags.listed).toBe(101);
+      expect(report.tags.verifiedTags).toEqual(["v1.2.3"]);
+      expect(report.tags.divergences).toHaveLength(100);
+      expect(report.tags.divergences).toContainEqual({
+        kind: "unadopted-tag",
+        tag: "v9.9.9",
+        detail: expect.any(String) as string,
+      });
+    });
+  });
+
+  it("R-22 — a releases listing ending on a full page with no next link is truncated", () => {
+    withReconcileRepo("truncated-releases", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([tagRow("v1.2.3", fixture.recordedTarget)])
+          : listResponse(
+              Array.from({ length: 100 }, (_, i) => releaseRow(`r${String(i).padStart(3, "0")}`)),
+            ),
+      );
+      const report = fixture.reconcile(transport);
+      if (report.releases.state !== "listed") {
+        throw new Error(`expected the release listing to be listed, got ${report.releases.state}`);
+      }
+      expect(report.releases.pagination).toBe("truncated");
+      expect(report.releases.listed).toBe(100);
+      // The observed rows' divergences are claimed — truncation is an
+      // honest partial observation, never a discarded one.
+      expect(report.releases.divergences).toHaveLength(100);
+      expect(report.releases.divergences).toContainEqual({
+        kind: "unadopted-release",
+        tag: "r000",
+        detail: expect.any(String) as string,
+      });
+      expect(report.tags).toEqual({
+        state: "listed",
+        listed: 1,
+        pagination: "complete",
+        divergences: [],
+        verifiedTags: ["v1.2.3"],
+      });
+    });
+  });
+
+  it("R-23 — a next chain that cycles faults the listing loudly, never hangs and never reads as the end", () => {
+    withReconcileRepo("cyclic-chain", (fixture) => {
+      // Page one's next points at page two, and page two's next points
+      // at page two again: a chain with no honest end. The fake is
+      // bounded — from the third tags request it throws — so the
+      // pre-fix walk is observable safely: without the seen-path guard
+      // the walk re-requests page two forever, and the bound's throw
+      // (not any walk decision) is what ends the test — the throw
+      // escaped `reconcile()` itself, the no-throw-law violation the
+      // conformance pin below also carries. Post-fix, the seen-path
+      // set faults the listing on the revisit, the bound is never
+      // reached, and no wall-clock or timeout participates: the
+      // request count is the evidence.
+      let tagCalls = 0;
+      const transport: GitHubTransport = {
+        request(path) {
+          if (!path.includes("/tags")) {
+            return listResponse([]);
+          }
+          tagCalls += 1;
+          if (tagCalls > 2) {
+            throw new Error("the walk revisited page two — the cycle guard did not fault it");
+          }
+          return rawResponse(
+            200,
+            { link: `</repos/ecoma-io/release-craft/tags?page=2>; rel="next"` },
+            JSON.stringify(
+              path.includes("page=2")
+                ? [tagRow("v9.9.9", "dddddddddddddddddddddddddddddddddddddddd")]
+                : [tagRow("v1.2.3", fixture.recordedTarget)],
+            ),
+          );
+        },
+      };
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(tagCalls).toBe(2);
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+      });
+    });
+  });
+
+  it("R-23 — a declared next whose target conveys no page faults the listing, never a silent end", () => {
+    withReconcileRepo("empty-next-target", (fixture) => {
+      const { transport, calls } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? rawResponse(
+              200,
+              // The header *declares* a next link, but RFC 8288 §3.1's
+              // target IRI is what the angle brackets convey — an empty
+              // pair conveys no page. Reading the declaration as the
+              // chain's end is the silent stop the walk refuses.
+              { link: '<>; rel="next"' },
+              JSON.stringify([tagRow("v1.2.3", fixture.recordedTarget)]),
+            )
+          : listResponse([]),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      // The follow-up request never happens; the sibling listing's own
+      // first page still runs (both listings are always attempted).
+      expect(calls.map((call) => call.path)).toEqual([
+        "/repos/ecoma-io/release-craft/tags?per_page=100",
+        "/repos/ecoma-io/release-craft/releases?per_page=100",
+      ]);
+    });
+  });
+
+  it("R-23 — a declared next that is no API-relative path faults the listing, never a blind follow", () => {
+    withReconcileRepo("non-path-next", (fixture) => {
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.path.includes("/releases")) {
+          return listResponse([]);
+        }
+        if (calls.length > 1) {
+          // The walk's paths are API-relative — the transport
+          // contract's own unit ("the transport applies the credential
+          // and the base URL"). An absolute URL in the header belongs
+          // to the transport's side of that boundary; following it
+          // blind is the request-error shape issue #179 refuses.
+          throw new Error(`the walk followed the unusable target: ${call.path}`);
+        }
+        return rawResponse(
+          200,
+          {
+            link: `<https://api.github.com/repos/ecoma-io/release-craft/tags?page=2>; rel="next"`,
+          },
+          JSON.stringify([tagRow("v1.2.3", fixture.recordedTarget)]),
+        );
+      });
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      // The absolute URL was never requested — the walk stopped at the
+      // fault; the sibling listing's own first page still runs.
+      expect(calls.map((call) => call.path)).toEqual([
+        "/repos/ecoma-io/release-craft/tags?per_page=100",
+        "/repos/ecoma-io/release-craft/releases?per_page=100",
+      ]);
+    });
+  });
+
+  it("R-23 — a hostile transport that throws is a returned failure on every listing, never an escape (ADR-0010 decision 7)", () => {
+    withReconcileRepo("hostile-transport", (fixture) => {
+      const transport: GitHubTransport = {
+        request() {
+          throw new Error("hostile transport");
+        },
+      };
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(report.releases).toEqual({ state: "transport-failure" });
+    });
+  });
+
+  it("R-23 — a transport that throws mid-chain lands the listing in the fault class, not an escape", () => {
+    withReconcileRepo("mid-chain-throw", (fixture) => {
+      let tagsRequests = 0;
+      const transport: GitHubTransport = {
+        request(path) {
+          if (!path.includes("/tags")) {
+            return listResponse([]);
+          }
+          tagsRequests += 1;
+          if (path.includes("page=2")) {
+            throw new Error("hostile transport on the follow-up page");
+          }
+          return rawResponse(
+            200,
+            { link: `</repos/ecoma-io/release-craft/tags?per_page=100&page=2>; rel="next"` },
+            JSON.stringify([tagRow("v1.2.3", fixture.recordedTarget)]),
+          );
+        },
+      };
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(tagsRequests).toBe(2);
+      expect(report.releases).toEqual({
+        state: "listed",
+        listed: 0,
+        pagination: "complete",
+        divergences: [],
+      });
+    });
+  });
+});

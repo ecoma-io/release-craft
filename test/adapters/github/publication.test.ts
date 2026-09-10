@@ -685,3 +685,76 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     });
   });
 });
+
+describe("the transport contract's no-throw law, enforced at the boundary (§2.3; issue #179, D53)", () => {
+  /** A transport that throws instead of answering — the hostile shape
+   *  the law is about: the injected transport is the one component the
+   *  adapter does not own, and its exception must never cross the
+   *  doors. */
+  const hostileTransport = (
+    on: (call: Call) => boolean,
+  ): { transport: GitHubTransport; calls: Call[] } => {
+    const calls: Call[] = [];
+    return {
+      calls,
+      transport: {
+        request(path, init) {
+          const call: Call = init === undefined ? { path } : { path, init };
+          calls.push(call);
+          if (on(call)) {
+            throw new Error("hostile transport");
+          }
+          return notFoundResponse();
+        },
+      },
+    };
+  };
+
+  it("a throw on the idempotency read is a returned transport failure, never an escape", () => {
+    withPublicationRepo("hostile-read", (fixture) => {
+      seed(fixture);
+      const { transport } = hostileTransport(() => true);
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+    });
+  });
+
+  it("a throw on the create is ambiguous — a response lost mid-write may have landed", () => {
+    withPublicationRepo("hostile-create", (fixture) => {
+      seed(fixture);
+      // The idempotency read answers 404 (nothing to match), then the
+      // create's transport throws. A throw is indistinguishable from a
+      // lost connection: the write may have landed unseen, so the
+      // outcome is §2.3's ambiguous window, never a determinate
+      // failure and never an escape.
+      const { transport, calls } = hostileTransport((call) => call.init?.method === "POST");
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({ kind: "ambiguous" });
+      expect(calls).toHaveLength(2);
+    });
+  });
+
+  it("a throw on the verification read is a returned transport failure, never an escape", () => {
+    withPublicationRepo("hostile-verify", (fixture) => {
+      seed(fixture);
+      const { transport } = hostileTransport(() => true);
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+    });
+  });
+
+  it("a throw on the repository probe is a returned failure, never a determinate absence", () => {
+    withPublicationRepo("hostile-probe", (fixture) => {
+      seed(fixture);
+      // The release read answers 404 (the fixture's default), which
+      // sends the absence verdict to the repository probe — and the
+      // probe's transport throws. Absence is claimed only over a
+      // repository the adapter observably reached, so a thrown probe
+      // is the unobserved class, never `absent`.
+      const { transport, calls } = hostileTransport((call) => call.path === REPO_PATH);
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+      expect(calls.map((call) => call.path)).toEqual([RELEASE_PATH, REPO_PATH]);
+    });
+  });
+});
