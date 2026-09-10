@@ -187,9 +187,18 @@ record and the advancing completion, in ADR-0012 decision 3's order:
 ```text
 the walk, at the channel-transition stage:
   ledger.appendStart(attempt, "channel-transition", attribution, …)  // durable first
-  for each planned move: channels.applyTransition(move)              // the wired store's CAS,
-                                                                     // under the held claim
-  ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the completion records
+  ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the claim guard — only an
+                                                                     // advance or noop proceeds; a
+                                                                     // claim-lost (E-07) or any
+                                                                     // other verdict stops the walk
+                                                                     // before a store CAS runs
+  for each planned move: channels.applyTransition(move)              // the wired store's CAS — each
+                                                                     // move record carries the claim
+                                                                     // verdict a check actually
+                                                                     // performed; the completion
+                                                                     // record appends after every
+                                                                     // move (started < moves <
+                                                                     // completed)
 ```
 
 - The kernel names the step; the boundary executes it. The kernel

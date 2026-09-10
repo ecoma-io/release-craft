@@ -9,8 +9,17 @@
  *
  * ```text
  * ledger.appendStart(attempt, "channel-transition", attribution, …)  // the walk, durable first
- * for each planned move: channels.applyTransition(move)              // here — the store's CAS
- * ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the walk, the completion
+ * ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the walk, the claim guard —
+ *                                                                    // only an advance or noop
+ *                                                                    // proceeds; any other verdict
+ *                                                                    // stops the walk before a
+ *                                                                    // store CAS runs
+ * for each planned move: channels.applyTransition(move)              // here, on that verdict —
+ *                                                                    // the store's CAS, each record
+ *                                                                    // carrying the claim verdict a
+ *                                                                    // check actually performed; the
+ *                                                                    // completion appends after the
+ *                                                                    // moves (decision 3)
  * ```
  *
  * The move assumes the prior target the store's own read observes — never
