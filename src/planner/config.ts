@@ -116,7 +116,11 @@ function checkPolicy(policy: unknown, add: (field: string, problem: string) => v
   if (!("bumpMappingId" in policy)) add("policy.bumpMappingId", "missing");
   else if (policy.bumpMappingId !== "default")
     add("policy.bumpMappingId", `must be "default" (got ${JSON.stringify(policy.bumpMappingId)})`);
-  else if (!isArray(policy.prereleaseLadder) || policy.prereleaseLadder.length === 0)
+
+  // Independent of bumpMappingId (mirrors input.ts checkPolicy §2.8): the
+  // ladder is checked on its own so a malformed or missing ladder is
+  // reported even when the mapping id is not "default" — one round-trip.
+  if (!isArray(policy.prereleaseLadder) || policy.prereleaseLadder.length === 0)
     add("policy.prereleaseLadder", "must be a non-empty array of strings");
   else {
     for (const rung of policy.prereleaseLadder) {
@@ -294,9 +298,12 @@ function checkLines(lines: unknown, add: (field: string, problem: string) => voi
       }
     }
 
-    // publishes: dangling ref check is deferred to parseManifest step 5,
-    // where the full declared component set is known (checkLines receives
-    // no component names — the map is parsed after the lines).
+    // publishes — optional; when present must be a non-empty component
+    // name. The dangling reference check is deferred to parseManifest
+    // step 5, where the full declared component set is known (checkLines
+    // receives no component names — the map is parsed after the lines).
+    if ("publishes" in line && !isNonEmptyStr(line.publishes))
+      add(`${pfx}.publishes`, "must be a non-empty component name");
 
     // refuse unknown line keys (closed schema)
     const knownLineKeys = new Set([

@@ -581,6 +581,21 @@ describe("refuses malformed policy", () => {
     expect(fieldsOf(error)).toContain(field);
   });
 
+  it("a malformed prereleaseLadder is reported alongside a non-default bumpMappingId", () => {
+    const doc = {
+      ...baseManifestDoc(),
+      policy: {
+        ...basePolicyDoc(),
+        bumpMappingId: "unknown",
+        prereleaseLadder: wrong(42),
+      },
+    };
+    const error = reject(doc);
+    // One round-trip: the ladder defect must not be hidden behind the
+    // bumpMappingId defect — both surfaces together, in declaration order.
+    expect(fieldsOf(error)).toStrictEqual(["policy.bumpMappingId", "policy.prereleaseLadder"]);
+  });
+
   it("rejects tagFormat without {prerelease} token", () => {
     const doc = {
       ...baseManifestDoc(),
@@ -781,6 +796,43 @@ describe("refuses malformed lines", () => {
     };
     const error = reject(doc);
     expect(fieldsOf(error)).toContain("lines[0].withhold[0]");
+  });
+
+  it.each([
+    { label: "number 42", publishes: wrong(42) },
+    { label: "empty string", publishes: "" },
+    { label: "null", publishes: wrong(null) },
+    { label: "array", publishes: wrong(["lib-a"]) },
+  ])("rejects a non-string publishes ($label)", ({ publishes }) => {
+    const doc = {
+      ...baseManifestDoc(),
+      lines: [
+        {
+          id: "main",
+          feedRef: "refs/heads/main",
+          lifecycle: "active",
+          publishes,
+        },
+      ],
+    };
+    const error = reject(doc);
+    expect(fieldsOf(error)).toContain("lines[0].publishes");
+  });
+
+  it("still accepts a non-empty publishes string naming a declared component", () => {
+    const doc = {
+      ...baseManifestDoc(),
+      lines: [
+        {
+          id: "main",
+          feedRef: "refs/heads/main",
+          lifecycle: "active",
+          publishes: "lib-a",
+        },
+      ],
+    };
+    const declared = parseManifest(doc);
+    expect(declared.lines[0]?.publishes).toBe("lib-a");
   });
 });
 
@@ -1065,5 +1117,22 @@ describe("multi-violation document surfaces all violations in field order", () =
     expect(fields).toContain("policy.prereleaseSeed");
     expect(fields).toContain("lines");
     expect(fields.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("a non-string publishes surfaces alongside a line defect in one throw", () => {
+    const doc = {
+      ...baseManifestDoc(),
+      lines: [
+        {
+          id: "main",
+          feedRef: "refs/heads/main",
+          lifecycle: "active",
+          withhold: [{ scope: "", reason: "x" }],
+          publishes: wrong(42),
+        },
+      ],
+    };
+    const error = reject(doc);
+    expect(fieldsOf(error)).toStrictEqual(["lines[0].withhold[0].scope", "lines[0].publishes"]);
   });
 });
