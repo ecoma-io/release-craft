@@ -300,7 +300,7 @@ record → its `contentFingerprint` → `content.file(fingerprint,
 half.
 
 The tag→attempt linkage is nowhere recorded; it is derived from two
-recorded facts — the claim records (`refs/ecoma/claims/*`, D24's
+recorded facts — the claim records (`refs/release-craft/claims/*`, D24's
 canonical blobs, read through `content.claims` — the per-line
 registers of ADR-0011) and the mint door's own
 naming derivation (the door mints at the name the claim's scope derives;

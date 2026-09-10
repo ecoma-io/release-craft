@@ -83,7 +83,7 @@ const recordedTos = (tail: readonly LedgerRecord[], stepKey: string): readonly s
 /** The plan's ordinal counter bytes — the derived-ordinal growth made
  * legible (the register has no read door; its ref content is the record). */
 const ordinalCounter = (git: (args: readonly string[]) => string): { nextOrdinal: number } => {
-  const ref = git(["for-each-ref", "--format=%(refname)", "refs/ecoma/register/"])
+  const ref = git(["for-each-ref", "--format=%(refname)", "refs/release-craft/register/"])
     .split("\n")
     .filter((line) => line.length > 0)[0];
   if (ref === undefined) {

@@ -803,7 +803,7 @@ export interface ChannelState {
  * executes the recorded plan's moves through this store. The reference
  * implementation is an in-memory value (channel-store-memory.ts); the
  * physical half is the Phase 8 adapter's binding (the git channel store,
- * `refs/ecoma/channels/<sha256 of the channel id>`). */
+ * `refs/release-craft/channels/<sha256 of the channel id>`). */
 export interface ChannelStore {
   /** The channel's current state — `target` is `null` for the hidden
    *  state, including a channel the store holds no record of. */

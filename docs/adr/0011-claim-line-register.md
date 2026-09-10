@@ -2,7 +2,7 @@
 id: 0011-claim-line-register
 status: proposed
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-10
 ---
 
 # ADR-0011: The per-line claim register — atomic cross-scope exclusion
@@ -34,8 +34,10 @@ nothing less.
 1. **The binding's claim store holds one register ref per release
    line, and every mutation is a compare-and-set of the whole
    register.** The register ref lives under the same claim namespace —
-   `refs/ecoma/claims/<sha256(lineId)>`, the digest over the lineId's
-   UTF-8 bytes — and its tip commit's blob is
+   `refs/release-craft/claims/<sha256(lineId)>`, the digest over the lineId's
+   UTF-8 bytes (revised in #133 to the product-neutral family
+   `refs/release-craft/`; the mapping's shape is unchanged, invariant 2.12) —
+   and its tip commit's blob is
    the line's claim set in canonical form:
    `{"claims":[<claim record>…]}`, the records sorted by their scope's
    canonical JSON (a total order; scopes are unique within a register —
@@ -151,11 +153,12 @@ nothing less.
 
 ### Rejected alternatives
 
-- **Rejected — the issue's lease lock** (`refs/ecoma/locks/<lineId>`,
-  timestamp staleness): banned clock, stale-owner cleanup, and it does
-  not even remove the per-scope CAS — it adds a second coordination
-  primitive beside it, each with its own failure window (the lock's
-  staleness window around the CAS's exclusion window).
+- **Rejected — the issue's lease lock** (`refs/ecoma/locks/<lineId>` —
+  recorded under the pre-#133 namespace family, kept verbatim as the
+  rejection's history; timestamp staleness): banned clock, stale-owner
+  cleanup, and it does not even remove the per-scope CAS — it adds a
+  second coordination primitive beside it, each with its own failure
+  window (the lock's staleness window around the CAS's exclusion window).
 - **Rejected — fencing epochs on the scope refs**: a monotonically
   issued epoch would order writers across the scan/create gap, but the
   epoch counter needs its own atomic, durable allocation — the same

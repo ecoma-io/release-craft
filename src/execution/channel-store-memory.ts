@@ -7,7 +7,7 @@
  * outcome, ADR-0012 decision 7) through an injectable fault — so a test
  * pins every row of the CAS semantics table without interleaving or
  * transport chaos. The physical primitive it abstracts (the recorded
- * compare-and-set under `refs/ecoma/channels/`) is the Phase 8 adapter's
+ * compare-and-set under `refs/release-craft/channels/`) is the Phase 8 adapter's
  * git channel store.
  */
 

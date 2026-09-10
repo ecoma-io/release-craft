@@ -3,7 +3,7 @@
  * durable `ExecutionLedger`, second implementation behind the same doors as
  * the reference `MemoryLedger`, invisible through the port. The mapping the
  * binding owns and the tests pin: one ref per attempt —
- * `refs/ecoma/ledger/<attemptId>` — whose first-parent history is the
+ * `refs/release-craft/ledger/<attemptId>` — whose first-parent history is the
  * attempt's record stream, one commit per appended record, the record's
  * canonical JSON as the blob (`record`). The reference discipline carries
  * over unchanged: the plan record is the attempt's first, written once, and
@@ -11,7 +11,7 @@
  * because the reference ledger's plan record is exactly a `tail` member
  * (`tail(attemptId)` includes it; `planFingerprint` reads it there). The
  * externally observed satisfactions (`noteExternal`, E-03) persist on their
- * own per-attempt stream, `refs/ecoma/ledger-external/<attemptId>`, one
+ * own per-attempt stream, `refs/release-craft/ledger-external/<attemptId>`, one
  * commit per note, last note per step key winning — the reload path must
  * reproduce them, since `classifyResume`'s `satisfied-externally` verdict
  * reads them through the step view (contract §2.2.3: reloaded tail
@@ -60,11 +60,11 @@ export const encodeRefComponent = (value: string): string =>
 /** The ref holding an attempt's record stream — one commit per record, the
  * record's canonical JSON as the blob (contract §2.2's reference mapping). */
 export const ledgerRef = (attemptId: string): string =>
-  `refs/ecoma/ledger/${encodeRefComponent(attemptId)}`;
+  `refs/release-craft/ledger/${encodeRefComponent(attemptId)}`;
 
 /** The ref holding an attempt's external-satisfaction stream (E-03). */
 export const externalRef = (attemptId: string): string =>
-  `refs/ecoma/ledger-external/${encodeRefComponent(attemptId)}`;
+  `refs/release-craft/ledger-external/${encodeRefComponent(attemptId)}`;
 
 /** One persisted external-satisfaction note (E-03): the keyed observation
  * minus the attempt id, which the stream's ref already names. */

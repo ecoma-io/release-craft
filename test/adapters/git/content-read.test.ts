@@ -68,7 +68,7 @@ describe("the content read seam (§2.8; D27)", () => {
       expect(records[0]?.scope).toEqual(claim.scope);
       expect(records[0]?.token).toBe(claim.token);
       expect(records[0]?.holder).toBe(ATTEMPT);
-      expect(binding.content.claims("refs/ecoma/claims/unrecorded")).toEqual([]);
+      expect(binding.content.claims("refs/release-craft/claims/unrecorded")).toEqual([]);
     });
   });
 

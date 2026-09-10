@@ -228,7 +228,7 @@ export const claimView = (state: GitState, attemptId: string): ClaimView => {
  * decision 3's read exception the tag door and these reads share). */
 export const allClaimRecordsOf = (state: GitState): readonly ClaimRecordOf[] => {
   const { git } = state;
-  return git(["for-each-ref", "--format=%(refname)", "refs/ecoma/claims/"])
+  return git(["for-each-ref", "--format=%(refname)", "refs/release-craft/claims/"])
     .split("\n")
     .filter((line) => line.length > 0)
     .flatMap((ref) => readClaimsAt(state, ref) ?? []);

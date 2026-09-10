@@ -122,7 +122,7 @@ mint(tag, target) — the binding's tag door, not the port —
 
   Amendment proposed in #49 (ADR-0011; the implementation PR follows):
   the store holds one register ref per release line under the claim
-  namespace — `refs/ecoma/claims/<sha256(lineId)>` — its blob the
+  namespace — `refs/release-craft/claims/<sha256(lineId)>` — its blob the
   line's claim set in canonical form (`{"claims":[…]}`, sorted by the
   scope's canonical JSON), and every mutation is a compare-and-set of
   the whole set against the observed tip. The exclusion predicate and
@@ -243,7 +243,7 @@ tagNaming: {
   and the register ordinal.
 
 The channel store (ADR-0012 decision 6; D37): one ref per channel under
-`refs/ecoma/channels/<sha256 of the channel id's UTF-8 bytes>` — the
+`refs/release-craft/channels/<sha256 of the channel id's UTF-8 bytes>` — the
 claim register's own mapping, because channel ids are opaque strings a
 refname cannot carry verbatim — whose tip commit's blob is the
 canonical envelope `{"channel":{"id":…,"target":{…}|null}}`; a foreign

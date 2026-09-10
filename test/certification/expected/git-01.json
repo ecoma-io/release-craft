@@ -1,6 +1,6 @@
 {
   "cell": "git-01",
-  "projection": "phase 14 §4.3 v1 — the repository path becomes REPO in plain and JSON-escaped text spellings; a JSON string whose parsed value is exactly 64 lowercase hex characters (the claim token's whole shape) becomes CLAIM. Whole-value, never substring: plan_sha256/attempt_sha256 values and refs/ecoma/channels names carry 64-hex substrings inside longer strings and stay verbatim.",
+  "projection": "phase 14 §4.3 v1 — the repository path becomes REPO in plain and JSON-escaped text spellings; a JSON string whose parsed value is exactly 64 lowercase hex characters (the claim token's whole shape) becomes CLAIM. Whole-value, never substring: plan_sha256/attempt_sha256 values and refs/release-craft/channels names carry 64-hex substrings inside longer strings and stay verbatim.",
   "scenarios": [
     {
       "label": "promote (the process envelope)",

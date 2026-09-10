@@ -2,7 +2,7 @@
 id: 0012-channel-transition
 status: proposed
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-10
 ---
 
 # ADR-0012: The channel-transition door — one explicit, durable stage for moving channel pointers
@@ -121,10 +121,12 @@ with a timeline (one release, many channels, over time).
    compare-and-set over the channel's recorded prior target. The
    channel's persisted state is the serialized `Channel` value (id +
    line + version, or a hidden sentinel) under a channel namespace
-   (`refs/ecoma/channels/<id>`), readable without ambient state, never
-   guessed from the plan. The kernel does not consume the channel store
-   directly — it stays domain-neutral (invariant 2.1); the application
-   layer wires the `channel-transition` stage to the channel store.
+   (`refs/release-craft/channels/<id>`; revised in #133 to the
+   product-neutral family, invariant 2.12 — the mapping's shape is
+   unchanged), readable without ambient state, never guessed from the
+   plan. The kernel does not consume the channel store directly — it stays
+   domain-neutral (invariant 2.1); the application layer wires the
+   `channel-transition` stage to the channel store.
 
 7. **Ambiguity fails closed.** If the channel store cannot determine
    whether a move landed (a transport-level failure on the backing
