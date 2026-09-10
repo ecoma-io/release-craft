@@ -541,7 +541,8 @@ row → 10.
   configuration.
 - **The one environment the process touches is the binding's hermetic
   floor.** The git runner spawns on `process.env` minus the leaked
-  repository context (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_TRACE*`), plus
+  repository context (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_NAMESPACE`,
+  `GIT_TRACE*`, …), plus
   `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
   `GIT_TERMINAL_PROMPT=0`, and a baked deterministic commit identity —
   verified: `hermeticGitEnv()` in `src/adapters/git/git-run.ts`. The CLI
@@ -576,8 +577,20 @@ row → 10.
   declarations the engine's contract provides for.
 - **The claims are the concurrency control** (invariant 2.7): two CLI
   processes over one repository are two callers of one engine law — the
-  claim store arbitrates, the attempt store gates nobody, and the CLI adds
-  no mutex, no queue, no advisory locking of its own.
+  claim store's CAS is the only arbitration, met across processes today
+  only by a fresh run's fresh ordinal meeting a recorded claim (phase 11
+  §2.7's residuals), and the CLI adds no mutex, no queue, no advisory
+  locking of its own. The arbitration the claim store provides extends
+  exactly one shared ref space: it is enforced by compare-and-set over
+  the repository's own `refs/release-craft/*`, so the "one repository"
+  in this law is one checkout's ref space, and two processes in two
+  different checkouts of the same repository each hold their own (#182)
+  — both acquire the same line, both mint locally, and the divergence
+  first surfaces at the consumer's push as a non-fast-forward rejection,
+  a git refusal outside the engine's verdict vocabulary. Serializing
+  across checkouts is a declared precondition of the caller (phase 13
+  §2.9 names the Action's posture), not a mechanism this surface
+  provides.
 - **No retry policy of its own.** E-08's bounded sequence retry is the
   kernel's clause driven by the boundary (phase 11 §2.5 step 3); the CLI
   neither retries a door nor loops a command. A script that wants retries

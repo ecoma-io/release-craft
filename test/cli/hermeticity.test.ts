@@ -11,9 +11,10 @@
  * scanner that stops matching anything cannot pass silently.
  *
  * Behaviorally: a hostile environment — `GIT_DIR`, `GIT_WORK_TREE`,
- * `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_COUNT`, `GIT_TRACE`, a non-C locale —
- * must not leak past the binding's floor: the git assembly still plans and
- * publishes the same tag with clean stderr. And an actor-shaped ambient
+ * `GIT_NAMESPACE`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_COUNT`, `GIT_TRACE`,
+ * a non-C locale — must not leak past the binding's floor: the git
+ * assembly still plans and publishes the same tag with clean stderr.
+ * And an actor-shaped ambient
  * value (`RELEASE_CRAFT_ACTOR`) with no `--actor` is a usage fault: an
  * identity is declared in argv, never inferred from the environment (§2.2).
  */
@@ -97,6 +98,7 @@ describe("§4 — hostile environment must not leak past the floor (behavioral)"
   const HOSTILE: NodeJS.ProcessEnv = {
     GIT_DIR: "/nonexistent/repository.git",
     GIT_WORK_TREE: "/nonexistent/worktree",
+    GIT_NAMESPACE: "hostile-namespace",
     GIT_CONFIG_GLOBAL: "/nonexistent/gitconfig",
     GIT_CONFIG_COUNT: "3",
     GIT_TRACE: "1",

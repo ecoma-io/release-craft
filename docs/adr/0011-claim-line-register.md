@@ -72,7 +72,20 @@ nothing less.
    a concurrent winner and simply retries from the new
    tip. Cross-line concurrency touches different refs and needs no
    coordination — the predicate it would have to enforce does not
-   exist.
+   exist. The model's "one repository" is the guarantee's whole reach:
+   the register's exclusion is one shared ref space — compare-and-set
+   over the one repository's own `refs/release-craft/claims/*` — and it
+   extends exactly that far (#182). Two runs of the same line in two
+   different checkouts of one repository do not share local claim refs
+   (a standard clone fetches only `refs/heads/*` and `refs/tags/*`; the
+   adapter never fetches remote claim state — ADR-0010 decision 3), so
+   each acquires in its own ref space, both mint locally, and the
+   divergence first surfaces at the consumer's push — a non-fast-forward
+   rejection, outside the engine's verdict vocabulary. Serializing across
+   checkouts is a declared precondition of every surface above the
+   binding (the CLI's law, phase 12 §5; the Action's posture, phase 13
+   §2.9), not a mechanism the register provides or ever proposes to
+   provide.
 
 3. **Reads narrow to the line, with three named exceptions.** `acquire`
    reads exactly one ref (the
@@ -126,6 +139,22 @@ nothing less.
    re-evaluates exactly as `acquire` does, so the port's release — like
    the in-memory store's — cannot surface a lost race as an error;
    sustained same-line contention costs retries, not failures.
+   Amendment landed in #231 (issue #194): the release half of that
+   sentence is engine-unreachable on today's main. The token is minted
+   at `acquire`
+   and the acquiring process is its only carrier — no engine code path
+   calls `claims.release` (the binding's passthrough is the port's only
+   caller in `src/`), and a fresh process cannot name the token, so
+   "released by token" never fires after process death. Cross-process
+   recovery remains unsupported: a restarted process is a fresh attempt
+   id (the durable register's ordinal), and the same-scope adjudication
+   denies it as a non-holder of the dead holder's still-recorded claim —
+   a permanent denial for a stable-version record (the stable-scope dead
+   lock, E-07) and a `holderSequence+1` success that strands the dead
+   attempt's tail for a prerelease sequence (phase 11 contract §2.7's
+   accepted residuals). The durable plan-keyed attempt lookup and the
+   holder policy that would make a takeover honest are tracked as #227,
+   not provided by the register.
 
 7. **Denials match the in-memory store exactly (issue #69, folded
    here).** An exclusion-path denial carries no `holderSequence` — the
@@ -198,7 +227,12 @@ nothing less.
   register at a
   consistent tip on either side of every CAS. The #69 pins hold the
   denial shapes. The empty-register, foreign-blob, and non-canonical-form
-  pins hold decision 4 and 5's postures.
+  pins hold decision 4 and 5's postures. The decision 2 scope boundary
+  (#182) is pinned as a negative capability test: two clones of one
+  repository, the same line's claim acquired in each — both acquire,
+  each register lists only its own record, neither token verifies in the
+  other's ref space, and the two clones hold the same register ref name
+  at disjoint tips under a heads-only clone refspec.
 - **Recorded state grows with claim churn.** A register mutation
   appends one full-set commit, so every accept and release on a line
   adds a commit where the per-scope lease's release deleted its ref —

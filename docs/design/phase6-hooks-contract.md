@@ -147,9 +147,18 @@ an `evidence-present` postcondition requires non-empty `evidence`. The
 proof lives on the record: replay and resume re-read it, never re-run the
 effect. Replay is scheduler-driven: a completed hook replays as a `completed`
 outcome carrying the recorded proof — the effect is never re-run to obtain
-a proof to compare. The `noop`-vs-`conflict` fingerprint comparison stays
-where the stage replay door (`requestStep`) owns it; hooks never re-execute
-to feed it (ADR-0007 decision 6).
+a proof to compare; hooks never re-execute to feed any comparison
+(ADR-0007 decision 6). The `noop`-vs-`conflict` comparison is the hook
+scheduler's own recorded-vs-recorded reconciliation — the stage replay
+door (`requestStep`) never receives hook keys. Over the hook step's
+accumulated completion records' `contentFingerprint`s: more than one
+distinct value is the recorded refusal `content-fingerprint-conflict`
+(E-02's done-vs-conflict); a fingerprinted completion beside a
+fingerprint-less one is the same refusal — a missing side is a
+disagreement, the evidence verification's fail-closed rule (ADR-0005
+decision 8); matching fingerprints, or none recorded at all, replay the
+stored record as `completed` (parity with phase 7 §2.3's digest
+reconciliation).
 
 ### 2.5 Reconciliation — fail-closed, in the existing vocabulary
 
@@ -177,6 +186,12 @@ to feed it (ADR-0007 decision 6).
   timestamps enter as caller-supplied metadata (`recordedAt`).
 - Determinism: identical declarations, ledgers, claims, and effects
   classify identically — provable by double-run.
+- Recorded content reconciliation on replay/resume — the scheduler never
+  re-runs an effect to answer replay; completions agreeing on one
+  `contentFingerprint` (or none recording one) replay `completed`, a
+  disagreement — including a fingerprinted completion beside a
+  fingerprint-less one — is the `content-fingerprint-conflict` refusal;
+  kill-anywhere holds at hook boundaries.
 - Records deep-freeze on append (the ledger's discipline, unchanged);
   hook observations are recorded values, frozen when they land.
 - Tests import through `../src/index.ts` only; the public surface is the

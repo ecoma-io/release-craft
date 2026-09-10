@@ -217,6 +217,7 @@ describe("obligation 2 — the surface is doors and records, never a store or a 
       "parseIdentityClaim",
       "plannedChannelMoves",
       "renderReleasePRProjection",
+      "stageContentFingerprint",
     ]);
     // The one class the boundary throws is an error like the kernel's own.
     expect(new app.InvalidAssemblyConfigError("detail") instanceof Error).toBe(true);

@@ -613,6 +613,22 @@ slice's suite pins:
 - **No claim-store or ledger access outside the doors.** No reading recorded
   refs to "check" anything; an observation is the `show` door's, and this
   inventory drives `run` only.
+- **No fetch of the claim namespace — the exclusion is one shared ref
+  space (#182).** The claim store's arbitration is enforced by
+  compare-and-set over the target repository's own `refs/release-craft/*`,
+  and this surface's posture — no fetch, no push, no ref write by the
+  Action's own hand ([§5](#5-laws); a standard clone fetches only
+  `refs/heads/*` and `refs/tags/*` into the workspace) — never makes one
+  run's claim refs visible to another. The declared precondition this
+  posture therefore owes the engine: the runs of one release line share
+  one checkout's ref space. Its named failure mode: two
+  `workflow_dispatch` runs of the same line in two separate checkouts each
+  acquire the claim in their own ref space, both mint locally, and both
+  render a published outcome — the divergence first surfacing at the
+  consumer's own push as a non-fast-forward rejection, outside the
+  engine's verdict vocabulary. The Action does not verify the precondition
+  and v1 adds no enforcement for it; the boundary is pinned by the
+  binding's negative capability test.
 - **No GitHub API composition into the engine.** No `gh`, no REST, no
   checks or releases API. The `::error::` annotation is the runner's log
   protocol, not an API call.
@@ -787,7 +803,8 @@ places, outer and inner, and names what each owns:
 - **The inner line — the binding's floor, inherited verbatim.** Every git
   spawn runs on `hermeticGitEnv()` (`src/adapters/git/git-run.ts`, verified):
   process env minus the leaked repository context (`GIT_DIR`,
-  `GIT_WORK_TREE`, `GIT_TRACE*`, the `GIT_CONFIG*` injection channels, …),
+  `GIT_WORK_TREE`, `GIT_NAMESPACE`, `GIT_TRACE*`, the `GIT_CONFIG*`
+  injection channels, …),
   plus `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
   `GIT_TERMINAL_PROMPT=0`, `LC_ALL=C`, and the baked deterministic commit
   identity. The CLI opens the binding and inherits the floor; the Action

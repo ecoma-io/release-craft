@@ -34,6 +34,7 @@ import {
   resolveBlocked,
   resume,
   retrySequence,
+  stageContentFingerprint,
   start,
   supersedePlan,
   type ChannelTransitionRecord,
@@ -286,7 +287,9 @@ describe("V1 — plan integrity, github-backed", () => {
           if (completion === null) {
             throw new Error(`fixture broken: ${stage} never recorded a completion`);
           }
-          expect(completion.contentFingerprint).toBe(`content:${stage}:${run.attempt.attemptId}`);
+          // The §2.6 digest over the stage's declared content — the
+          // engine's own derivation, identity not among the inputs (#195).
+          expect(completion.contentFingerprint).toBe(stageContentFingerprint(stage, run.planLine));
         }
         // The changelog the publication door derives is recorded evidence:
         // the §2.8 seam reads the recorded tree's bytes, and the release

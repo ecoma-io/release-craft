@@ -26,6 +26,7 @@ import {
   ledgerRequestStep,
   resolveBlocked,
   resume,
+  stageContentFingerprint,
   type ChannelTransitionRecord,
   type HookEffect,
 } from "../../src/index.js";
@@ -374,7 +375,9 @@ describe("E-02 — replay semantics (the record-path door)", () => {
       {
         stepKey: "publish",
         attribution: actor(attempt),
-        contentFingerprint: `content:publish:${attemptId}`,
+        // The same declared content the run recorded — the §2.6 digest the
+        // walk itself derived (#195).
+        contentFingerprint: stageContentFingerprint("publish", run.planLine),
       },
       stores.claims.viewFor(attemptId),
       stores.ledger,

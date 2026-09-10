@@ -73,6 +73,27 @@ surface arrives with the consumer that needs it.
    guarantees, no second storage format (D14's "persistence is
    adjacent" resolves as adjacency, not divergence) — and the deferred
    decision-record stream inherits exactly this discipline (§2.6).
+5. **Content identity.** An append whose canonical bytes the stream's
+   current tip already holds is satisfied already: the door absorbs it
+   and the stream grows no commit — a stale writer's duplicate of a
+   concurrent winner's record is one fact, not two (issue #185; D44).
+   The check is tip-relative, deliberately: a byte-identical record the
+   stream carried but moved past is a new positional fact — a re-armed
+   start, a crash window's re-issue — and lands (the record vocabulary
+   has no position field; ordering is positional by construction).
+   Records differing in any field — a different `recordedAt`, evidence,
+   claim token, or digest — are different facts and land. Within one
+   checkout, concurrent append is the operative model (the
+   one-shared-ref-space reach of D42), so the identity check rides the
+   compare-and-swap's classify step and re-evaluates against the moved
+   tip on every retry round: a concurrent writer that lands the same
+   bytes between rounds is absorbed on the next re-read, and a record
+   the tip does not hold is never swallowed. The engine layer
+   carries its own start-identity discipline (#195's write-ahead
+   dedupe, landed on main as PR #212 — not depended on here); this
+   guarantee lives at the binding layer, on the port's write doors,
+   where it serves every caller — the engine's discipline is its
+   complement, not its substitute.
 
 The reference mapping (the implementation PR may refine it, never the
 guarantees): each scope anchors to exactly one ref whose history is the
@@ -128,7 +149,17 @@ mint(tag, target) — the binding's tag door, not the port —
   the whole set against the observed tip. The exclusion predicate and
   the accept are one atomic transition per line: the same CAS that
   creates the claim checked the line's other claims, and the scan's
-  window (#47) does not exist. A lost CAS re-reads and re-evaluates —
+  window (#47) does not exist. The CAS arbitrates one shared ref space —
+  the writers of one repository, over that repository's own
+  `refs/release-craft/*` — and its reach ends at the ref space's edge
+  (#182): writers in different checkouts of one repository hold disjoint
+  claim refs (a standard clone fetches only `refs/heads/*` and
+  `refs/tags/*`; the adapter never fetches remote claim state — ADR-0010
+  decision 3), so both acquire the same line and both mint, and the
+  divergence surfaces at the consumer's push as a non-fast-forward
+  rejection outside the engine's verdict vocabulary — the declared scope
+  ADR-0011 decision 2 records and the negative capability test pins. A
+  lost CAS re-reads and re-evaluates —
   it never adjudicates against stale state; releasing the last claim of
   a line leaves the empty register in place (the ref is never deleted,
   so the write path stays one primitive); and a claim-namespace blob
@@ -179,6 +210,26 @@ mint(tag, target) — the binding's tag door, not the port —
 - The producer observes recorded content — the recorded tree's content,
   never working-tree state — and returns a digest of that content:
   stable across identical content, different under any content change.
+- The digest input is fixed: the recorded tree of the commit `HEAD`
+  names at the call — one atomic `rev-parse` read per invocation, the
+  producer's one ambient-`HEAD` read, and never the commit itself (the
+  same tree content under a different commit digests identically; the
+  test pins the input source — mutating it to the commit oid goes red).
+- The producer carries one declared precondition (issue #185; D43):
+  **`HEAD` names one commit for the span of an attempt.** Moving `HEAD`
+  in the consumer's checkout mid-attempt is a caller violation of the
+  binding, and its failure mode is loud at the binding's only surface —
+  the digest changes exactly as any recorded-content change does, so
+  nothing downstream can read the drift as continuity; under the
+  declared precondition a digest change is a recorded-content change,
+  full stop. Pinning the digest input to an attempt-scoped commit was
+  weighed and rejected (D43): the producer is stateless per call by
+  contract (ADR-0008 decision 2), the seam hands it identity only and
+  never the ledger (ADR-0008 decision 7), so a pin needs either a port
+  widening (the engine layer's own reviewed change) or a stateful
+  first-call-wins cache keyed on the attempt id — the latter makes the
+  input shape the digest, breaching decision 7 verbatim, and would
+  silently swallow a real content change inside the attempt it pins.
 - The digest is opaque to the engine (ADR-0008 decision 2, unchanged):
   the binding computes it, the engine records it verbatim into the
   generation triple and the content fingerprint.

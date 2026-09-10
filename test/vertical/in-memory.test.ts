@@ -17,6 +17,7 @@ import {
   resolveBlocked,
   resume,
   retrySequence,
+  stageContentFingerprint,
   start,
   supersedePlan,
   transition,
@@ -159,7 +160,9 @@ describe("V1 — plan integrity", () => {
   it("V1 · main beta run · every completion records and verifies its content fingerprint (E-03)", () => {
     const run = runRelease({ world: liveWorld(), lineId: "main", intents: [beta] });
     for (const stage of CANONICAL_STAGES) {
-      const fingerprint = `content:${stage}:${run.attempt.attemptId}`;
+      // The §2.6 digest over the stage's declared content — the engine's
+      // own derivation, attempt identity not among the inputs (#195).
+      const fingerprint = stageContentFingerprint(stage, run.planLine);
       const completion = run.stores.ledger.stepView().completed(run.attempt.attemptId, stage);
       if (completion === null) {
         throw new Error(`fixture broken: ${stage} never recorded a completion`);

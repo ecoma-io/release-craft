@@ -13,7 +13,6 @@
 import {
   assembleMemoryStores,
   MemoryAttemptRegister,
-  type AttemptRegister,
   type ClaimStore,
   type ClaimVerification,
   type ClaimToken,
@@ -137,8 +136,10 @@ export function freshAssembly(options: AssemblyOptions = {}): Assembly {
 }
 
 /** A fresh register that allocates a plan's SECOND ordinal — the shared
- * register scenarios' different attempt identity for the same plan. */
-export function registerSeededAfter(planId: string): AttemptRegister {
+ * register scenarios' different attempt identity for the same plan. The
+ * concrete fixture store is the returned value: an override enters
+ * `freshAssembly` as the store it is (issue #118). */
+export function registerSeededAfter(planId: string): MemoryAttemptRegister {
   return new MemoryAttemptRegister({ ordinals: { [planId]: 1 } });
 }
 

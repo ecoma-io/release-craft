@@ -87,6 +87,16 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    merging remote refs into the local namespace. Revised in #133: the
    binding's namespace is `refs/release-craft/` (product-neutral, invariant
    2.12) — the mapping's shape is unchanged.
+   The never-fetch clause's scope consequence, recorded in #182: because
+   nothing fetches `refs/release-craft/*` into a checkout (a standard
+   clone fetches only `refs/heads/*` and `refs/tags/*`), the claim
+   exclusion the binding enforces holds within one repository's ref space
+   and exactly that far — two runs of one line in two separate checkouts
+   each acquire, both mint, and the divergence surfaces at the consumer's
+   push as a non-fast-forward rejection outside the engine's verdict
+   vocabulary. ADR-0011 decision 2 records the declared scope; the GitHub
+   Action's posture (phase 13 §2.9) states the precondition and the
+   failure mode it inherits from this decision.
 
 4. **Every remote write carries an idempotency identity derived from the
    binding's recorded state (the Phase 9 contract §2.4).** A tag push's

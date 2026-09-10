@@ -57,7 +57,13 @@ describe("the self-dogfood's world closure", () => {
       // context — the GIT_* variables that would hand it another repository's
       // history. Removing the floor fails wherever that ambient carries them
       // (the harness env does).
-      for (const leaked of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_COUNT"]) {
+      for (const leaked of [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_NAMESPACE",
+        "GIT_CONFIG_COUNT",
+      ]) {
         expect(
           Object.keys(spawnEnv),
           `the closure spawn's env leaked ${leaked} past the hermetic floor`,

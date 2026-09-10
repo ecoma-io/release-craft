@@ -229,7 +229,8 @@ export interface ParsedCommit {
   readonly type?: string;
   readonly scope?: string;
   readonly subject: string;
-  /** True when `!` or a `BREAKING CHANGE:` footer is present (any type). */
+  /** True when `!` or a breaking footer (`BREAKING CHANGE` or the
+   * `BREAKING-CHANGE` alias) is present (any type). */
   readonly breaking: boolean;
   /** The candidate change value; present only for `classification: "change"`. */
   readonly change?: Change;

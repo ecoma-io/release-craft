@@ -30,6 +30,7 @@ import {
   openAttempt,
   resolveBlocked,
   resume,
+  stageContentFingerprint,
   start,
   type ChannelTransitionRecord,
   type Claim,
@@ -216,7 +217,9 @@ describe("V1 — plan integrity, git-backed", () => {
       const world = liveWorld();
       const run = runGitRelease({ state, stores, world, lineId: "main", intents: [beta] });
       for (const stage of CANONICAL_STAGES) {
-        const fingerprint = `content:${stage}:${run.attempt.attemptId}`;
+        // The §2.6 digest over the stage's declared content — the engine's
+        // own derivation, attempt identity not among the inputs (#195).
+        const fingerprint = stageContentFingerprint(stage, run.planLine);
         const completion = run.stores.ledger.stepView().completed(run.attempt.attemptId, stage);
         if (completion === null) {
           throw new Error(`fixture broken: ${stage} never recorded a completion`);
@@ -1137,7 +1140,9 @@ describe("E-02 — replay semantics, git-backed", () => {
         {
           stepKey: "publish",
           attribution: actor(attempt),
-          contentFingerprint: `content:publish:${attemptId}`,
+          // The same declared content the run recorded — the §2.6 digest
+          // the walk itself derived (#195).
+          contentFingerprint: stageContentFingerprint("publish", run.planLine),
         },
         claimView(state, attemptId),
         gitStores(repo).ledger,
