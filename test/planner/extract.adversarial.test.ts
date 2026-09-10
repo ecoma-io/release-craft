@@ -240,6 +240,22 @@ describe("extract — adversarial identity and classification", () => {
     expect(second).toEqual(first);
   });
 
+  it("marks a commit breaking on the standalone BREAKING CHANGE footer alone, without a bang", () => {
+    const breaking = commit(
+      "ccc196c",
+      "fix(api): drop the v1 endpoint\n\nBREAKING CHANGE: the v1 endpoint is gone",
+    );
+
+    const result = extract([breaking], policy());
+
+    const parsed = parsedBySha(result, "ccc196c");
+    expect(parsed.classification).toBe("change");
+    expect(parsed.breaking).toBe(true);
+    expect(parsed.type).toBe("fix");
+    expect(parsed.change).toBeDefined();
+    expect(resolveBump(result.commits, policy())).toBe("major");
+  });
+
   it("marks a commit breaking when a BREAKING-CHANGE footer alias is present", () => {
     const breaking = commit(
       "aaa196a",
