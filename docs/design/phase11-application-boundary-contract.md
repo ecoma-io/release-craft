@@ -328,8 +328,18 @@ and the same attempt id re-enters the claim store's idempotent
 same-holder re-acquisition, which returns the durably stored token. The
 reconstruction re-derives the recorded ordinal's identity and allocates
 nothing — never a fresh ordinal silently allocated over someone else's
-recorded tail. The other carried-attempt doors — `resolve`, `abort`, and
-the observation — have no fallback and stay process-local: a fresh
+recorded tail. The reconstruction's extension declarations come from the
+request alone — declarations were never durable (ADR-0007 decision 2;
+§2.6) — so a recorded tail carrying a started hook/artifact step the
+request's declarations do not explain refuses the takeover, naming the
+record: the walk's resume pointer derives from the reconstructed
+declarations' effective list, and unfinished recorded extension work
+outside it would silently vanish from the walk. A completed extension
+record is finished work the resumed walk cannot skip, and a recorded
+abandonment stays terminal from the ledger alone (E-09) — the takeover's
+classification escalates it, louder than any declaration complaint. The
+other carried-attempt doors — `resolve`, `abort`, and the observation —
+have no fallback and stay process-local: a fresh
 process naming a mid-flight attempt through them is a returned refusal
 (`unknown attempt`, naming the handle). The store is bookkeeping, not
 authority: the recorded tail and the claim store are the truth, a stale
