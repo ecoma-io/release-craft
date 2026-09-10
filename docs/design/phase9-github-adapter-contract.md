@@ -187,8 +187,8 @@ recorded state:
 
 - Tag push: the tag ref's target commit is the key — pushing the same
   tag to the same target is a no-op.
-- Release creation: the tag name + the changelog digest (the artifact's
-  `contentDigest` from the binding's generation record) is the key.
+- Release creation: the tag name + the changelog digest (the binding's
+  generation record holds it as `contentFingerprint`, §2.8) is the key.
 
 The adapter verifies idempotency before write: if the remote already
 satisfies the write, the adapter returns `ok` without making a remote
