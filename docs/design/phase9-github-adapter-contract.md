@@ -209,17 +209,17 @@ refusals, and a listing never carries them.) On the report, a listing's
 The classification itself is one table shared by every unit that reads
 the API transport (issues #176/#178; the shapes GitHub answers with):
 
-| Response shape                                   | Class                                                                                                                                                                                                                       |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `429`; a 403 with `x-ratelimit-remaining: 0`     | `refused("rate-limited")` — the primary limit; the detail carries `x-ratelimit-reset` (decision 9)                                                                                                                          |
-| a 403 with `Retry-After` and the budget standing | `refused("rate-limited")` — the secondary limit (issue #178); the detail carries `Retry-After`                                                                                                                              |
-| 404 on a repo-scoped listing; the create's 404   | `refused("unobservable-remote")` (issue #176) — a listing's collection and a create's target exist whenever the repository is observable                                                                                    |
-| the release read's 404                           | the repository probe (§2.2): probe `200` → `absent`; otherwise the probe's own class                                                                                                                                        |
-| `401`                                            | `refused("auth-expired")`                                                                                                                                                                                                   |
-| any other 403                                    | `refused("permission-denied")` (issue #178) — the credential authenticated; the detail carries the provider's `message`                                                                                                     |
-| status `0`                                       | reads → `transport-failure`; the post-write window → `ambiguous`                                                                                                                                                            |
-| the create's `422` / `409`                       | `refused("release-conflict")` (issue #178) — a determinate refusal, never the retryable class; `already_exists` (the documented duplicate-create answer, the benign race-loss) and the provider's `message` ride the detail |
-| every other non-200 status (5xx included)        | `transport-failure` — the retryable class                                                                                                                                                                                   |
+| Response shape                                                                                      | Class                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `429`; a 403 with `x-ratelimit-remaining: 0`                                                        | `refused("rate-limited")` — the primary limit; the detail carries `x-ratelimit-reset` (decision 9)                                                                                                                          |
+| a 403 with `Retry-After`, or whose message names the secondary/abuse limit, and the budget standing | `refused("rate-limited")` — the secondary limit (issue #178); the detail carries `Retry-After`, or the wait-at-least-one-minute guidance when the header is absent                                                          |
+| 404 on a repo-scoped listing; the create's 404                                                      | `refused("unobservable-remote")` (issue #176) — a listing's collection and a create's target exist whenever the repository is observable                                                                                    |
+| the release read's 404                                                                              | the repository probe (§2.2): probe `200` → `absent`; otherwise the probe's own class                                                                                                                                        |
+| `401`                                                                                               | `refused("auth-expired")`                                                                                                                                                                                                   |
+| any other 403                                                                                       | `refused("permission-denied")` (issue #178) — the credential authenticated; the detail carries the provider's `message`                                                                                                     |
+| status `0`                                                                                          | reads → `transport-failure`; the post-write window → `ambiguous`                                                                                                                                                            |
+| the create's `422` / `409`                                                                          | `refused("release-conflict")` (issue #178) — a determinate refusal, never the retryable class; `already_exists` (the documented duplicate-create answer, the benign race-loss) and the provider's `message` ride the detail |
+| every other non-200 status (5xx included)                                                           | `transport-failure` — the retryable class                                                                                                                                                                                   |
 
 The git-path half (the sync unit's stderr classification) anchors on
 the same vocabulary, structured: the rate-limit phrases first; GitHub's
@@ -478,9 +478,15 @@ The phase's named scenarios:
     never `auth-expired`; the git-path classifier reads the http
     transport's structured 403 the same way, and never reads a status
     substring out of a progress line.
-19. **Secondary rate limit** (issue #178) — a 403 with `Retry-After`
-    while the primary budget stands is `refused("rate-limited")` with
-    the `Retry-After` detail, on every door that reads the transport.
+19. **Secondary rate limit** (issue #178) — a 403 with `Retry-After`, or
+    whose message names the secondary/abuse limit (the rate-limits
+    reference's documented signal — "a `403` or `429` response and an
+    error message that indicates that you exceeded a secondary rate
+    limit", the header only conditionally present), while the primary
+    budget stands is `refused("rate-limited")`, on every door that reads
+    the transport; a documented secondary response carrying
+    `x-ratelimit-remaining: 0`, or arriving as a `429`, reads through
+    the primary leg — the same class, the primary-worded detail.
 20. **Unobservable remote** (issue #176) — the release read's 404
     probes the repository: an observable repository makes the absence
     determinate (`absent`); an unobservable one is

@@ -490,6 +490,31 @@ describe("the release reconciliation (§4 scenarios 10–16; ADR-0010 decision 8
     });
   });
 
+  it("#178 — a listing's 403 that names the secondary limit in the body, with no Retry-After, is rate-limited", () => {
+    withReconcileRepo("secondary-rate-limit-phrase", (fixture) => {
+      const { transport } = fakeTransport((call) =>
+        call.path.includes("/tags")
+          ? listResponse([])
+          : rawResponse(
+              403,
+              { "x-ratelimit-remaining": "4998" },
+              JSON.stringify({
+                message:
+                  "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+              }),
+            ),
+      );
+      const report = fixture.reconcile(transport);
+      expect(report.releases).toEqual({
+        state: "refused",
+        reason: "rate-limited",
+        detail: expect.stringContaining(
+          "secondary rate limit is engaged; wait at least one minute before retrying",
+        ) as string,
+      });
+    });
+  });
+
   it("#176 — a repo-scoped listing's 404 is the unobservable-remote refusal, never a retryable failure", () => {
     withReconcileRepo("unobservable", (fixture) => {
       const { transport } = fakeTransport((call) =>

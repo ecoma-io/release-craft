@@ -340,6 +340,81 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     });
   });
 
+  it("refuses a secondary rate limit that names itself in the body, with no Retry-After, as rate-limited (#178, review minor 2)", () => {
+    // The rate-limits reference ("Exceeding the rate limit") documents
+    // the secondary answer as "a `403` or `429` response and an error
+    // message that indicates that you exceeded a secondary rate limit",
+    // with `Retry-After` only conditionally present — the body's phrase
+    // is the shape's other anchor, and its absence of a header must not
+    // read as a permission denial.
+    withPublicationRepo("secondary-rate-limit-phrase", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 403,
+        headers: { "X-RateLimit-Remaining": "4998" },
+        body: JSON.stringify({
+          message:
+            "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+        }),
+      }));
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "rate-limited",
+        detail: detailContaining(
+          "secondary rate limit is engaged; wait at least one minute before retrying",
+        ),
+      });
+    });
+  });
+
+  it("classifies a documented secondary response that carries a spent budget as rate-limited, primary-worded (review minor 1)", () => {
+    // The reference documents a secondary response with
+    // `x-ratelimit-remaining: 0`; the primary predicate reads it first —
+    // the class is unchanged, and the detail names the spent budget.
+    withPublicationRepo("secondary-with-spent-budget", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 403,
+        headers: {
+          "Retry-After": "57",
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": "1757200000",
+        },
+        body: JSON.stringify({ message: "You have exceeded a secondary rate limit" }),
+      }));
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "rate-limited",
+        detail: "the API's rate limit is exhausted; it resets at 1757200000",
+      });
+    });
+  });
+
+  it("classifies a secondary limit arriving as a 429 as rate-limited, primary-worded (review minor 1)", () => {
+    // The reference documents the secondary answer as "a `403` or `429`
+    // response"; a 429 reads through the primary predicate regardless of
+    // its body's phrasing — the class and detail stay rate-limit ones.
+    withPublicationRepo("secondary-as-429", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 429,
+        headers: { "Retry-After": "30" },
+        body: JSON.stringify({ message: "You have exceeded a secondary rate limit" }),
+      }));
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "rate-limited",
+        detail: "the API's rate limit is engaged; retry after 30 seconds",
+      });
+    });
+  });
+
+  // The negative control for the phrase predicate: a 403 whose body
+  // carries neither the secondary phrasing nor `Retry-After` — a
+  // permission denial, never a rate limit (#178).
   it("refuses a valid credential's permission denial as permission-denied, never auth-expired (#178)", () => {
     withPublicationRepo("permission-denied", (fixture) => {
       seed(fixture);

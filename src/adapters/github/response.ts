@@ -65,12 +65,33 @@ const isPrimaryRateLimit = (response: GitHubResponse): boolean => {
   return remaining !== undefined && remaining.trim() === "0";
 };
 
-/** The secondary rate limit's shape (issue #178): a 403 with a
- *  `Retry-After` while the primary budget stands — GitHub's documented
- *  answer for the abuse/secondary limits, which no longer carries a
- *  spent budget. */
-const isSecondaryRateLimit = (response: GitHubResponse): boolean =>
-  response.status === 403 && headerValue(response.headers, "retry-after") !== undefined;
+/** The secondary rate limit's shape (issue #178): a 403 that names the
+ *  secondary limit — by the `Retry-After` header or by its own words —
+ *  while the primary budget stands. The rate-limits reference
+ *  ("Exceeding the rate limit",
+ *  docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)
+ *  documents the answer as "a `403` or `429` response and an error
+ *  message that indicates that you exceeded a secondary rate limit",
+ *  with the `Retry-After` header only conditionally present ("If the
+ *  `retry-after` response header is present …"), so the header alone is
+ *  not the shape — the body's secondary/abuse phrasing is the other
+ *  documented signal, the git path's phrase keying mirrored on the API
+ *  side. The reference also documents a secondary response carrying
+ *  `x-ratelimit-remaining: 0` (and arriving as a `429`): those shapes
+ *  read through the primary predicate first — the same `rate-limited`
+ *  class, the primary-worded detail. */
+const SECONDARY_RATE_LIMIT_PHRASE = /secondary rate limit|abuse detection mechanism/i;
+
+const isSecondaryRateLimit = (response: GitHubResponse): boolean => {
+  if (response.status !== 403) {
+    return false;
+  }
+  if (headerValue(response.headers, "retry-after") !== undefined) {
+    return true;
+  }
+  const message = bodyMessage(response.body);
+  return message !== undefined && SECONDARY_RATE_LIMIT_PHRASE.test(message);
+};
 
 /** The rate-limit refusal's detail, per the limit the headers name: the
  *  primary limit's reset timestamp (ADR-0010 decision 9), or the
@@ -83,7 +104,7 @@ const rateLimitDetail = (response: GitHubResponse): string => {
   const retryAfter = headerValue(response.headers, "retry-after");
   if (!isPrimaryRateLimit(response)) {
     return retryAfter === undefined
-      ? "the API's rate limit is exhausted"
+      ? "the API's secondary rate limit is engaged; wait at least one minute before retrying"
       : `the API's secondary rate limit is engaged; retry after ${retryAfter} seconds`;
   }
   if (reset !== undefined) {
@@ -103,8 +124,9 @@ const rateLimitDetail = (response: GitHubResponse): string => {
  *  stays the publication unit's own rule, layered on this one.
  *
  * The one table (contract §2.3; issue #178's split):
- * - 429, a 403 with the budget spent, or a 403 with `Retry-After` —
- *   `rate-limited` (primary or secondary, per the headers);
+ * - 429, a 403 with the budget spent, or a 403 naming the secondary
+ *   limit (`Retry-After`, or the body's secondary/abuse phrasing) —
+ *   `rate-limited` (primary or secondary, per the same predicates);
  * - 404 on a repo-scoped read — `unobservable-remote` (issue #176): the
  *   resource is invisible to this credential, and an observation that
  *   never happened is never a determinate absence. The one 404 with a
