@@ -63,6 +63,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const beta = { kind: "prerelease", stream: "beta", lineId: "main" } as const;
+const promote = { kind: "promote", lineId: "main" } as const;
 
 /** The always-succeeding declaration a window run carries: all six §3.4
  * artifacts plus §3.5's succeeding and resumed hooks, each with its proof. */
@@ -487,6 +488,45 @@ describe("V4 — promotion", () => {
     }
   });
 
+  it("V4 · write-ahead ordering · the application's records never precede the stage's write-ahead start (ADR-0012 decision 3)", () => {
+    const world = liveWorld();
+    runLadder(world, 2);
+    runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "main" }],
+    });
+    const promote = runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "promote", lineId: "main" }],
+    });
+    // Decision 3's order, read straight off the tail: the kernel's
+    // write-ahead `started` step record for `channel-transition` precedes
+    // every `channel-transition` record the application appends. The
+    // write-ahead record is what makes the transition classifiable on
+    // replay (E-01): an application run ahead of it would leave evidence
+    // the classifier cannot attribute to the stage's own started state.
+    const tail = promote.stores.ledger.tail(promote.attempt.attemptId);
+    const startIndex = tail.findIndex(
+      (record) =>
+        record.kind === "step" &&
+        record.record.stepKey === "channel-transition" &&
+        record.record.to === "started",
+    );
+    expect(startIndex).toBeGreaterThanOrEqual(0);
+    const firstTransitionIndex = tail.findIndex((record) => record.kind === "channel-transition");
+    expect(firstTransitionIndex).toBeGreaterThanOrEqual(0);
+    expect(firstTransitionIndex).toBeGreaterThan(startIndex);
+    // The same pin over the walk's own drive list: the stage's write-ahead
+    // start lands inside `walkStages` before the application runs — the
+    // application is the effect between the started and completed records,
+    // never a predecessor of the started one.
+    const drives = promote.drives.filter((drive) => drive.stepKey === "channel-transition");
+    expect(drives).toHaveLength(1);
+    expect(drives[0]?.outcome.kind).toBe("advance");
+  });
+
   it("V4 · ambiguity · an unprovable land fails the run loudly and moves nothing (invariant 2.6)", () => {
     const world = liveWorld();
     runLadder(world, 2);
@@ -889,6 +929,103 @@ describe("V7 — recovery", () => {
     const staged = runRelease({ world: copyWorld(world), lineId: "main", intents: [beta] }, true);
     expect(staged.mintedTag).toBe("5.0.0-beta.1");
     expect(world.tags).toHaveLength(before);
+  });
+
+  it("V7 · channel-transition window · the promote crash re-executes the uncompleted transition exactly once and a second replay classifies noop", () => {
+    const world = liveWorld();
+    const declaration = fullDeclaration();
+    // Build the promote-ready world: beta.1, beta.2 (the ladder), then
+    // rc.1 as the in-flight prerelease the promotion will consume.
+    runLadder(world, 2);
+    runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "main" }],
+      ...declaration,
+    });
+    // Reference promote first, so the crash window's completion tail can
+    // be compared against a clean run's tail.
+    const reference = referenceRun(declaration);
+    // The promote crashes between the write-ahead `started` record and
+    // the application's execution of the planned moves (ADR-0012
+    // decision 3): the store still holds the pre-promotion targets.
+    const stopped = runRelease(
+      {
+        world,
+        lineId: "main",
+        intents: [promote],
+        ...declaration,
+        crashAfterStartOf: "channel-transition",
+      },
+      false,
+    );
+    expect(stopped.stoppedAt).toBe("channel-transition");
+    expect(classifyResume(stopped.attempt, stopped.stores.ledger)).toStrictEqual({
+      kind: "resume",
+      from: "channel-transition",
+    });
+    // The application never ran on the crashed attempt: no
+    // channel-transition record joins the tail yet — the write-ahead
+    // start is the only channel-transition evidence so far (decision 3).
+    const beforeResume = stopped.stores.ledger
+      .tail(stopped.attempt.attemptId)
+      .filter((record) => record.kind === "channel-transition");
+    expect(beforeResume).toHaveLength(0);
+    // Resume completes the transition: the uncompleted application
+    // re-runs against the store, each move applies cleanly against the
+    // pre-promotion targets (decision 3's E-01 re-execution).
+    const base: RunOptions = { world, lineId: "main", intents: [promote], ...declaration };
+    const ctx = resumeCtx(stopped, base);
+    expect(walkStages(ctx, "channel-transition", base, [], "channel-transition")).toBeNull();
+    transition(ctx.attempt, "published");
+    // The channel store now holds exactly the planned post-promotion
+    // targets, nothing else.
+    expect(stopped.stores.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "5.0.0" },
+    });
+    expect(stopped.stores.channels.read("next")).toStrictEqual({
+      id: "next",
+      target: { line: "main", version: "5.0.0" },
+    });
+    // The tail carries exactly two channel-transition records from the
+    // resume's application — the E-01 re-execution landed once.
+    const tail = stopped.stores.ledger.tail(stopped.attempt.attemptId);
+    const channelRecords = tail.flatMap((record) =>
+      record.kind === "channel-transition" ? [record.record] : [],
+    );
+    expect(channelRecords).toHaveLength(2);
+    expect(channelRecords.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
+    for (const record of channelRecords) {
+      expect(record.from).toStrictEqual({ line: "main", version: "4.9.2" });
+      expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+    }
+    // A second replay of the application over the same store (the
+    // completed transition re-visited) classifies every move noop — the
+    // recorded fingerprint keys the moved state, never a silent second
+    // move (ADR-0012 decisions 3, 4, 5).
+    const replay = applyPlannedChannelTransitions({
+      attempt: ctx.attempt,
+      planLine: ctx.planLine,
+      channels: ctx.stores.channels,
+      ledger: ctx.stores.ledger,
+    });
+    expect(replay.map((move) => move.outcome.kind)).toStrictEqual(["noop", "noop"]);
+    const replayedRecords = stopped.stores.ledger
+      .tail(stopped.attempt.attemptId)
+      .flatMap((record) => (record.kind === "channel-transition" ? [record.record] : []));
+    expect(replayedRecords).toHaveLength(4);
+    for (const record of replayedRecords.slice(2)) {
+      expect(record.from).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.to).toStrictEqual({ line: "main", version: "5.0.0" });
+      expect(record.contentFingerprint).toBe(
+        channelStateFingerprint({
+          id: record.channelId,
+          target: { line: "main", version: "5.0.0" },
+        }),
+      );
+    }
+    expect(completedKeys(stopped)).toStrictEqual(completedKeys(reference));
   });
 });
 

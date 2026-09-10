@@ -638,8 +638,8 @@ export interface PlannedPromotedFrom {
 
 /** The promoted prerelease stream's close (PR-01: "the rc stream closes"):
  * the stream stops being in flight — no further sequence mints on its key.
- * A close is recorded content like a move (ADR-0012's walk: "stream close
- * + promoted-from recorded the same way"), never a deletion. */
+ * A close is plan surface (a line-level fact the application observes),
+ * never a deletion and never its own ledger record (ADR-0012 D36). */
 export interface PlannedStreamClose {
   readonly kind: "stream-close";
   /** The closing stream's identifier — the pointer's leading prerelease

@@ -148,8 +148,8 @@ execution walks … commit → tag → channel-transition → publish → verify
 channel-transition (decision 3, 4):
   append started record (planned moves verbatim)
   application applies each move through the channel store's CAS (6)
-  record the completed record; stream close + promoted-from
-  recorded the same way
+  record the completed record; stream close + promoted-from are
+  plan surface / line-level facts (D36), not their own ledger records
         ↓
 replay (decisions 3, 5, 7):
   a completed transition replays noop
