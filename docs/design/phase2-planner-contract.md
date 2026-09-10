@@ -80,10 +80,12 @@ silently dropped (the defect class #191 records for action inputs).
 
 The door's refusals name every violation in one round-trip
 (`InvalidManifestError`, the input seam's violation shape under a distinct
-name): missing mandatory sections (`policy`, `lines`), malformed values, and
-dangling references — a `tagFormats` key naming an undeclared line, a
-`publishes` binding or dependency edge naming an undeclared component, a
-channel target naming an undeclared line. Components use the packages-map
+name): missing mandatory sections (`policy`, `lines`), malformed values (a
+non-string `publishes` binding is refused, mirroring the `feedRef` check — it
+never degrades into the default publish posture), and dangling references — a
+`tagFormats` key naming an undeclared line, a `publishes` binding or
+dependency edge naming an undeclared component, a channel target naming an
+undeclared line. Components use the packages-map
 pattern: an optional `defaults` block plus per-name entries, each field
 resolved entry-first-then-defaults (an entry's `dependencies: []` is declared
 absence, clearing inherited edges); `defaults` is the reserved inheritance
