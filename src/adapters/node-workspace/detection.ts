@@ -19,8 +19,9 @@
  * Gate: `check:package` (invariant 1: no runtime dependencies).
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
+import { Version } from "@ecoma-io/release-craft/domain";
 import type { ComponentMeta } from "@ecoma-io/release-craft/planner";
 import { parsePnpmWorkspace } from "./pnpm-workspace.js";
 import { resolveWorkspaceGlob } from "./node-glob.js";
@@ -198,19 +199,34 @@ interface RawMember {
 }
 
 function discoverManifests(root: string, patterns: readonly WorkspacePattern[]): readonly string[] {
-  // The same directory can match several globs — dedupe by manifest path,
+  // The same directory can match several globs, and a symlinked member can
+  // be reached under several names — dedupe by the RESOLVED manifest path,
   // keeping first-discovery order (glob order is deterministic per walk).
   const seen = new Set<string>();
   const manifests: string[] = [];
   for (const { glob, sourceFile } of patterns) {
     for (const pkgPath of resolveWorkspaceGlob(root, glob, sourceFile)) {
-      if (!seen.has(pkgPath)) {
-        seen.add(pkgPath);
+      const identity = manifestIdentity(pkgPath);
+      if (!seen.has(identity)) {
+        seen.add(identity);
         manifests.push(pkgPath);
       }
     }
   }
   return manifests;
+}
+
+/**
+ * The identity a manifest is deduped by: its resolved path when it can be
+ * resolved (a manifest that exists always can), the literal path otherwise —
+ * dedupe must stay total, never a crash on an unresolvable path.
+ */
+function manifestIdentity(manifest: string): string {
+  try {
+    return realpathSync(manifest);
+  } catch {
+    return manifest;
+  }
 }
 
 function buildMembers(root: string, manifests: readonly string[]): readonly WorkspaceMember[] {
@@ -325,17 +341,25 @@ function extractEdges(member: RawMember, memberNames: Readonly<Record<string, tr
 
 /**
  * Validates one range expression against the D16 grammar: `^x.y.z`,
- * `~x.y.z`, or exact `x.y.z` (prerelease/build metadata allowed on the
- * semver core). Anything else — `*`, `latest`, `>=1.0.0`, `1.x`,
- * `workspace:*`, git URLs — refuses naming the file and field.
+ * `~x.y.z`, or exact `x.y.z` — the version part judged by the kernel's
+ * strict SemVer grammar (core/domain/version.ts is the authority, decision
+ * log D16): no leading-zero cores, no leading-zero numeric prerelease
+ * identifiers, no empty identifiers, cores within the safe-integer bound.
+ * Anything else — `*`, `latest`, `>=1.0.0`, `1.x`, `workspace:*`, git URLs,
+ * and non-canonical SemVer strings — refuses naming the file and field, so
+ * a malformed range dies at detection instead of drifting downstream to
+ * planPropagation's bare range error.
  */
 function validateRange(range: string, file: string, field: string): void {
   const floor = range.startsWith("^") || range.startsWith("~") ? range.slice(1) : range;
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(floor)) {
+  try {
+    Version.parse(floor);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
     throw new WorkspaceDetectionError({
       file,
       field,
-      message: `range ${JSON.stringify(range)} is outside the D16 grammar (^x.y.z / ~x.y.z / exact x.y.z)`,
+      message: `range ${JSON.stringify(range)} is outside the D16 grammar (^x.y.z / ~x.y.z / exact x.y.z): ${reason}`,
     });
   }
 }
