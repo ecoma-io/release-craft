@@ -31,12 +31,15 @@ import {
   channelStateFingerprint,
   classifyResume,
   openAttempt,
+  resolveBlocked,
+  resume,
   retrySequence,
   start,
   supersedePlan,
   type ChannelTransitionRecord,
   type Claim,
   type ClaimDenied,
+  type HookEffect,
 } from "../../src/index.js";
 import { openGitHubAdapter } from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
 import {
@@ -47,11 +50,14 @@ import {
 import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
 import {
+  actor,
   applyPlannedChannelTransitions,
   assertStoreChannelsStanding,
   COMMITTED_AT,
   GOLDEN,
+  hookEffects,
   liveWorld,
+  matrixHooks,
   plannedOf,
   runInput,
   snapshot,
@@ -62,6 +68,7 @@ import {
   readClaimsAt,
   runGitRelease,
   tailBytes,
+  type Declarations,
   type GitStores,
   type RunOptions,
 } from "./matrix-git.js";
@@ -116,7 +123,7 @@ const asMinted = (mintedTag: string | null): string => {
  * own order), so their golden is the reference — the 10.4 suite's own shape
  * for exactly these windows. The keys are captured under the fixture's
  * lifetime and outlive the deleted repo. */
-const referenceKeys = (): readonly string[] => {
+const referenceKeys = (declaration?: Declarations): readonly string[] => {
   let keys: readonly string[] | undefined;
   withGitHubVertical("v7-reference", (vertical) => {
     const run = runGitRelease(
@@ -126,7 +133,7 @@ const referenceKeys = (): readonly string[] => {
         world: liveWorld(),
         lineId: "main",
         intents: [beta],
-        declarations: vertical.declarations,
+        declarations: declaration ?? vertical.declarations,
       },
       false,
     );
@@ -1010,6 +1017,124 @@ describe("V7 — recovery, github-backed", () => {
       });
     },
   );
+
+  it(
+    "V7 · hook:attest failure · the refusal records, the attempt blocks, and only a resolution re-arms",
+    { timeout: 120_000 },
+    () => {
+      withGitHubVertical("v7-attest", (vertical) => {
+        const stores = gitStores(vertical.repo);
+        const world = liveWorld();
+        const hooks = matrixHooks();
+        const declaration: Declarations = {
+          ...vertical.declarations,
+          hooks: [hooks.attest, hooks.notify],
+          // The effect RUNS and its observation refuses the proof — the
+          // engine records what the caller-injected seam returned (§2.5).
+          hookEffects: hookEffects({
+            attest: {},
+            notify: { evidence: "evidence:notify" },
+          }),
+        };
+        const base: RunOptions = {
+          state: vertical.state,
+          stores,
+          world,
+          lineId: "main",
+          intents: [beta],
+          declarations: declaration,
+        };
+        const stopped = runGitRelease(base, false);
+        expect(stopped.stoppedAt).toBe("publish");
+        expect(stopped.attempt.state).toBe("blocked");
+        expect(stopped.attempt.blockedCause).toBe("validation:hook:attest:evidence-present");
+        // The failure is a recorded step in the git ledger, never a throw —
+        // `failed` sits in the tail.
+        expect(stopped.stores.ledger.step(stopped.attempt.attemptId, "hook:attest")).toBe("failed");
+        // Blocked without a recorded resolution: escalation, not revival (E-04).
+        expect(classifyResume(stopped.attempt, stopped.stores.ledger).kind).toBe("escalate");
+      });
+    },
+  );
+
+  it(
+    "V7 · hook:sign retried · the first refusal blocks, the resolution re-arms, the second observation lands beside it",
+    { timeout: 120_000 },
+    () => {
+      withGitHubVertical("v7-sign", (vertical) => {
+        const stores = gitStores(vertical.repo);
+        const world = liveWorld();
+        const hooks = matrixHooks();
+        let signCalls = 0;
+        const signEffect: HookEffect = (input) => {
+          signCalls += 1;
+          return {
+            attribution: { attemptId: input.attemptId, actor: "automation" },
+            ...(signCalls === 1 ? {} : { contentFingerprint: `content:sign:${String(signCalls)}` }),
+          };
+        };
+        const effects: ReadonlyMap<string, HookEffect> = new Map<string, HookEffect>([
+          ...hookEffects({ notify: { evidence: "evidence:notify" } }),
+          ["sign", signEffect],
+        ]);
+        const declaration: Declarations = {
+          ...vertical.declarations,
+          hooks: [hooks.sign, hooks.notify],
+          hookEffects: effects,
+        };
+        const base: RunOptions = {
+          state: vertical.state,
+          stores,
+          world,
+          lineId: "main",
+          intents: [beta],
+          declarations: declaration,
+        };
+        const stopped = runGitRelease(base, false);
+        expect(stopped.stoppedAt).toBe("publish");
+        expect(stopped.attempt.state).toBe("blocked");
+        expect(stopped.attempt.blockedCause).toBe(
+          "validation:hook:sign:content-fingerprint-present",
+        );
+
+        // resolveBlocked is the only re-arm door: the resolution appends to
+        // the git ledger (a durable commit), the attempt re-arms, and
+        // classification walks back to the refused key (§2.7).
+        resolveBlocked(
+          stopped.attempt,
+          "hook:sign",
+          { kind: "revalidation", planFingerprint: stopped.attempt.planFingerprint },
+          stopped.stores.ledger,
+          actor(stopped.attempt),
+        );
+        const rearmed = resume(stopped.attempt, "revalidation recorded");
+        expect(classifyResume(rearmed, stopped.stores.ledger)).toStrictEqual({
+          kind: "resume",
+          from: "hook:sign",
+        });
+        // Re-run over the SAME persisted repo: the walk re-enters at the
+        // recorded tail's refused key and the second observation lands.
+        stores.rearm(rearmed);
+        const resumed = runGitRelease(base, false);
+        expect(resumed.stoppedAt).toBeNull();
+        // The retry appends beside the refusal — the failed record stays in
+        // the git tail, never rewritten (§2.5).
+        expect(stopped.stores.ledger.step(stopped.attempt.attemptId, "hook:sign")).toBe(
+          "completed",
+        );
+        const signRecords = stopped.stores.ledger
+          .tail(stopped.attempt.attemptId)
+          .flatMap((record) =>
+            record.kind === "step" && record.record.stepKey === "hook:sign"
+              ? [record.record.to]
+              : [],
+          );
+        expect(signRecords).toStrictEqual(["started", "failed", "started", "completed"]);
+        expect(signCalls).toBe(2);
+        expect(completedKeys(resumed)).toStrictEqual(referenceKeys(declaration));
+      });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -1184,6 +1309,67 @@ describe("V9 — divergence, github-backed", () => {
       });
     },
   );
+
+  it("V9 · collision · a two-lines-one-tag plan refuses naming the tag, both lines, both heads (M-11)", () => {
+    const outcome = plan({
+      policy: {
+        digest: "sha256:" + "c".repeat(64),
+        bumpMappingId: "default",
+        prereleaseLadder: ["rc"],
+        prereleaseSeed: "0",
+        pre10Dampening: true,
+        selfReferenceNamespace: "Release-Craft:",
+        tagFormats: {},
+      },
+      repository: {
+        commits: [
+          {
+            sha: "c1",
+            parents: [],
+            message: "feat: base",
+            committedAt: COMMITTED_AT,
+            containingRefs: ["feed/a", "feed/b"],
+          },
+          {
+            sha: "c2",
+            parents: ["c1"],
+            message: "fix: on a",
+            committedAt: COMMITTED_AT,
+            containingRefs: ["feed/a"],
+          },
+          {
+            sha: "c3",
+            parents: ["c1"],
+            message: "fix: on b",
+            committedAt: COMMITTED_AT,
+            containingRefs: ["feed/b"],
+          },
+        ],
+        refs: [
+          { name: "feed/a", head: "c2" },
+          { name: "feed/b", head: "c3" },
+        ],
+      },
+      history: { tags: [{ name: "1.0.0", commit: "c1" }] },
+      lines: [
+        { id: "a", feedRef: "feed/a", lifecycle: "active", declared: true, publishes: "app" },
+        { id: "b", feedRef: "feed/b", lifecycle: "active", declared: true, publishes: "web" },
+      ],
+      components: [
+        { name: "app", manifestVersion: "1.0.0", paths: ["package.json"] },
+        { name: "web", manifestVersion: "1.0.0", paths: ["package.json"] },
+      ],
+      intents: [{ kind: "release" }],
+    });
+    if (outcome.kind !== "refused") {
+      throw new Error("fixture broken: the collision world planned instead of refusing");
+    }
+    expect(outcome.refusal.cause).toBe("version-collision");
+    expect(outcome.refusal.commits).toStrictEqual(["c2", "c3"]);
+    expect(outcome.refusal.detail).toContain('"1.0.1"');
+    expect(outcome.refusal.detail).toContain('"a"');
+    expect(outcome.refusal.detail).toContain('"b"');
+  });
 });
 
 // ---------------------------------------------------------------------------
