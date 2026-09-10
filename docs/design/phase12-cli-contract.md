@@ -576,8 +576,10 @@ row → 10.
   declarations the engine's contract provides for.
 - **The claims are the concurrency control** (invariant 2.7): two CLI
   processes over one repository are two callers of one engine law — the
-  claim store arbitrates, the attempt store gates nobody, and the CLI adds
-  no mutex, no queue, no advisory locking of its own.
+  claim store's CAS is the only arbitration, met across processes today
+  only by a fresh run's fresh ordinal meeting a recorded claim (phase 11
+  §2.7's residuals), and the CLI adds no mutex, no queue, no advisory
+  locking of its own.
 - **No retry policy of its own.** E-08's bounded sequence retry is the
   kernel's clause driven by the boundary (phase 11 §2.5 step 3); the CLI
   neither retries a door nor loops a command. A script that wants retries

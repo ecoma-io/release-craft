@@ -353,13 +353,17 @@ fixture's `x-01`, phase 14 §3.5.)
 
 The store is bookkeeping, not authority: the recorded tail and the claim
 store are the truth, a stale carried attempt reconciles through
-classification (`stale`/`escalate`) and the claim protocol, and two
-processes resuming one plan each classify against the recorded tail while
-the claims arbitrate (invariant 2.7) — _within one process_, the only
-place two resumers of one attempt can exist. Across processes the map is
-exactly what gates: a fresh engine carries no entry, every carried-attempt
-door refuses before any claim is read, and the claims never arbitrate a
-cross-process resume.
+classification (`stale`/`escalate`) and the claim protocol. Two claimants
+for one scope are arbitrated by the claim store's CAS (invariant 2.7) —
+and never two resumers of one attempt: resuming is the same holder
+re-acquiring, and the store's idempotent same-holder adjudication returns
+the held claim with no arbitration at all.
+
+Across processes the map is exactly what gates: a fresh engine carries no
+entry, every carried-attempt door refuses before any claim is read, and
+the claims never arbitrate a cross-process resume. The one cross-process
+arbitration today is a fresh `.run`'s fresh ordinal meeting a recorded
+claim — the split the two residuals below name.
 
 The refusal is the envelope's soft edge; the fresh allocation is the hard
 one. A restarted process re-entering the same plan is a fresh `.run`: the
@@ -473,8 +477,10 @@ in the message (phase 4 §2.2, §2.7).
   and waits for a read.
 - **Claims are the concurrency control** (invariant 2.7): no mutex, no
   queue, no lease, no single-writer assumption enters at the boundary;
-  the claim store's CAS is the arbitration, and the attempt store gates
-  nobody ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)).
+  the claim store's CAS is the arbitration, and within the process the
+  attempt store gates nobody — across processes its refusals are the
+  envelope ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)),
+  never a lock.
 - **One channel door** (invariant 2.8): every channel move flows through
   the wired stage executor at [§2.4](#24-the-channel-transition-wiring-point)'s
   point; a boundary that moves a channel anywhere else is wrong by
