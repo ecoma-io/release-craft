@@ -1,7 +1,6 @@
 ---
-id: ADR-0003
-title: The Phase 2 deterministic release planner
-status: Accepted
+id: 0003-deterministic-release-planner
+status: accepted
 created: 2026-09-06
 updated: 2026-09-06
 ---

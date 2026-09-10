@@ -1,8 +1,6 @@
 ---
-id: "0011"
-title: "The per-line claim register — atomic cross-scope exclusion"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/49"
+id: 0011-claim-line-register
+status: proposed
 created: 2026-09-07
 updated: 2026-09-07
 ---

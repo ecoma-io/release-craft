@@ -1,8 +1,6 @@
 ---
-id: "0007"
-title: "Hooks as steps — the execution seam, the scheduler, and reconciliation"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/33"
+id: 0007-hooks-as-steps
+status: proposed
 created: 2026-09-06
 updated: 2026-09-06
 ---

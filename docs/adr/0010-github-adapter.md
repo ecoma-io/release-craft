@@ -1,8 +1,6 @@
 ---
-id: "0010"
-title: "The GitHub adapter — remote synchronization, tag publication, and release publication"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/50"
+id: 0010-github-adapter
+status: proposed
 created: 2026-09-07
 updated: 2026-09-07
 ---

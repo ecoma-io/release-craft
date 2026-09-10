@@ -1,8 +1,6 @@
 ---
-id: "0008"
-title: "The artifact graph — artifact steps, generations, and declared coordinates"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/36"
+id: 0008-artifact-graph
+status: proposed
 created: 2026-09-06
 updated: 2026-09-06
 ---
