@@ -123,6 +123,28 @@ export const scheduleHooks = (
     // never re-runs to obtain a proof to compare — a completed hook
     // replays even when the effects map carries no entry.
     if (ledger.step(attempt.attemptId, step) === "completed") {
+      // Content reconciliation on replay (§2.2): completion records whose
+      // recorded fingerprints disagree are a conflict — E-02's
+      // done-vs-conflict, refused, never a silent pass (the artifacts
+      // path's digest reconciliation, parity for hooks).
+      const recordedFingerprints = new Set(
+        ledger
+          .tail(attempt.attemptId)
+          .flatMap((appended) => (appended.kind === "step" ? [appended.record] : []))
+          .filter((record) => record.stepKey === step && record.to === "completed")
+          .flatMap((record) =>
+            record.contentFingerprint === undefined ? [] : [record.contentFingerprint],
+          ),
+      );
+      if (recordedFingerprints.size > 1) {
+        outcomes.push({
+          kind: "refused",
+          stepKey: step,
+          hookId: hook.id,
+          detail: `content-fingerprint-conflict: the completion records disagree on "${hook.id}"'s content (contract §2.2)`,
+        });
+        break;
+      }
       const completed = ledger.stepView().completed(attempt.attemptId, step);
       if (completed === null) {
         throw new Error("the ledger reported the hook completed but lost its record");
