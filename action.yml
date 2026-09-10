@@ -13,15 +13,26 @@
 #     constructed environment. Hermeticity is achievable by construction: the
 #     ambient layer ends at a shell line this repository owns;
 #   - ONE door: `run` (§2.3). Every input below maps onto an exact decided
-#     grammar row (`GRAMMAR.run` in src/cli/grammar.ts) or is refused; the
-#     closed grammar is the validation, the metadata is not the enforcement
-#     layer. Release-please-shaped inputs are refused by name at that
-#     boundary, never defaulted (issue #208): this surface declares no
+#     grammar row (`GRAMMAR.run` in src/cli/grammar.ts); the closed
+#     grammar is the validation, the metadata is not the enforcement
+#     layer, and a value the grammar refuses surfaces as the CLI's usage
+#     fault, never a defaulted input (issue #208). The action surface
+#     refuses nothing undeclared: the runner does not fail a composite
+#     on inputs it does not declare — it emits an `Unexpected input(s)
+#     ...` warning annotation and drops them, and only a missing
+#     *required* input fails the workflow. This surface declares no
 #     `release-type`, no `draft-pull-request`, no `label`, no
 #     `target-branch`, no `bootstrap-sha`, no `last-release-sha`, no
-#     `initial-version`, no `package-name`, no `separate-pull-requests` —
-#     a workflow that expects release-please's vocabulary gets a loud
-#     unknown-input refusal, not a silently different release.
+#     `initial-version`, no `package-name`, no `separate-pull-requests`,
+#     so a workflow that expects release-please's vocabulary gets that
+#     warning and a silently dropped input while the run door still
+#     executes with release-craft semantics — the migration to this
+#     surface is manual. What the engine itself refuses at ITS boundary
+#     (unknown flags and rows outside `GRAMMAR.run`: exit 64; the
+#     unsupported band, exit 65) is pinned by the grammar and release-pr
+#     suites and by the refused-inputs fixture
+#     (test/action/metadata.test.ts, fixture 6) proving this surface
+#     never declares the vocabulary.
 #   - `--assembly git` is pinned (§2.6): a memory run in CI is a walk whose
 #     every record evaporates with the runner;
 #   - no token input, no secret, no checkout (§2.8) — the mint is a local

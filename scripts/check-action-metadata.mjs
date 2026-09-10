@@ -193,9 +193,11 @@ export function analyzeActionMetadata(source) {
       "declarations",
       "naming-module",
       "target",
-      // — release-please's vocabulary (issue #208): a workflow that
-      // expects those inputs must get the runner's unknown-input refusal,
-      // never a silently different release —
+      // — release-please's vocabulary (issue #208): the runner refuses
+      // nothing undeclared on a composite — it annotates
+      // `Unexpected input(s) ...` as a warning and drops them — so a
+      // migrating workflow's leftover vocabulary is silently ignored;
+      // this gate keeps the surface from ever declaring those names —
       "release-type",
       "draft-pull-request",
       "label",
