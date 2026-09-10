@@ -323,6 +323,20 @@ type FoundExistingPR =
   | { readonly kind: "none" }
   | ReleasePRTransportFailure;
 
+/** The update write's label set: the projection's labels unioned onto
+ * the PR's current labels. Labels are organizational — humans add them
+ * freely (the update path's own contract) — so a repair write re-applies
+ * the projection without clobbering what a human added. Existing labels
+ * keep their order; projection labels are appended when absent.
+ * Deterministic over its inputs. */
+const mergeLabels = (existing: readonly string[], projected: readonly string[]): string[] => {
+  const merged = [...existing];
+  for (const label of projected) {
+    if (!merged.includes(label)) merged.push(label);
+  }
+  return merged;
+};
+
 /** Open the gate over an injected port (and optionally a record sink).
  * The door wires; it owns nothing — consistent with the assembled
  * adapter's injection discipline. */
@@ -401,7 +415,7 @@ export const openReleasePRGate = (
         prNumber: existing.number,
         title: projection.title,
         body: projection.body,
-        labels: projection.labels,
+        labels: mergeLabels(existing.labels, projection.labels),
         draft: existing.draft,
         files: projection.files,
       });

@@ -444,6 +444,48 @@ describe("openReleasePRGate.update", () => {
     expect(port.updates).toHaveLength(0);
   });
 
+  it("preserves human-added labels across a stale-title repair", () => {
+    const plan = makePlan();
+    const render = renderReleasePRProjection(identity, plan);
+    if (render === null) throw new Error("expected a render");
+    const existing: ExistingPR = {
+      number: 14,
+      title: "outdated title", // stale title → repairable write
+      body: render.projection.body,
+      headRef: "release/lib-a",
+      draft: false,
+      labels: ["do-not-merge"], // human-added, absent from the projection
+    };
+    const port = fakePort(existing);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
+    const outcome = gate.update(identity, plan);
+    expect(outcome.kind).toBe("updated");
+    if (outcome.kind !== "updated") throw new Error("expected updated");
+    expect(port.updates).toHaveLength(1);
+    // the write carries the union: the human label survives, in place
+    expect(outcome.pr.labels).toEqual(["do-not-merge", "release-craft"]);
+  });
+
+  it("merges labels without duplicating the projection label", () => {
+    const plan = makePlan();
+    const render = renderReleasePRProjection(identity, plan);
+    if (render === null) throw new Error("expected a render");
+    const existing: ExistingPR = {
+      number: 15,
+      title: "outdated title", // stale title → repairable write
+      body: render.projection.body,
+      headRef: "release/lib-a",
+      draft: false,
+      labels: ["do-not-merge", "release-craft"], // projection label already present
+    };
+    const port = fakePort(existing);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
+    const outcome = gate.update(identity, plan);
+    expect(outcome.kind).toBe("updated");
+    if (outcome.kind !== "updated") throw new Error("expected updated");
+    expect(outcome.pr.labels).toEqual(["do-not-merge", "release-craft"]);
+  });
+
   it("refuses when the body has drifted from the plan it claims", () => {
     const plan = makePlan();
     const render = renderReleasePRProjection(identity, plan);
