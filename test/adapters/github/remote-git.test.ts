@@ -31,8 +31,11 @@ describe("the failure classifier (§2.3 rows 8–9)", () => {
   it("never reads a status substring out of git's progress lines (issue #178)", () => {
     // The old classifier matched a bare `403`/`401` anywhere in the
     // stderr — a push's own progress counters ("Total 403 (delta 0)")
-    // wore an authentication fault. Statuses classify only where the
-    // transport prints them structurally.
+    // wore an authentication fault. The line's numbers are byte counts
+    // that collide with the HTTP status codes by coincidence — 403
+    // bytes moved, not a 403 status — which is exactly what made the
+    // bare-substring classifier look right. Statuses classify only
+    // where the transport prints them structurally.
     expect(classifyGitFailure("Total 403 (delta 0), reused 401 (delta 0), pack-reused 0")).toBe(
       "transport-failure",
     );

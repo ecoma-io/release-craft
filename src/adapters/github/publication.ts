@@ -23,8 +23,10 @@
  *   nothing has landed to be ambiguous about. A determinate answer
  *   classifies: the provider's 422/409 refusals of the create are
  *   `refused("release-conflict")` with the provider's own words
- *   (`already_exists` is the documented duplicate-create answer — the
- *   benign race-loss the idempotent re-run resolves; issue #178), and
+ *   (`already_exists` is the duplicate-create answer observed on the
+ *   wire — the reference page documents the endpoint's 422 only as
+ *   "Validation failed, or the endpoint has been spammed" — the benign
+ *   race-loss the idempotent re-run resolves; issue #178), and
  *   the create's 404 is the unobservable repository (#176) — a
  *   determinate non-land, never the retryable class;
  * - `verifyRelease` reports a release that does not exist as `absent`
@@ -87,9 +89,11 @@ const failureTail = (response: GitHubResponse): FailureTail => {
     : failure;
 };
 
-/** Whether the create refusal is GitHub's documented duplicate-create
- *  answer: the `already_exists` code rides the body's `errors` array
- *  (the REST contract's shape) or the message itself. */
+/** Whether the create refusal is the duplicate-create answer: the
+ *  `already_exists` code rides the body's `errors` array (the REST
+ *  contract's shape) or the message itself. The anchor is the observed
+ *  wire shape, not the reference page — which documents the endpoint's
+ *  422 only as "Validation failed, or the endpoint has been spammed". */
 const isAlreadyExists = (body: string): boolean => {
   const message = bodyMessage(body);
   if (message !== undefined && message.includes("already_exists")) {
@@ -114,8 +118,8 @@ const isAlreadyExists = (body: string): boolean => {
 
 /** The determinate create refusal's detail (issue #178): the provider
  *  answered the write — nothing landed unseen — so the refusal carries
- *  the provider's own words. `already_exists` is GitHub's documented
- *  answer to a duplicate create: the write raced another publisher (or
+ *  the provider's own words. `already_exists` is the duplicate-create
+ *  answer observed on the wire: the write raced another publisher (or
  *  the release pre-exists), the remote now holds a release for the tag,
  *  and the idempotent re-run resolves whose it is — the same recorded
  *  conflict decision a diverged release carries. */
@@ -275,8 +279,9 @@ export function GitReleasePublication(
       // write is that class. A determinate answer classifies: a 404 is
       // the unobservable repository (#176) — the write landed nothing;
       // a 422 or 409 is the provider's determinate refusal of the
-      // create (#178) — `already_exists` is its documented duplicate
-      // answer, the benign race-loss the idempotent re-run resolves;
+      // create (#178) — `already_exists` is its duplicate-create
+      // answer, observed on the wire, the benign race-loss the
+      // idempotent re-run resolves;
       // the credential and rate-limit shapes are the read tail's.
       const created = transport.request(
         `/repos/${credentials.owner}/${credentials.repo}/releases`,
