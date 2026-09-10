@@ -28,6 +28,7 @@ import {
   gitCutScenario,
   gitFaultScenarios,
   gitPromoteScenario,
+  ledgerIdentityLog,
   memoryPlanScenario,
   memoryRunScenario,
   memoryDenialScenario,
@@ -103,6 +104,12 @@ const generateGit = (): void => {
           exit: child.status,
           stdout: project(child.stdout, repo),
           stderr: child.stderr,
+        },
+        {
+          label: "the substrate commits' identity",
+          exit: 0,
+          stdout: project(ledgerIdentityLog(repo), repo),
+          stderr: "",
         },
       ],
     });

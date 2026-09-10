@@ -140,7 +140,7 @@ const buildShim = (spec: {
       ? [
           `BLOB=$(cat "${payload}" | "${real}" hash-object -w --stdin)`,
           `TREE=$(printf '100644 blob %s\\trecord\\n' "$BLOB" | "${real}" mktree)`,
-          `COMMIT=$("${real}" commit-tree "$TREE" -m "ecoma: append")`,
+          `COMMIT=$("${real}" commit-tree "$TREE" -m "release-craft: append")`,
           `"${real}" update-ref "${spec.registerRef}" "$COMMIT" || exit 1`,
         ].join("\n")
       : "kill -9 $$";
@@ -482,7 +482,7 @@ describe("the per-line claim register (ADR-0011)", () => {
         });
         const blob = git(["hash-object", "-w", "--stdin"], record).trim();
         const tree = git(["mktree"], `100644 blob ${blob}\trecord\n`).trim();
-        const commit = git(["commit-tree", tree, "-m", "ecoma: append"]).trim();
+        const commit = git(["commit-tree", tree, "-m", "release-craft: append"]).trim();
         git(["update-ref", claimRegisterRefFor("line-main"), commit]);
         const store = new GitClaimStore(repo);
         expect(() => store.acquire(stableVersion("1.2.3"), "attempt_a")).toThrow(TypeError);
@@ -498,7 +498,7 @@ describe("the per-line claim register (ADR-0011)", () => {
         const land = (content: string): void => {
           const blob = git(["hash-object", "-w", "--stdin"], content).trim();
           const tree = git(["mktree"], `100644 blob ${blob}\trecord\n`).trim();
-          const commit = git(["commit-tree", tree, "-m", "ecoma: append"]).trim();
+          const commit = git(["commit-tree", tree, "-m", "release-craft: append"]).trim();
           git(["update-ref", claimRegisterRefFor("line-main"), commit]);
         };
         land('{"claims":[42]}');
@@ -516,7 +516,7 @@ describe("the per-line claim register (ADR-0011)", () => {
         const land = (content: string): void => {
           const blob = git(["hash-object", "-w", "--stdin"], content).trim();
           const tree = git(["mktree"], `100644 blob ${blob}\trecord\n`).trim();
-          const commit = git(["commit-tree", tree, "-m", "ecoma: append"]).trim();
+          const commit = git(["commit-tree", tree, "-m", "release-craft: append"]).trim();
           git(["update-ref", claimRegisterRefFor("line-main"), commit]);
         };
         const record = (scope: ClaimScope, token: string): string =>

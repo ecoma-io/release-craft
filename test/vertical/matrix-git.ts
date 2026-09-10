@@ -729,7 +729,7 @@ export const buildShim = (spec: {
       ? [
           `BLOB=$(cat "${payload}" | "${real}" hash-object -w --stdin)`,
           `TREE=$(printf '100644 blob %s\\trecord\\n' "$BLOB" | "${real}" mktree)`,
-          `COMMIT=$("${real}" commit-tree "$TREE" -m "ecoma: append")`,
+          `COMMIT=$("${real}" commit-tree "$TREE" -m "release-craft: append")`,
           `"${real}" update-ref "${spec.registerRef}" "$COMMIT" || exit 1`,
         ].join("\n")
       : "kill -9 $$";

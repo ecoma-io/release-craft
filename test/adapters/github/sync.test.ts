@@ -100,10 +100,10 @@ const withSyncRepo = (name: string, fn: (fixture: SyncRepo) => void): void => {
   try {
     spawnGit(["init", "--quiet", repo]);
     spawnGit(["init", "--bare", "--quiet", origin]);
-    spawnGit(["-C", repo, "config", "user.name", "ecoma release-craft"]);
-    spawnGit(["-C", repo, "config", "user.email", "adapter@ecoma.local"]);
+    spawnGit(["-C", repo, "config", "user.name", "release-craft"]);
+    spawnGit(["-C", repo, "config", "user.email", "adapter@release-craft.local"]);
     spawnGit(["-C", repo, "config", "commit.gpgsign", "false"]);
-    spawnGit(["-C", repo, "commit", "--allow-empty", "-m", "ecoma: root"]);
+    spawnGit(["-C", repo, "commit", "--allow-empty", "-m", "release-craft: root"]);
     spawnGit(["-C", repo, "remote", "add", "origin", origin]);
     const git = openGitRun(repo);
     let opened: GitBinding | undefined;

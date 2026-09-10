@@ -45,10 +45,10 @@ const spawnGit = (repo: string, args: readonly string[]): void => {
  * empty root commit. */
 const initRepo = (repo: string): void => {
   spawnGit(repo, ["init"]);
-  spawnGit(repo, ["config", "user.name", "ecoma release-craft"]);
-  spawnGit(repo, ["config", "user.email", "binding@ecoma.local"]);
+  spawnGit(repo, ["config", "user.name", "release-craft"]);
+  spawnGit(repo, ["config", "user.email", "binding@release-craft.local"]);
   spawnGit(repo, ["config", "commit.gpgsign", "false"]);
-  spawnGit(repo, ["commit", "--allow-empty", "-m", "ecoma: root"]);
+  spawnGit(repo, ["commit", "--allow-empty", "-m", "release-craft: root"]);
 };
 
 /**

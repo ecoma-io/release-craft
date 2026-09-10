@@ -50,10 +50,10 @@ export type GitRun = (args: readonly string[], input?: string) => string;
  * object ids that are a pure function of the test's writes).
  */
 export const COMMIT_ENV = {
-  GIT_AUTHOR_NAME: "ecoma release-craft",
-  GIT_AUTHOR_EMAIL: "binding@ecoma.local",
-  GIT_COMMITTER_NAME: "ecoma release-craft",
-  GIT_COMMITTER_EMAIL: "binding@ecoma.local",
+  GIT_AUTHOR_NAME: "release-craft",
+  GIT_AUTHOR_EMAIL: "binding@release-craft.local",
+  GIT_COMMITTER_NAME: "release-craft",
+  GIT_COMMITTER_EMAIL: "binding@release-craft.local",
   GIT_AUTHOR_DATE: "@0 +0000",
   GIT_COMMITTER_DATE: "@0 +0000",
 } as const;

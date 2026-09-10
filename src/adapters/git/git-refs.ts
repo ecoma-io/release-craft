@@ -80,8 +80,8 @@ export function casAppendCommit(
   const tree = git(["mktree"], `100644 blob ${blob}\trecord\n`).trim();
   const commit = (
     base === null
-      ? git(["commit-tree", tree, "-m", "ecoma: append"])
-      : git(["commit-tree", tree, "-p", base, "-m", "ecoma: append"])
+      ? git(["commit-tree", tree, "-m", "release-craft: append"])
+      : git(["commit-tree", tree, "-p", base, "-m", "release-craft: append"])
   ).trim();
   try {
     git(["update-ref", ref, commit, base ?? ZERO_OID]);

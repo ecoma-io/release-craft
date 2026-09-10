@@ -88,7 +88,7 @@ const buildChannelShim = (spec: { readonly ref: string; readonly payload: string
     `  touch "${flag}"`,
     `  BLOB=$(cat "${payload}" | "${real}" hash-object -w --stdin)`,
     `  TREE=$(printf '100644 blob %s\\trecord\\n' "$BLOB" | "${real}" mktree)`,
-    `  COMMIT=$("${real}" commit-tree "$TREE" -m "ecoma: append")`,
+    `  COMMIT=$("${real}" commit-tree "$TREE" -m "release-craft: append")`,
     `  "${real}" update-ref "${spec.ref}" "$COMMIT" || exit 1`,
     "fi",
     `exec "${real}" "$@"`,
@@ -262,7 +262,7 @@ describe("the git-backed channel store (ADR-0012 decision 6)", () => {
       const ref = channelRefFor("stable");
       const blob = git(["hash-object", "-w", "--stdin"], '{"claims":[]}');
       const tree = git(["mktree"], `100644 blob ${blob.trim()}\trecord\n`).trim();
-      const commit = git(["commit-tree", tree.trim(), "-m", "ecoma: append"]).trim();
+      const commit = git(["commit-tree", tree.trim(), "-m", "release-craft: append"]).trim();
       git(["update-ref", ref, commit]);
       const store = new GitChannelStore(repo);
       expect(() => store.read("stable")).toThrow(/channel namespace/);
@@ -281,7 +281,7 @@ describe("the git-backed channel store (ADR-0012 decision 6)", () => {
       // move over a state that names another channel.
       const blob = git(["hash-object", "-w", "--stdin"], envelope("next", pointed("9.9.9")));
       const tree = git(["mktree"], `100644 blob ${blob.trim()}\trecord\n`).trim();
-      const commit = git(["commit-tree", tree.trim(), "-m", "ecoma: append"]).trim();
+      const commit = git(["commit-tree", tree.trim(), "-m", "release-craft: append"]).trim();
       git(["update-ref", ref, commit]);
       const store = new GitChannelStore(repo);
       expect(() => store.read("stable")).toThrow(/one channel per ref/);

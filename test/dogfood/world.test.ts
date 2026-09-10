@@ -115,7 +115,7 @@ describe("the self-dogfood's world closure", () => {
       expect(world.repository.commits).toHaveLength(2);
       const subjects = world.repository.commits.map((commit) => commit.message.split("\n")[0]);
       expect(subjects[0]).toContain("feat: seed the component's manifest");
-      expect(subjects.at(-1)).toBe("ecoma: root");
+      expect(subjects.at(-1)).toBe("release-craft: root");
 
       // The closed-input law: every ref head and every parent points into
       // the observed commit universe — the defect a naive closure hits.
