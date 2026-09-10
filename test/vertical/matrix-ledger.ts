@@ -17,6 +17,7 @@
  * Every golden here is hand-derived from the phase contracts (§2), never
  * from a run. No clock, no environment, no randomness (§5).
  */
+import { stageContentFingerprint } from "@ecoma-io/release-craft/app";
 import {
   CANONICAL_STAGES,
   MemoryAttemptRegister,
@@ -321,7 +322,8 @@ export function walkStages(
         ctx.attempt,
         stage,
         actor(ctx.attempt),
-        `content:${stage}:${ctx.attempt.attemptId}`,
+        // The engine's §2.6 derivation — identity is not an input (#195).
+        stageContentFingerprint(stage, ctx.planLine),
       );
     }
     if (opts.crashAfterStartOf === stage) {
@@ -345,7 +347,7 @@ export function walkStages(
       {
         stepKey: stage,
         attribution: actor(ctx.attempt),
-        contentFingerprint: `content:${stage}:${ctx.attempt.attemptId}`,
+        contentFingerprint: stageContentFingerprint(stage, ctx.planLine),
         ...(preconditions === undefined ? {} : { preconditions }),
       },
       ctx.stores.claims.viewFor(ctx.attempt.attemptId),

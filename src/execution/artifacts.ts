@@ -113,16 +113,22 @@ export const scheduleArtifacts = (
         `no declared artifact answers the recorded key ${step} (contract §2.1)`,
       );
     }
-    // Digest reconciliation on replay (§2.4): a second completion record
+    // Digest reconciliation on replay (§2.3): a second completion record
     // whose recorded digest differs from the first is a conflict — E-02's
-    // done-vs-conflict, refused, never a silent pass.
+    // done-vs-conflict, refused, never a silent pass. Fail-closed extends
+    // to a completed record that proves no content at all: against the
+    // generation record a bare completion is partial evidence, and partial
+    // evidence judges — the tail is the truth, never whichever record reads
+    // last (#195, #228).
     const completions = completionRecords(ledger, attempt.attemptId, step);
-    const digests = new Set(
-      completions.flatMap((record) =>
-        record.artifact === undefined ? [] : [record.artifact.digest],
-      ),
+    const triples = completions.flatMap((record) =>
+      record.artifact === undefined ? [] : [record.artifact],
     );
-    if (digests.size > 1) {
+    const digests = [...new Set(triples.map((triple) => triple.digest))];
+    // A completion that proves no content at all — no triple — is partial
+    // evidence beside a proofed record: the judged row conflicts, never
+    // a silent pass over whichever record reads last (#195, #228).
+    if (digests.length > 1 || (triples.length !== completions.length && digests.length > 0)) {
       outcomes.push({
         kind: "refused",
         stepKey: step,
@@ -202,8 +208,15 @@ export const scheduleArtifacts = (
       break;
     }
     // Write-ahead start (ADR-0006 decision 2): the declared guard name,
-    // verbatim, durable before the producer may run.
-    ledger.appendStart(attempt, step, attribution, undefined, declared.guard);
+    // verbatim, durable before the producer may run. A start already
+    // durable for this step and attempt is reused — a crash between the
+    // write-ahead and its effect left the start behind, and appending a
+    // second start would record an execution that never began twice. A
+    // failed step restarts with a fresh start (§2.2).
+    const startState = ledger.step(attempt.attemptId, step);
+    if (startState === "none" || startState === "failed") {
+      ledger.appendStart(attempt, step, attribution, undefined, declared.guard);
+    }
     // The seam (ADR-0008 decision 2): the producer runs; the engine
     // records what it returns. Nothing else is executed or stored.
     const observation = producer({

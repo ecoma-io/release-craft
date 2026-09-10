@@ -7,6 +7,7 @@
  * golden, and no fixture reads a clock or the environment (§5's laws).
  */
 import { Channel, Version } from "@ecoma-io/release-craft/domain";
+import { stageContentFingerprint } from "@ecoma-io/release-craft/app";
 
 import {
   CANONICAL_STAGES,
@@ -33,6 +34,7 @@ import {
   type HookEffect,
   type HookStep,
   type ReleaseAttempt,
+  type StageKey,
   type StepKey,
 } from "@ecoma-io/release-craft/__internal__/execution/index.js";
 import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
@@ -515,9 +517,13 @@ export function driveStage(
   attempt: ReleaseAttempt,
   stage: StepKey,
   stores: Stores,
+  planLine: PlanLine,
   preconditions?: readonly { readonly precondition: string; readonly holds: boolean }[],
 ): StepDrive {
-  const fingerprint = `content:${stage}:${attempt.attemptId}`;
+  // The stage's §2.6 content digest — the engine's own derivation
+  // (stageContentFingerprint), so the fixture drive stays the same named
+  // walk the application boundary performs: identity is not an input.
+  const fingerprint = stageContentFingerprint(stage as StageKey, planLine);
   const outcome = requestStep(
     attempt,
     {
@@ -848,7 +854,7 @@ export function walkStages(
           }))
         : undefined;
     if (stage !== skipStartFor) {
-      const fingerprint = `content:${stage}:${ctx.attempt.attemptId}`;
+      const fingerprint = stageContentFingerprint(stage, ctx.planLine);
       ctx.stores.ledger.appendStart(ctx.attempt, stage, actor(ctx.attempt), fingerprint);
     }
     if (opts.crashAfterStartOf === stage) {
@@ -869,7 +875,7 @@ export function walkStages(
         ledger: ctx.stores.ledger,
       });
     }
-    const drive = driveStage(ctx.attempt, stage, ctx.stores, preconditions);
+    const drive = driveStage(ctx.attempt, stage, ctx.stores, ctx.planLine, preconditions);
     drives.push(drive);
     if (drive.outcome.kind !== "advance") {
       // E-02's replay: re-running a stage whose write-ahead start is
