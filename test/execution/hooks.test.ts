@@ -544,6 +544,47 @@ describe("content-fingerprint conflict on replay (§2.2): two completions, diffe
     expect(completed.stepKey).toBe("hook:scan");
     expect(completed.record.contentFingerprint).toBe("content_sha256:stable");
   });
+
+  it("refuses when a fingerprinted completion sits beside a fingerprint-less one (#193 mixed presence)", () => {
+    const attempt = executing([hookDecl("scan", "publish", "before")]);
+    const ledger = new MemoryLedger();
+    // Fingerprinted first, fingerprint-less second: the undefined-dropping
+    // filter once saw the second alone and replayed `completed` silently —
+    // fail-closed doctrine makes the mixed presence the same conflict (a
+    // missing side is a disagreement).
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:v1");
+    recordHook(ledger, attempt, "scan");
+    const run = scheduleHooks(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["scan", recordingEffect()]]),
+    );
+    const refused = refusedOutcome(run.outcomes);
+    expect(refused.stepKey).toBe("hook:scan");
+    expect(refused.detail).toMatch(/content-fingerprint-conflict/);
+  });
+
+  it("refuses when a fingerprint-less completion sits beside a fingerprinted one (#193 mixed presence, reverse order)", () => {
+    const attempt = executing([hookDecl("scan", "publish", "before")]);
+    const ledger = new MemoryLedger();
+    // The reverse arrangement recompletes the discriminating surface —
+    // the old filter saw the fingerprinted completion alone and replayed
+    // `completed`, again silently.
+    recordHook(ledger, attempt, "scan");
+    recordHookWithFingerprint(ledger, attempt, "scan", "content_sha256:v1");
+    const run = scheduleHooks(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["scan", recordingEffect()]]),
+    );
+    const refused = refusedOutcome(run.outcomes);
+    expect(refused.stepKey).toBe("hook:scan");
+    expect(refused.detail).toMatch(/content-fingerprint-conflict/);
+  });
 });
 
 describe("determinism (§4.5): identical inputs, identical outcomes", () => {

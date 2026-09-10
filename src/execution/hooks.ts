@@ -16,6 +16,7 @@
  * identically, provable by double-run.
  */
 import { block, InvalidExecutionTransitionError } from "./attempt.js";
+import { completionRecords } from "./completions.js";
 import { CANONICAL_STAGES } from "./types.js";
 import {
   type ArtifactStep,
@@ -123,25 +124,31 @@ export const scheduleHooks = (
     // never re-runs to obtain a proof to compare — a completed hook
     // replays even when the effects map carries no entry.
     if (ledger.step(attempt.attemptId, step) === "completed") {
-      // Content reconciliation on replay (§2.2): completion records whose
-      // recorded fingerprints disagree are a conflict — E-02's
+      // Recorded-vs-recorded content reconciliation on replay (§2.2): the
+      // completion records must agree on one recorded content — E-02's
       // done-vs-conflict, refused, never a silent pass (the artifacts
-      // path's digest reconciliation, parity for hooks).
-      const recordedFingerprints = new Set(
-        ledger
-          .tail(attempt.attemptId)
-          .flatMap((appended) => (appended.kind === "step" ? [appended.record] : []))
-          .filter((record) => record.stepKey === step && record.to === "completed")
-          .flatMap((record) =>
-            record.contentFingerprint === undefined ? [] : [record.contentFingerprint],
-          ),
+      // path's digest reconciliation, parity for hooks). Fail-closed on
+      // partial proof too: a fingerprint-less completion beside a
+      // fingerprinted one is the same conflict — a missing side is a
+      // disagreement (the evidence verification's rule, ADR-0005
+      // decision 8). Matching, or absent on every completion, replays
+      // the stored record.
+      const completions = completionRecords(ledger, attempt.attemptId, step);
+      const recordedFingerprints = completions.flatMap((record) =>
+        record.contentFingerprint === undefined ? [] : [record.contentFingerprint],
       );
-      if (recordedFingerprints.size > 1) {
+      const disagreement =
+        new Set(recordedFingerprints).size > 1 ||
+        (recordedFingerprints.length > 0 && recordedFingerprints.length < completions.length);
+      if (disagreement) {
         outcomes.push({
           kind: "refused",
           stepKey: step,
           hookId: hook.id,
-          detail: `content-fingerprint-conflict: the completion records disagree on "${hook.id}"'s content (contract §2.2)`,
+          detail:
+            recordedFingerprints.length !== completions.length
+              ? `content-fingerprint-conflict: a completion of "${hook.id}" without its content proof sits beside a fingerprinted one — a missing side is a disagreement (contract §2.2)`
+              : `content-fingerprint-conflict: the completion records disagree on "${hook.id}"'s content (contract §2.2)`,
         });
         break;
       }
