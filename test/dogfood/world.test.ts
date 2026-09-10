@@ -51,9 +51,21 @@ describe("the self-dogfood's world closure", () => {
       // GIT_* leak or a translated locale cannot reword a fault line the
       // suite (or the planner) discriminates on — exactly what every other
       // git fixture in this repo runs on.
+      const spawnEnv = hermeticGitEnv();
+      // The hermeticity contract, pinned so the floor is mutation-proven: the
+      // closure's git never runs with the ambient composition's leaked
+      // context — the GIT_* variables that would hand it another repository's
+      // history. Removing the floor fails wherever that ambient carries them
+      // (the harness env does).
+      for (const leaked of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_COUNT"]) {
+        expect(
+          Object.keys(spawnEnv),
+          `the closure spawn's env leaked ${leaked} past the hermetic floor`,
+        ).not.toContain(leaked);
+      }
       const child = spawnSync(process.execPath, [CLOSURE_SCRIPT, "--repo", repo], {
         encoding: "utf8",
-        env: hermeticGitEnv(),
+        env: spawnEnv,
         maxBuffer: 64 * 1024 * 1024,
       });
       expect(child.error, `closure failed to spawn: ${String(child.error)}`).toBeUndefined();

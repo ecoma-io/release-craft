@@ -49,23 +49,27 @@ function withMaterialization(fn: (dir: string) => void): void {
   }
 }
 /**
- * The environment the fixture's installs run under. The ambient composition
- * (the moon-spawned worker, not the test author's shell) leaks git context —
- * GIT_DIR among it. With GIT_DIR exported, the prepare script's `lefthook
- * install` finds a repository anyway, its git probe succeeds, and the
- * unflagged install exits 0: the materialization shape stops reproducing the
- * defect, with or without any other ambient variable (#154 — the same leak
- * that let the dogfood closure observe the ambient checkout's commits). The
- * installs therefore run on the binding's hermetic floor, the same one the
- * world fixture's closure runs on. The agent markers are stripped on top only
- * to pin the reporter's shape: pnpm detects them and flips to NDJSON output —
- * cosmetic (they never moved the exit code), but the fixture reads the
- * reporter's lines as its fault-shape evidence.
+ * The environment the fixture's installs run under, and the hermeticity
+ * contract both this fixture and its pins read. The ambient composition (the
+ * moon-spawned worker, not the test author's shell) leaks git context —
+ * GIT_DIR among it — and with GIT_DIR exported the prepare script's
+ * `lefthook install` finds a repository anyway: its probe succeeds, the
+ * unflagged install exits 0, the materialization shape stops reproducing the
+ * defect. The installs therefore run on the binding's hermetic floor, the
+ * same one the world fixture's closure runs on — sufficiency of that leak is
+ * proven by the positive control leg below. The agent markers are stripped on
+ * top to pin the reporter's shape: they never moved the exit code (refuted as
+ * the historical trigger), but pnpm switches to NDJSON output when they leak,
+ * and the fixture reads the reporter's lines as fault-shape evidence.
  */
+const AGENT_MARKERS: Record<string, true> = {
+  CLAUDECODE: true,
+  CLAUDE_CODE: true,
+  AGENT: true,
+};
+
 const INSTALL_ENV: NodeJS.ProcessEnv = Object.fromEntries(
-  Object.entries(hermeticGitEnv()).filter(
-    ([key]) => key !== "CLAUDECODE" && key !== "CLAUDE_CODE" && key !== "AGENT",
-  ),
+  Object.entries(hermeticGitEnv()).filter(([key]) => !(key in AGENT_MARKERS)),
 );
 
 const install = (dir: string, extraArgs: readonly string[]) =>
@@ -94,6 +98,14 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
         expect(scriptsRun.status, `pnpm was killed before exiting:\n${scriptsRun.stderr}`).toEqual(
           expect.any(Number),
         );
+        // The hermeticity contract, pinned so the floor is mutation-proven:
+        // the env handed to the spawns carries none of the markers whose
+        // ambient presence flips pnpm's reporter to NDJSON. Removing the
+        // strip fails here wherever the harness ambient carries them.
+        expect(
+          Object.keys(INSTALL_ENV).filter((key) => key in AGENT_MARKERS),
+          "the fixture's installs inherited the ambient agent markers — the strip was removed",
+        ).toEqual([]);
         expect(
           scriptsRun.status,
           `the unflagged install exited 0 — the materialization shape no longer reproduces the defect:\n${scriptsRun.stdout}${scriptsRun.stderr}`,
@@ -112,6 +124,15 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
           witnessed,
           "the unflagged install failed without pnpm's ELIFECYCLE marker — the cause is not a lifecycle script",
         ).toMatch(/\[ELIFECYCLE\]/);
+        // The reporter's shape, pinned observably: pnpm's NDJSON agent mode
+        // would ride this discriminator line into the output above and
+        // re-shape the fault evidence the assertions read. In a marker-free
+        // CI ambient this passes vacuously; wherever the markers leak, it
+        // fails loudly — the strip's contract is never silently lost.
+        expect(
+          witnessed,
+          "the install reported through pnpm's NDJSON agent reporter — the ambient markers leaked past the floor",
+        ).not.toMatch(/Detected an AI agent environment/);
       });
       // The positive control, deterministic by construction: the SAME tree
       // under the SAME install, but with the ambient leak the composition
