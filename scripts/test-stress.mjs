@@ -72,6 +72,7 @@ const VITEST_ARGS = ["exec", "vitest", "run", "--reporter=json", "--reporter=def
  * with the run's structured verdict. The child is killed at `timeoutMs` — a
  * hang must surface as a failed run, never as a stuck harness.
  */
+/** @param {readonly string[] | null} files @param {string} label */
 function runVitest(files, label) {
   return new Promise((resolve) => {
     const t0 = performance.now();
@@ -167,6 +168,7 @@ function runVitest(files, label) {
 // Modes — each returns the list of concurrent runs one repetition performs
 // ---------------------------------------------------------------------------
 
+/** @param {string} mode */
 function runMode(mode) {
   switch (mode) {
     case "single":
@@ -197,6 +199,7 @@ function runMode(mode) {
 // Main
 // ---------------------------------------------------------------------------
 
+/** @type {{ label: string, ok: boolean, exitCode: number | null, durationMs: number, numTests: number, numPassed: number, numFailed: number, failures: { file: string, test: string, durationMs: number, message: string }[] }[]} */
 const allRuns = [];
 
 // The CLI's and the Action's suites execute the BUILT bin — dist/src/cli/index.js
@@ -258,6 +261,7 @@ const total = allRuns.length;
 const passed = allRuns.filter((r) => r.ok).length;
 const failedRuns = total - passed;
 const durationsSec = allRuns.map((r) => r.durationMs / 1000).sort((a, b) => a - b);
+/** @param {number} p @returns {number | undefined} */
 const percentile = (p) =>
   durationsSec[Math.min(durationsSec.length - 1, Math.floor(durationsSec.length * p))];
 
@@ -265,12 +269,13 @@ console.log(`\n${"=".repeat(72)}`);
 console.log(`  SUMMARY ${passed}/${total} runs green · ${failedRuns} red`);
 if (durationsSec.length > 0) {
   console.log(
-    `  wall-clock s: min=${durationsSec[0].toFixed(1)} p50=${percentile(0.5).toFixed(1)} ` +
-      `p95=${percentile(0.95).toFixed(1)} max=${durationsSec.at(-1).toFixed(1)}`,
+    `  wall-clock s: min=${String(durationsSec[0]?.toFixed(1))} p50=${String(percentile(0.5)?.toFixed(1))} ` +
+      `p95=${String(percentile(0.95)?.toFixed(1))} max=${String(durationsSec.at(-1)?.toFixed(1))}`,
   );
 }
 
 // Per-file flake census — which files ever failed, how often.
+/** @type {Record<string, number>} */
 const flakyFiles = {};
 for (const r of allRuns) {
   for (const f of r.failures) {
