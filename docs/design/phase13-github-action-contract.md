@@ -803,7 +803,8 @@ places, outer and inner, and names what each owns:
 - **The inner line — the binding's floor, inherited verbatim.** Every git
   spawn runs on `hermeticGitEnv()` (`src/adapters/git/git-run.ts`, verified):
   process env minus the leaked repository context (`GIT_DIR`,
-  `GIT_WORK_TREE`, `GIT_TRACE*`, the `GIT_CONFIG*` injection channels, …),
+  `GIT_WORK_TREE`, `GIT_NAMESPACE`, `GIT_TRACE*`, the `GIT_CONFIG*`
+  injection channels, …),
   plus `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`,
   `GIT_TERMINAL_PROMPT=0`, `LC_ALL=C`, and the baked deterministic commit
   identity. The CLI opens the binding and inherits the floor; the Action

@@ -319,3 +319,140 @@ describe("the git ledger's walked-tail cache invalidation (issue #136)", () => {
     });
   });
 });
+
+/**
+ * The ledger append's content identity (issue #185; contract §2.2's fifth
+ * guarantee, D44). Forward-only makes every append an extension; the carry
+ * check makes it content-aware, and the check is tip-relative: an append
+ * whose canonical bytes the stream's current tip already holds is satisfied
+ * already — the crash-restart overlap of two live writers on one attemptId
+ * lands one record, not two — while a byte-identical record the stream
+ * carried but moved past is a new positional fact (a re-armed start, a
+ * crash window's re-issue) and lands, as do records differing in any
+ * field. Each pin is killed by its own mutant: removing the carry check
+ * re-lands the overlap duplicate; widening the check to the whole history
+ * swallows the re-armed start; absorbing unconditionally strands records
+ * the stream does not hold; keying identity on anything but the bytes
+ * over-absorbs field differences. All scenarios are deterministic and
+ * in-process — the overlap writer is a second `GitLedger` over the same
+ * repository, its cold cache the restarted process's walk.
+ */
+describe("the git ledger append's content identity (issue #185, D44)", () => {
+  it("an append whose bytes the stream's tip already holds is absorbed — the crash-restart overlap lands once", () => {
+    withTempRepo("append-absorbs-tip-duplicate", (_repo, git) => {
+      const first = new GitLedger(git);
+      const a = attempt();
+      const started = first.appendStart(a, "plan", actor("automation"), "content_sha256:overlap");
+
+      // The restart-overlap writer appends the byte-identical write-ahead
+      // start for the same attempt and step while the stream's tip is still
+      // that very record: the write is satisfied already — no commit is
+      // added — and the record the door returns is the one on the stream.
+      const second = new GitLedger(git);
+      const restarted = second.appendStart(
+        a,
+        "plan",
+        actor("automation"),
+        "content_sha256:overlap",
+      );
+      expect(restarted).toStrictEqual(started);
+
+      const tail = second.tail(attemptId);
+      expect(tail).toHaveLength(2);
+      expect(tail.filter((record) => record.kind === "step")).toHaveLength(1);
+      expect(firstParentHistory(git, ledgerRef(attemptId))).toHaveLength(2);
+      expect(classifyResume(a, second)).toEqual({ kind: "resume", from: "plan" });
+    });
+  });
+
+  it("a byte-identical record the stream moved past lands again — identity is the tip, never the history", () => {
+    withTempRepo("append-reissued-start-lands", (_repo, git) => {
+      const ledger = new GitLedger(git);
+      const a = attempt();
+      ledger.appendStart(a, "plan", actor("automation"), "content_sha256:rearm");
+      ledger.append(completedRecord("plan", actor("automation")));
+
+      // The re-arm shape the V7 recovery verticals pin end to end: the
+      // step's write-ahead start re-issued after the stream moved past it —
+      // byte-identical to the record earlier in the history, new as a
+      // positional fact. The door lands it: a history-wide carry check
+      // would swallow it and break write-ahead for the retry.
+      const reissued: LedgerRecord = {
+        kind: "step",
+        record: {
+          attemptId,
+          stepKey: "plan",
+          from: "pending",
+          to: "started",
+          guards: [],
+          attribution: actor("automation"),
+          contentFingerprint: "content_sha256:rearm",
+        },
+      };
+      const landed = ledger.append(reissued);
+      expect(landed).toStrictEqual(reissued);
+      const tail = ledger.tail(attemptId);
+      expect(tail).toHaveLength(4);
+      expect(firstParentHistory(git, ledgerRef(attemptId))).toHaveLength(4);
+      expect(tail.at(-1)).toStrictEqual(reissued);
+    });
+  });
+
+  it("a record the tip does not hold still lands, and a raw-door duplicate of the tip is absorbed", () => {
+    withTempRepo("append-lands-uncarried-bytes", (_repo, git) => {
+      const first = new GitLedger(git);
+      const a = attempt();
+      first.appendStart(a, "plan", actor("automation"));
+
+      // A different fact — another step's completion — lands normally
+      // through the raw port door.
+      const second = new GitLedger(git);
+      const completed = second.append(completedRecord("claim", actor("peer")));
+      expect(Object.isFrozen(completed)).toBe(true);
+      expect(second.tail(attemptId)).toHaveLength(3);
+      expect(firstParentHistory(git, ledgerRef(attemptId))).toHaveLength(3);
+
+      // The tip's own bytes appended again are absorbed: identity is the
+      // canonical bytes, never the step key.
+      const duplicate = second.append(completedRecord("claim", actor("peer")));
+      expect(duplicate).toStrictEqual(completed);
+      expect(second.tail(attemptId)).toHaveLength(3);
+      expect(firstParentHistory(git, ledgerRef(attemptId))).toHaveLength(3);
+    });
+  });
+
+  it("records differing in any field are different facts and land — the door never keys on the step", () => {
+    withTempRepo("append-field-difference-lands", (_repo, git) => {
+      const ledger = new GitLedger(git);
+      const a = attempt();
+      ledger.appendStart(a, "plan", actor("automation"));
+
+      // Same step, same transition, different content fingerprints: two
+      // observations of different input are two facts, and both land.
+      const startedWith = (fingerprint: string): LedgerRecord => ({
+        kind: "step",
+        record: {
+          attemptId,
+          stepKey: "claim",
+          from: "pending",
+          to: "started",
+          guards: [],
+          attribution: actor("automation"),
+          contentFingerprint: fingerprint,
+        },
+      });
+      ledger.append(startedWith("content_sha256:one"));
+      ledger.append(startedWith("content_sha256:two"));
+
+      const fingerprints = ledger
+        .tail(attemptId)
+        .flatMap((record) =>
+          record.kind === "step" && record.record.contentFingerprint !== undefined
+            ? [record.record.contentFingerprint]
+            : [],
+        );
+      expect(fingerprints).toEqual(["content_sha256:one", "content_sha256:two"]);
+      expect(ledger.tail(attemptId)).toHaveLength(4);
+    });
+  });
+});

@@ -460,6 +460,37 @@ describe("digest reconciliation and kill-anywhere (§2.4, fixture 4)", () => {
     expect(refused.detail).toContain("digest-conflict");
   });
 
+  it("refuses a half-proofed completion beside a proofed one — a partial proof judges, it never passes (#195)", () => {
+    const attempt = executing(undefined, [artifactDecl("bundle", "publish", "after")]);
+    const ledger = new MemoryLedger();
+    // First completion: the full generation record — triple and fingerprint.
+    recordArtifact(ledger, attempt, "bundle", "digest_sha256:first");
+    // Second completion: bare — no triple, no fingerprint. Against the
+    // proofed record it is partial evidence: §2.4's fail-closed row, never
+    // a silent pass over whichever record reads last.
+    ledger.append({
+      kind: "step",
+      record: {
+        attemptId: attempt.attemptId,
+        stepKey: "artifact:bundle",
+        from: "started",
+        to: "completed",
+        guards: [{ guard: "release-line", passed: true }],
+        attribution: actor(attempt),
+      },
+    });
+    const run = scheduleArtifacts(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      new Map([["bundle", recordingProducer()]]),
+    );
+    const refused = refusedOutcome(run.outcomes);
+    expect(refused.artifactId).toBe("bundle");
+    expect(refused.detail).toContain("digest-conflict");
+  });
+
   it("classifies every truncation identically under double-run, artifact boundaries included", () => {
     const HOOKS = [hookDecl("scan", "publish", "before")];
     const ARTIFACTS = [artifactDecl("bundle", "publish", "after")];

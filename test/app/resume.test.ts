@@ -364,7 +364,7 @@ describe("obligation 5 — the crash window: a mid-effect fault escapes, the tai
     }
     expect(invocations).toBe(2);
     const tail = stores.ledger.tail(attemptId);
-    expect(recordedTos(tail, "hook:announce")).toStrictEqual(["started", "started", "completed"]);
+    expect(recordedTos(tail, "hook:announce")).toStrictEqual(["started", "completed"]);
   });
 });
 

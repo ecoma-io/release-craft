@@ -27,6 +27,19 @@ import { openGitRun } from "./git-run.js";
  * working-tree state is invisible to it. Untracked or uncommitted state is
  * not recorded content; a commit is what records it.
  *
+ * The digest input is the tree of the commit `HEAD` names at the call —
+ * one atomic read per invocation, never the commit itself — and it
+ * carries a declared precondition of the binding (issue #185; ADR-0009
+ * decision 6 as amended, D43): `HEAD` names one commit for the span of
+ * an attempt. Moving `HEAD` in the consumer's checkout mid-attempt is a
+ * caller violation, and it is loud at the only surface the binding owns:
+ * the digest changes exactly as any recorded-content change does. The
+ * producer stays stateless per call — an attempt-scoped pin would need a
+ * port widening the seam forbids (the input is identity only, ADR-0008
+ * decision 7) or a first-call-wins cache that would make the input shape
+ * the digest and swallow a real content change inside the attempt it
+ * pins.
+ *
  * A repository without any recorded commit has no content identity to
  * name: the `rev-parse` fails and the runner's GitFaultError stands — an
  * environmental fault (there is nothing recorded), not domain vocabulary.
