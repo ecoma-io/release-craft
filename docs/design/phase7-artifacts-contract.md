@@ -160,8 +160,14 @@ obligation 6 machinery). Identity within a generation is the digest
 records no generation triple beside one that does is the same `conflict`:
 a missing side is a disagreement, the evidence verification's
 fail-closed rule (ADR-0005 decision 8) — a partial proof judges, it
-never passes. Matching digests, or no recorded triple at all, replay
-the stored record as `completed`.
+never passes. Matching digests replay the stored record as
+`completed`. A generation recording no triple at all passes this
+reconciliation, but on the artifacts path the replay door's
+generation-record invariant governs before any replay — a completed
+record without its generation record is the door's fail-closed
+contradiction (verified: `src/execution/artifacts.ts`), never a
+replay; the all-bare row that replays as `completed` is the hooks
+path's (phase 6 §2.4).
 
 ### 2.4 The dependency DAG and its verify precondition
 
