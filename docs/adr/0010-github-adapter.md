@@ -86,9 +86,12 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    through the API and compares against the binding's recorded state, never
    merging remote refs into the local namespace.
 
-4. **Every remote write carries an idempotency identity.** Tag pushes and
-   GitHub Release creations include the attempt's `attemptId` or the
-   claim's `token` as an idempotency key. A retried write that has already
+4. **Every remote write carries an idempotency identity derived from the
+   binding's recorded state (the Phase 9 contract §2.4).** A tag push's
+   key is the tag ref's target commit — pushing the same tag to the same
+   target is a no-op — and a release creation's key is the tag name plus
+   the recorded changelog digest (the generation record's
+   `contentFingerprint`, contract §2.8). A retried write that has already
    landed on the remote returns success (the remote state matches) rather
    than error or duplicate. Idempotency is verified before write: the
    adapter checks whether the remote already satisfies the write before

@@ -387,4 +387,58 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       expect(outcome).toEqual({ kind: "transport-failure" });
     });
   });
+
+  it("treats an idempotency read that answers 200 with a non-release body as a transport failure, never an ok (row 7)", () => {
+    withPublicationRepo("idempotency-malformed", (fixture) => {
+      seed(fixture);
+      const { transport, calls } = fakeTransport(() => ({
+        status: 200,
+        headers: {},
+        body: JSON.stringify({ message: "moved" }),
+      }));
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+    });
+  });
+
+  it("never decides ok or conflict over a release whose URL the API did not deliver (§2.3)", () => {
+    withPublicationRepo("url-missing", (fixture) => {
+      seed(fixture);
+      const { transport, calls } = fakeTransport(() => ({
+        status: 200,
+        headers: {},
+        body: JSON.stringify({ body: CHANGELOG_BODY }),
+      }));
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+    });
+  });
+
+  it("treats a 200 read without a readable body as a transport failure, never verified", () => {
+    withPublicationRepo("verify-malformed", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 200,
+        headers: {},
+        body: "<html>oops</html>",
+      }));
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+    });
+  });
+
+  it("reports a create that landed without a URL as a transport failure, never a silent ok (R-04's lie)", () => {
+    withPublicationRepo("create-no-url", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.init?.method === "POST"
+          ? { status: 201, headers: {}, body: "{}" }
+          : notFoundResponse(),
+      );
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+    });
+  });
 });
