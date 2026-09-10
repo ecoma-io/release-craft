@@ -127,6 +127,15 @@ nothing less.
    the in-memory store's — cannot surface a lost race as an error;
    sustained same-line contention costs retries, not failures.
 
+   Amendment (issue #194): the recovery loop now crosses processes for
+   the boundary's resume door — the reconstructed attempt re-enters the
+   same attempt id and the store's idempotent same-scope re-acquisition
+   returns the durably stored token, no release or supersede door
+   needed. `release` by token remains engine-unreachable (no caller in
+   `src/app`; only the binding's passthrough), and the other
+   carried-attempt doors keep the refusal their process-local posture
+   gives them (phase 11 §2.7's residual).
+
 7. **Denials match the in-memory store exactly (issue #69, folded
    here).** An exclusion-path denial carries no `holderSequence` — the
    held scope in that path is a line-level exclusion, and the
