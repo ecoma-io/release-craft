@@ -178,8 +178,8 @@ describe("the git binding's shared surface", () => {
       // where git's plumbing still maps namespaces — the env-driven
       // namespace-prefixing of ref lookups vanished from refs.c between
       // v2.53.0 and v2.54.0 without a release-note entry (source
-      // archaeology; the transport paths — upload-pack/receive-pack —
-      // honor the variable on every version, 2.55.0 verified first-hand),
+      // archaeology; upload-pack honors it on every version — 2.55.0
+      // verified first-hand, receive-pack documented (gitnamespaces(7))),
       // so on a modern git a leaked export does not move a local mint.
       // CI pins no git version (ubuntu-latest everywhere), so the
       // behavioral legs silently rot the day the runner image crosses
