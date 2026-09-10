@@ -103,7 +103,8 @@ surface arrives with the consumer that needs it.
    the winner still holding the ref's `.lock`, the ref not yet at its
    tip, where a benign loser's failure reads byte-identically to a
    stuck one — resolves only for the positively identified lock-
-   contention shape (git's byte-exact EEXIST spelling, `cannot lock ref
+   contention shape (the files backend's byte-exact EEXIST spelling,
+   `cannot lock ref
 '<ref>': Unable to create '<path>.lock': File exists.`, the first
    line alone: the advisory after it varies by git version and
    `core.lockfilePid` state, and the shape is verified in git's source
@@ -125,7 +126,13 @@ surface arrives with the consumer that needs it.
    section (verified first-hand: a 200-round two-process contention
    loop yields ref-moved refusals only) — and on gits without the
    setting the bounded retry is what absorbs it: version-neutral by
-   construction.
+   construction. On the reftable backend the window does not exist at
+   all: first-hand on 2.55.0 (`--ref-format=reftable`), a 40-way
+   parallel CAS on a pre-created ref left all 39 losers with the
+   old-value refusal (`is at … but expected …`) and zero EEXIST
+   spellings — contention there lands in the ref-moved class the
+   re-read already classifies, which is why the retry shape is scoped
+   to the files backend and nothing else.
 
 The reference mapping (the implementation PR may refine it, never the
 guarantees): each scope anchors to exactly one ref whose history is the

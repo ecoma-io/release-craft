@@ -100,8 +100,8 @@ info/grafts`; grafted parentage rewrites the walk and no variable
    first — a ref that moved inside the race window is the loser outcome,
    whatever the failure's spelling — and the one window the re-read
    cannot yet discriminate (the winner still holding the ref's lock, the
-   ref not yet moved) resolves only for git's positively identified
-   lock-contention shape and only with bounded patience inside the
+   ref not yet moved) resolves only for the files backend's positively
+   identified lock-contention shape and only with bounded patience inside the
    primitive; every other spelling faults loudly. A plain loss-mapping
    was rejected because the claim and channel loops above the primitive
    are unbounded and a stale lock fed to them as a loss would spin

@@ -64,8 +64,9 @@ export function casCreateRef(git: GitRun, ref: string, target: string): void {
 /**
  * The bounded patience the contended-ref-lock window gets (#183; D52): when
  * `update-ref` dies on a held ref lock and the re-read cannot yet
- * discriminate, the whole compare-and-swap re-spawns at most this many
- * times before the fault fails closed. Every spawn carries git's own lock
+ * discriminate, the whole compare-and-swap re-spawns twice — three spawns
+ * in all, this constant counted inclusively — before the fault fails
+ * closed. Every spawn carries git's own lock
  * retry (`core.filesRefLockTimeout`, 100ms by default — documented from
  * v2.29.0 through v2.55.0), so the budget is a fraction of a second of
  * lock-wait — far past any live winner's critical section (a lock-hold
