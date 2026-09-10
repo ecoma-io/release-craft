@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import { extract } from "@ecoma-io/release-craft/__internal__/planner/extract.js";
+import { resolveBump } from "@ecoma-io/release-craft/__internal__/planner/decide.js";
 import type {
   CommitObservation,
   ExtractionResult,
@@ -237,5 +238,37 @@ describe("extract — adversarial identity and classification", () => {
     const second = extract(commits, policy());
 
     expect(second).toEqual(first);
+  });
+
+  it("marks a commit breaking when a BREAKING-CHANGE footer alias is present", () => {
+    const breaking = commit(
+      "aaa196a",
+      "fix(api): drop the v1 endpoint\n\nBREAKING-CHANGE: the v1 endpoint is gone",
+    );
+
+    const result = extract([breaking], policy());
+
+    const parsed = parsedBySha(result, "aaa196a");
+    expect(parsed.classification).toBe("change");
+    expect(parsed.breaking).toBe(true);
+    expect(parsed.type).toBe("fix");
+    expect(parsed.change).toBeDefined();
+    expect(resolveBump(result.commits, policy())).toBe("major");
+  });
+
+  it("marks a commit breaking when a BREAKING CHANGE footer uses a wrapped continuation line", () => {
+    const breaking = commit(
+      "bbb196b",
+      "fix(api): drop the v1 endpoint\n\nBREAKING CHANGE:\n  the v1 endpoint is gone",
+    );
+
+    const result = extract([breaking], policy());
+
+    const parsed = parsedBySha(result, "bbb196b");
+    expect(parsed.classification).toBe("change");
+    expect(parsed.breaking).toBe(true);
+    expect(parsed.type).toBe("fix");
+    expect(parsed.change).toBeDefined();
+    expect(resolveBump(result.commits, policy())).toBe("major");
   });
 });

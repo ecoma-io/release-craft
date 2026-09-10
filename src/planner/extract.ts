@@ -15,7 +15,9 @@
  *   2. Conventional-commit classification: merge commits (two or more
  *      parents) and headers without the `type(scope)!: subject` shape are
  *      `unparseable` and surfaced — excluded is not invisible. Breaking is
- *      the header `!` or a `BREAKING CHANGE: ` footer line, for any type.
+ *      the header `!` or a `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer
+ *      line, for any type — the value inline or wrapped onto the next
+ *      line.
  *   3. Identity, first match wins (fork 8): a `Change-Id: <value>` footer;
  *      else a `(cherry picked from commit <sha>)` trailer; else the commit's
  *      own sha (recorded provenance). A blank footer value is no match and
@@ -130,7 +132,7 @@ function markerVerdictOf(
 const CONVENTIONAL_HEADER = /^([A-Za-z][A-Za-z0-9-]*)(?:\(([^)]+)\))?(!)?: (\S.*)$/;
 
 /** The breaking footer line — any type is breaking when it is present. */
-const BREAKING_FOOTER = /^BREAKING CHANGE: /;
+const BREAKING_FOOTER = /^BREAKING(?: CHANGE|-CHANGE):/;
 
 /** The parsed header, with only the fields the header itself supplied. */
 interface ConventionalHeader {
