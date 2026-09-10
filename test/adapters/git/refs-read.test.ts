@@ -88,14 +88,19 @@ describe("the binding's read seam — recorded refs, read-only (§2.7)", () => {
       expect(claims).toHaveLength(1);
       const claimRef = claims[0]?.ref ?? "";
       expect(claimRef.startsWith("refs/release-craft/claims/")).toBe(true);
-      // A claim ref names the register blob (the per-line claim register
-      // of ADR-0011) — the enumeration reports the object git holds, not
-      // a commit.
+      // A claim ref names the register ref's tip commit — the register of
+      // ADR-0011 grows one commit per mutation, its envelope blob riding
+      // that commit's tree as `record` — not the blob itself (#184; the
+      // pin that keeps the doc and the mapping from drifting apart again:
+      // the target must differ from the envelope blob's oid).
+      const tip = refObject(git, claimRef);
+      const envelopeBlob = git(["rev-parse", `${tip}:record`]).trim();
       expect(claims[0]).toEqual({
         ref: claimRef,
-        target: refObject(git, claimRef),
+        target: tip,
         kind: "claim",
       });
+      expect(claims[0]?.target).not.toBe(envelopeBlob);
 
       expect(binding.refs.tags()).toEqual([{ ref: "refs/tags/v1.2.3", target, kind: "tag" }]);
     });

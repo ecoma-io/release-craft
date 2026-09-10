@@ -9,6 +9,8 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 
 /**
  * An environmental fault of the git invocation itself — the binary missing,
@@ -135,8 +137,94 @@ export function hermeticGitEnv(): NodeJS.ProcessEnv {
     // operator's translated environment can never reword a fault line
     // into, or out of, a shape the reads discriminate on.
     LC_ALL: "C",
+    // Replace objects are disarmed on the floor (#181; D46): a
+    // `refs/replace/*` entry substitutes whatever object it names for the
+    // recorded one at every read — a record blob read back could hold
+    // bytes nobody wrote, the one outcome the binding's byte-exact reload
+    // guarantee cannot survive. With the variable set, every spawn reads
+    // and walks the recorded objects themselves; the substitution is
+    // never honored. (Verified first-hand: `git show <commit>:record`
+    // returns the replacement's bytes without the variable, the recorded
+    // bytes with it.)
+    GIT_NO_REPLACE_OBJECTS: "1",
     ...COMMIT_ENV,
   };
+}
+
+/**
+ * The substrate shapes a repository must not carry for the binding's
+ * guarantees to hold, probed once per runner before its first command on a
+ * live repository executes (#181; D45, D47, D48). The refusal is a declared
+ * GitFaultError ahead of any door work — never a mid-walk surprise:
+ *
+ * - **Shallow (D45).** A truncated clone (the `fetch-depth: 1` CI posture)
+ *   leaves `rev-list` exiting 0 at the shallow boundary, so a recorded
+ *   stream's first-parent walk returns a *prefix* of the records and
+ *   resume/planning run over missing history (verified first-hand: a
+ *   3-commit stream reads as 1). The binding requires a complete history.
+ * - **Grafts (D47).** An `info/grafts` file rewrites recorded parentage
+ *   the same walk follows, and nothing disarms it — `GIT_NO_REPLACE_OBJECTS`
+ *   does not cover the file channel (verified first-hand: the walk
+ *   truncates identically with the variable set). The modern
+ *   `git replace --graft` spelling is a replace ref and rides the floor's
+ *   disarm (D46); the legacy file does not, so its presence refuses.
+ * - **Object format (D48).** The binding is certified on the sha1 object
+ *   format: the CAS's all-zero expected-old value is 40 digits wide, and
+ *   on a sha256 repository every first write fails git-side with `not a
+ *   valid old SHA1` — loud, but mislabeled as a substrate fault (#184).
+ *   A sha256 repository refuses there instead; deriving the zero width
+ *   from `--show-object-format` is the support path when a consumer needs
+ *   it, its own reviewed change.
+ *
+ * The probe doubles as the repository detector: a first command on a path
+ * that is not (yet) a repository — the `git init` a fixture or bootstrap
+ * runs through a fresh runner — finds nothing to guard and returns false
+ * with no refusal, and the probe re-arms, so the first command after the
+ * substrate comes to exist is still guarded. Once a repository has been
+ * probed clean the result holds for the runner's lifetime: a shape check
+ * reads repository metadata that does not change under the binding's own
+ * operations, and re-probing would tax every spawn. Only the object-format
+ * probe's own failure is swallowed (as the detector), and only because the
+ * requested command behind it faults on the same condition — no refusal
+ * the guard owns is ever dropped.
+ */
+function probeSubstrateShape(repo: string, git: GitRun): boolean {
+  let objectFormat: string;
+  try {
+    objectFormat = git(["rev-parse", "--show-object-format"]).trim();
+  } catch {
+    // Not a repository (yet): there is no shape to hold guarantees for,
+    // and the command this probe fronts faults on exactly that condition
+    // if it needs one — the guard adds no refusal of its own here.
+    return false;
+  }
+  if (objectFormat !== "sha1") {
+    throw new GitFaultError(
+      ["rev-parse", "--show-object-format"],
+      null,
+      `the repository's object format is ${objectFormat} — the binding's substrate is the sha1 object format, and refusing ahead of the first write beats mislabeling every compare-and-swap as a git fault (#184; D48)`,
+    );
+  }
+  const isShallow = git(["rev-parse", "--is-shallow-repository"]).trim();
+  if (isShallow === "true") {
+    throw new GitFaultError(
+      ["rev-parse", "--is-shallow-repository"],
+      null,
+      "the repository is a shallow clone — git's walk of a recorded stream stops at the shallow boundary and reads a prefix of the recorded history, so the binding refuses rather than resume over missing records (#181; D45)",
+    );
+  }
+  const graftsPath = git(["rev-parse", "--git-path", "info/grafts"]).trim();
+  if (
+    graftsPath.length > 0 &&
+    existsSync(isAbsolute(graftsPath) ? graftsPath : join(repo, graftsPath))
+  ) {
+    throw new GitFaultError(
+      ["rev-parse", "--git-path", "info/grafts"],
+      null,
+      `the repository carries a grafts file (${graftsPath}) — grafted parentage rewrites the history a recorded stream's first-parent walk reports, and no variable disarms the file channel, so the binding refuses rather than walk invented history (#181; D47)`,
+    );
+  }
+  return true;
 }
 
 /**
@@ -147,11 +235,17 @@ export function hermeticGitEnv(): NodeJS.ProcessEnv {
  * clock while keeping `GitRun`'s two-argument signature: commit dates have
  * no `-c` spelling, and the fixed identity is inert for every
  * non-committing invocation the binding makes (contract §3's law — no clock,
- * no operator identity in the binding).
+ * no operator identity in the binding). Opening itself spawns nothing — the
+ * CLI builds the binding on paths it may never touch, and a fixture
+ * bootstraps `git init` through a fresh runner — so the substrate guard
+ * (`probeSubstrateShape`) rides the runner's first command instead, ahead
+ * of it: a repository the guarantees cannot hold for — shallow, grafted,
+ * or a foreign object format — refuses before any door work runs, as a
+ * declared fault, never a mid-walk surprise (#181/#184; D45–D48).
  */
 export function openGitRun(repo: string): GitRun {
   const env = hermeticGitEnv();
-  return (args, input) => {
+  const spawnGit = (args: readonly string[], input?: string): string => {
     const result = spawnSync("git", [...args], {
       cwd: repo,
       input,
@@ -166,4 +260,18 @@ export function openGitRun(repo: string): GitRun {
     }
     return result.stdout;
   };
+  // The substrate guard runs once per runner, ahead of its first command
+  // on a live repository: every entry point that reaches git goes through
+  // here, so no door can work a shape the guarantees do not hold for
+  // (#181). Until the probe has passed it re-arms on every command, so a
+  // repository that comes to exist under a bootstrap runner is guarded
+  // from its first real command on.
+  let substrateProbed = false;
+  const run: GitRun = (args, input) => {
+    if (!substrateProbed && probeSubstrateShape(repo, spawnGit)) {
+      substrateProbed = true;
+    }
+    return spawnGit(args, input);
+  };
+  return run;
 }

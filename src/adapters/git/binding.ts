@@ -62,8 +62,8 @@ export interface GitBinding {
   readonly repo: string;
   /** The recorded refs' read-only enumeration (the Phase 9 contract
    *  §2.7; D26): the claim refs and the declared-namespace tags, each
-   *  with the object it names — the register blob, the tag's peeled
-   *  commit. */
+   *  with the object it names — the register ref's tip commit, the tag's
+   *  peeled commit. */
   readonly refs: RefRead;
   /** The content read seam (the Phase 9 contract §2.8; D27): the
    *  release projection's read-only half — the minting claim, the

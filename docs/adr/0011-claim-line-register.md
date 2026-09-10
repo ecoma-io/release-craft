@@ -168,14 +168,19 @@ nothing less.
    base; the register rewrite lands the parity pin.
 
 8. **The Phase 9 read seams follow the record (the amendment's blast
-   radius, loud here).** A claim ref now names a register blob, so the
-   changelog seam's single-record read widens to the set:
+   radius, loud here).** A claim ref now carries a register — the ref
+   names its tip commit, one commit per mutation, the register blob
+   riding that commit's tree as `record` — so the changelog seam's
+   single-record read widens to the set:
    `ContentRead.claim(ref): ClaimRecord | null` becomes
    `ContentRead.claims(ref): readonly ClaimRecord[]` (an absent ref is
    the empty array), and the publication unit's tag→claim derivation
    iterates the set. `RefRead.claims()` is unchanged mechanically — it
-   enumerates the namespace — and its documented object ("the
-   canonical record's blob") becomes the register blob. The tag door's
+   enumerates the namespace — and its documented object is the register
+   ref's tip commit (the earlier "the canonical record's blob"/"register
+   blob" wording described what the blob rides in, not what the ref
+   names; corrected first-hand against `for-each-ref %(objectname)`,
+   #184). The tag door's
    held-claim lookup changes its source, not its shape: same filter,
    same caller contract. No engine port widens and no new door exists;
    the widening is the binding's own §2.8 read seam, named above.

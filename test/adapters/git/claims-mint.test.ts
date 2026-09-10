@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   commitRecord,
+  GitFaultError,
   readRef,
   type GitRun,
   type GitTagNaming,
@@ -98,6 +99,14 @@ const asRefused = (result: TagMintResult): RefusedResult => {
     throw new Error(`expected a refusal, got ${result.kind}`);
   }
   return result;
+};
+
+/** Narrows a caught error to the fault type the runner raises. */
+const asFault = (error: unknown): GitFaultError => {
+  if (error instanceof GitFaultError) {
+    return error;
+  }
+  throw new Error(`expected a GitFaultError, got ${String(error)}`);
 };
 
 const refNames = (git: GitRun, pattern: string): readonly string[] => {
@@ -434,6 +443,37 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
       );
       expect(unmatched.reason).toBe("unclaimed");
       expect(readRef(git, "refs/tags/v9.9.9")).toBeNull();
+    });
+  });
+
+  it("faults its own classified error when the target resolves to no commit — never the raw rev-parse fault (#184; D49)", () => {
+    withStore((store, mint, git) => {
+      const claim = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
+      const absentBase = "0".repeat(40);
+      // Pre-fix, the quiet verification's raw fault escaped before the
+      // door's classification could run: a GitFaultError with git's exit 1
+      // and an empty stderr — cryptic and unclassified. The door catches
+      // that one shape and raises its own declared fault.
+      let thrown: unknown;
+      try {
+        mint({
+          attemptId: "attempt_a",
+          token: claim.token,
+          tag: "v1.2.3",
+          target: absentBase,
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      const fault = asFault(thrown);
+      expect(fault.status).toBeNull();
+      expect(fault.args).toStrictEqual(["rev-parse", "--verify", `${absentBase}^{commit}`]);
+      expect(fault.stderr).toBe(`the mint target ${absentBase} does not resolve to a commit`);
+      // The declared-lie posture stays a fault, never a returned refusal
+      // class (phase 12 §2.4; phase 13 §2.8's mismatch site, exit 70).
+      expect(fault.message).toContain("does not resolve to a commit");
+      // Nothing a faulting mint refused left state behind.
+      expect(refNames(git, "refs/tags/")).toHaveLength(0);
     });
   });
 

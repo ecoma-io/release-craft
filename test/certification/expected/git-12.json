@@ -12,7 +12,7 @@
       "label": "the unobserved ref head (mint fault)",
       "exit": 70,
       "stdout": "",
-      "stderr": "GitFaultError: git rev-parse --verify --quiet eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee^{commit} failed (exit 1): \n"
+      "stderr": "GitFaultError: git rev-parse --verify eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee^{commit} failed (exit unknown): the mint target eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee does not resolve to a commit\n"
     }
   ]
 }

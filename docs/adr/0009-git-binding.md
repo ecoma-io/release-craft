@@ -72,6 +72,29 @@ job is to express that discipline over git, not to invent a second one.
    `DecisionRecord` shape exists in the engine yet, so the binding ships
    no invented surface for it; its door lands with the first consumer
    (the contract's §2.6) under these same guarantees.
+   Amendment (issues #181/#184; D45–D48): the guarantees are conditioned
+   on the substrate, and the condition is enforced by the runner ahead of
+   its first command on a repository — opening spawns nothing (the CLI
+   builds bindings on paths a run may never touch, and a fixture
+   bootstraps `git init` through a fresh runner), so the probe rides the
+   first command instead and re-arms until it has seen a repository.
+   A shallow repository refuses there (`rev-parse --is-shallow-repository`)
+   — a truncated clone's walk exits 0 at the shallow boundary and reads a
+   prefix of a recorded stream, which byte-exact reload cannot survive —
+   as does any object format but sha1 (`rev-parse --show-object-format`;
+   the CAS's all-zero expected-old value is the sha1 width, and a sha256
+   repository would mislabel every first write as a git fault), and so
+   does a repository carrying an `info/grafts` file (`rev-parse --git-path
+info/grafts`; grafted parentage rewrites the walk and no variable
+   disarms the file channel). Replace objects are disarmed rather than
+   refused: the hermetic floor sets `GIT_NO_REPLACE_OBJECTS=1` on every
+   binding and fixture spawn, so recorded bytes read back as recorded
+   whatever `refs/replace/*` holds. Each refusal is a declared fault at
+   the open boundary — never a mid-walk surprise — and the door's law for
+   an unresolvable mint target is classified inside the door (D49): the
+   quiet verification's exit-1-empty-stderr shape (D39's absence shape)
+   raises the door's own `GitFaultError` naming the target, the
+   declared-lie fault phase 13 §2.8 pins, never a returned refusal class.
 3. **The mapping is invisible through the port.** Engine code cannot tell
    `MemoryLedger` from the git-backed one; the provider-isolation gate
    keeps it that way (the engine runs green with the binding absent, as it
@@ -227,6 +250,14 @@ job is to express that discipline over git, not to invent a second one.
   determinism harness; the binding is a second implementation behind the
   same doors — the port widening adds an optional field the reference
   store never sets, and no engine module changes behavior.
+- The substrate precondition (#181/#184; D45–D48) makes unsupported
+  repository shapes fail at the open boundary instead of corrupting
+  reads: a shallow or grafted checkout, or a foreign object format,
+  refuses as a declared fault before any door runs, and replace objects
+  never substitute recorded bytes. The cost is deliberate — a consumer
+  whose checkout posture cannot honor the durability invariant is told
+  immediately, one layer up in the posture the caller already owns
+  (phase 13 §2.8's "the caller chooses the fetch posture").
 - What this ADR deliberately does not decide: the GitHub adapter's API
   surface and any E2E flows (Phase 9, ADR-0010), artifact freshness rules
   (PR-03, carried), channel semantics (ADR-0012's `channel-transition`

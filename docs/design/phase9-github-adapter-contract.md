@@ -236,15 +236,24 @@ remote projection reads — proposed in #54, weighing three shapes:
   opened configuration's own repository path) and `GitBinding.refs:
 RefRead`, the recorded refs' read-only enumeration — `claims()`
   (every claim ref under the binding's claim-ref namespace, each with
-  the register blob's oid — D24: a claim ref names a blob,
-  nothing to peel; the per-line claim register of ADR-0011) and
+  the register ref's tip commit — under the per-line claim register of
+  ADR-0011 the register grows one commit per mutation and its envelope
+  blob rides that commit's tree, so the ref names a commit, not the
+  blob; the D24-era "names a blob" wording described the superseded
+  per-scope mapping and is corrected here, #184) and
   `tags()` (every tag within the configuration's
   declared namespaces — the mint door's namespace rule — each with its
   commit: the peeled commit for an annotated tag, the ref's own target
   for a lightweight one). Pure `for-each-ref` reads: no write, no `HEAD`
   resolution, no working-tree state (the mint door's discipline, read
   side). The adapter's transport-level git (`ls-remote`, `push`) runs
-  against exactly this repository — structural, not conventional.
+  against exactly this repository — structural, not conventional —
+  through its own transport runner (`remote-git.ts`), which carries no
+  substrate probe, deliberately: `ls-remote` and `push` perform no
+  recorded-history walks and no recorded-content reads — the operations
+  the guard exists for — and git fails loudly, in its own transport
+  vocabulary, on a shape it cannot transport (phase 8 §2.7 guards the
+  binding's doors, not the adapter's transport).
 - **Rejected — a remote-operation door on the binding** (`ls-remote` /
   `push` behind `GitBinding`): it would move network I/O and
   credentials into the binding, rewriting ADR-0009 decision 7 ("no API
