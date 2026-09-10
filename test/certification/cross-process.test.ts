@@ -10,8 +10,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { RunOutcome } from "../../src/index.js";
-import { GitChannelStore } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { beta, runRequest } from "../app/harness.js";
+import { GitChannelStore } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { liveWorld } from "../vertical/matrix.js";
 import { naming, recordedTags } from "../vertical/matrix-git.js";
 import {
@@ -34,7 +34,7 @@ const rendered = (child: { stdout: string }): RunOutcome => JSON.parse(child.std
 
 describe("the certification fixture · A-cross-process", () => {
   it(
-    "x-01 · the carried-attempt doors from a fresh process — refused(unknown attempt) at exit 10, pinned as pass-through equality with a fresh engine's value",
+    "x-01 · the carried-attempt doors from a fresh process — resume takes over a dead holder's attempt and republishes, abort/resolve/show still refuse(unknown attempt) at exit 10, pinned as pass-through equality with a fresh engine's value",
     { timeout: 45_000 },
     () => {
       withSeededRepo("cert-x-01", (repo, _git, heads) => {
@@ -43,15 +43,18 @@ describe("the certification fixture · A-cross-process", () => {
           input: docBytes(gitBetaDocument(heads)),
         });
         expect(first.status).toBe(0);
+        const firstOutcome = rendered(first);
         const attemptId = ledgerAttemptIds(repo)[0];
         if (attemptId === undefined) {
           throw new Error("fixture broken: the first run left no ledger ref");
         }
         const planId = ledgerPlanId(repo, attemptId);
 
-        // The fresh process's carried-attempt doors: resume, abort,
-        // resolve, show attempt — each refuses with the recorded
-        // unknown-attempt shape, stdout carrying the JSON, stderr empty.
+        // The fresh process's resume: the durable fallback reconstructs
+        // the attempt from the request's own closed input (issue #194's
+        // durable plan-keyed lookup) — the takeover re-derives the plan,
+        // re-claims idempotently, and republishes the same tag, stdout
+        // carrying the JSON, stderr empty.
         const resumed = runBin(
           [
             "resume",
@@ -71,18 +74,22 @@ describe("the certification fixture · A-cross-process", () => {
             planId,
             "--attempt",
             attemptId,
+            "--line",
+            "main",
             "--json",
           ],
           { input: docBytes(gitBetaDocument(heads)) },
         );
-        expect(resumed.status).toBe(10);
+        expect(resumed.status).toBe(0);
         expect(resumed.stderr).toBe("");
         const resumeOutcome = rendered(resumed);
-        expect(resumeOutcome.kind).toBe("refused");
-        if (resumeOutcome.kind !== "refused") {
-          throw new Error("expected a refused outcome");
+        expect(resumeOutcome.kind).toBe("published");
+        if (resumeOutcome.kind !== "published") {
+          throw new Error("expected a published outcome");
         }
-        expect(resumeOutcome.detail).toContain("unknown attempt");
+        expect(resumeOutcome.tag).toBe(
+          firstOutcome.kind === "published" ? firstOutcome.tag : undefined,
+        );
 
         const aborted = runBin([
           "abort",
@@ -152,14 +159,18 @@ describe("the certification fixture · A-cross-process", () => {
 
         // The pass-through pin, equality not verdict: the fresh process's
         // resume answer is what a fresh ENGINE returns for the same
-        // handle — the durable lookup moves the value, not the cell.
+        // handle — the durable lookup moves the value, not the cell. The
+        // direct request carries the same closed input and the recorded
+        // targets (the mint target is a plan-run value, never ambient).
+        const doc = gitDoc("main", [beta], heads);
         const direct = gitAssembly(repo).resume(crashedHandle(planId, attemptId), {
           ...runRequest(liveWorld(), "main", [beta]),
-          input: gitDoc("main", [beta], heads),
+          input: doc,
+          targets: { main: seededHead(heads, "main") },
         });
-        expect(direct.kind).toBe("refused");
-        if (direct.kind !== "refused") {
-          throw new Error("expected a refused outcome");
+        expect(direct.kind).toBe("published");
+        if (direct.kind !== "published") {
+          throw new Error("expected a published outcome");
         }
         expect(JSON.stringify(resumeOutcome)).toBe(JSON.stringify(direct));
       });
