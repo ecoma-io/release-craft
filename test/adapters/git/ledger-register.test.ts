@@ -215,7 +215,14 @@ describe("the git-backed ledger and register (phase 8 contract ยง4, fixtures 1โ€
         const current = git(["rev-parse", ref]).trim();
         const blob = git(["hash-object", "-w", "--stdin"], canonicalJson(hostileRecord)).trim();
         const tree = git(["mktree"], `100644 blob ${blob}\trecord\n`).trim();
-        const commit = git(["commit-tree", tree, "-p", current, "-m", "ecoma: append"]).trim();
+        const commit = git([
+          "commit-tree",
+          tree,
+          "-p",
+          current,
+          "-m",
+          "release-craft: append",
+        ]).trim();
         git(["update-ref", ref, commit]);
       };
       const hostile: GitRun = (args, input) => {
