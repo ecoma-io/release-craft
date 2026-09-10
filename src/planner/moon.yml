@@ -1,0 +1,42 @@
+# The planner project — Phase 2's planning layer, declared as its own Moon
+# project so the boundary between planner and every other src/ layer is
+# executable (module-boundaries.config.mjs judges the `type-planner` tag)
+# rather than a scanner suite alone.
+#
+# The planner reaches only the domain kernel (ADR-0001's `@ecoma-io/
+# release-craft/domain`) and the frozen `node:crypto` in identity.ts.
+# No execution, app, adapter, or cli import is legal here.
+#
+# Task roster follows core-domain's convention:
+#   - no `build` task: emitted as part of release-craft:build
+#     (tsconfig.build.json compiles src/**/*)
+#   - `arch` runs once per workspace (release-craft:arch)
+id: planner
+language: typescript
+# The planner imports @ecoma-io/release-craft/domain (the kernel's package
+# alias) — the edge archkeep judges against `type-planner → type-domain`,
+# and the edge Moon needs for `project://core-domain` inputs below.
+dependsOn:
+  - core-domain
+fileGroups:
+  sources:
+    - "**/*"
+tags:
+  - type-planner
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "project://core-domain?group=sources"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

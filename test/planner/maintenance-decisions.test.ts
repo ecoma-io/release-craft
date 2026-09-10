@@ -33,7 +33,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { plan } from "../../src/planner/assemble.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import type {
   CommitObservation,
   ComponentMeta,
@@ -46,7 +46,7 @@ import type {
   PolicyInput,
   RefObservation,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 // ---------------------------------------------------------------------------
 // Fixture builders — deterministic, closed inputs per §2.1, mirroring the

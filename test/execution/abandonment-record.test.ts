@@ -44,7 +44,7 @@ import {
   type ReleaseAttempt,
   type StepRequest,
 } from "../../src/index.js";
-import { GitLedger } from "../../src/adapters/git/index.js";
+import { GitLedger } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
 
 const attemptId = attemptIdentity("plan-alpha", 1);

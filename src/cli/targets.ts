@@ -9,7 +9,7 @@
  * document.
  */
 
-import type { PlanningInput } from "../index.js";
+import type { PlanningInput } from "@ecoma-io/release-craft/planner";
 
 /** The mint targets: keyed by line id, valued by the ref head commit sha. */
 export const deriveTargets = (input: PlanningInput): Readonly<Record<string, string>> => {

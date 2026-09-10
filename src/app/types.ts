@@ -31,15 +31,17 @@ import type {
   HookStep,
   LedgerRecord,
   LedgerStepState,
+  ReleaseAttempt,
+  RequestStepOutcome,
+  StepKey,
+} from "@ecoma-io/release-craft/execution";
+import type {
   OperatorIntent,
   PlanLine,
   PlanningInput,
   PlanningOutcome,
-  ReleaseAttempt,
-  RequestStepOutcome,
-  StepKey,
-} from "../index.js";
-import type { GitBinding, TagMint } from "../adapters/git/index.js";
+} from "@ecoma-io/release-craft/planner";
+import type { GitBinding, TagMint } from "@ecoma-io/release-craft/adapters/git";
 
 // ---------------------------------------------------------------------------
 // §2.2 — the assembly config, closed

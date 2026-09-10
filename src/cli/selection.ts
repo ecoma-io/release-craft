@@ -13,15 +13,13 @@
  * named from argv.
  */
 
+import { assembleGitBinding, assembleMemoryStores, type Engine } from "@ecoma-io/release-craft/app";
 import {
-  assembleGitBinding,
-  assembleMemoryStores,
   MemoryAttemptRegister,
   MemoryClaimStore,
   MemoryLedger,
-  type Engine,
-} from "../index.js";
-import { openGitBinding } from "../adapters/git/index.js";
+} from "@ecoma-io/release-craft/execution";
+import { openGitBinding } from "@ecoma-io/release-craft/adapters/git";
 
 import { declaredTagNaming } from "./naming.js";
 import type { AssemblySelection } from "./parse.js";

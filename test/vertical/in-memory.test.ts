@@ -28,7 +28,7 @@ import {
   type ClaimScope,
   type HookEffect,
 } from "../../src/index.js";
-import { plan } from "../../src/planner/assemble.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import {
   actor,
   applyPlannedChannelTransitions,

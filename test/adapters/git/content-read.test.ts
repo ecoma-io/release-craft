@@ -21,7 +21,7 @@ import {
   openGitBinding,
   type GitBinding,
   type GitTagNaming,
-} from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import type { Claim, ClaimDenied, ClaimScope } from "../../../src/index.js";
 import { withTempRepo } from "./temp-repo.js";
 

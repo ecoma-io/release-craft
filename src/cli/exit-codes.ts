@@ -13,7 +13,8 @@
  * stdout (§3.1) and the status tells the caller whether to proceed.
  */
 
-import type { Observation, PlanningOutcome, RunOutcome } from "../index.js";
+import type { Observation, RunOutcome } from "@ecoma-io/release-craft/app";
+import type { PlanningOutcome } from "@ecoma-io/release-craft/planner";
 
 /** Every door value the CLI renders — the three outcome unions, verbatim. */
 export type DoorOutcome = PlanningOutcome | RunOutcome | Observation;

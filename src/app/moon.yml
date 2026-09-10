@@ -1,0 +1,49 @@
+# The app project — Phase 11's application boundary, declared as its own Moon
+# project so the boundary between the app layer and every other src/ layer is
+# executable (module-boundaries.config.mjs judges the `type-app` tag).
+#
+# The application boundary composes the execution kernel, the planner's
+# door, the domain kernel, and the git binding's barrel
+# (`../adapters/git/index.js`) — never an internal adapter module, never
+# the cli, never the package front door.
+#
+# Task roster:
+#   - no `build` task: emitted as part of release-craft:build
+#   - `arch` runs once per workspace (release-craft:arch)
+id: app
+language: typescript
+# The application boundary composes the execution kernel, the planner
+# barrel, the domain kernel and the git binding's barrel
+# (`../adapters/git/index.js`). The edges archkeep judges against
+# `type-app → …`, and the edges Moon needs for the `project://` inputs
+# below.
+dependsOn:
+  - core-domain
+  - planner
+  - execution
+  - adapters-git
+fileGroups:
+  sources:
+    - "**/*"
+tags:
+  - type-app
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "project://execution?group=sources"
+      - "project://adapters-git?group=sources"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

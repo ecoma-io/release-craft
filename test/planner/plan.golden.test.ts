@@ -26,15 +26,22 @@ import { describe, expect, it } from "vitest";
 
 import { Version } from "@ecoma-io/release-craft/domain";
 
-import { attribute } from "../../src/planner/attribute.js";
-import { decideLine, resolveBump } from "../../src/planner/decide.js";
-import { extract } from "../../src/planner/extract.js";
-import { deriveRanges, loadTagHistory } from "../../src/planner/history.js";
-import { canonicalJson, inputsFingerprint, planFingerprint } from "../../src/planner/identity.js";
-import { normalize } from "../../src/planner/input.js";
-import { planStreams, planTargets } from "../../src/planner/plan.js";
-import { planPropagation } from "../../src/planner/propagate.js";
-import { rebuildLineState } from "../../src/planner/state.js";
+import { attribute } from "@ecoma-io/release-craft/__internal__/planner/attribute.js";
+import { decideLine, resolveBump } from "@ecoma-io/release-craft/__internal__/planner/decide.js";
+import { extract } from "@ecoma-io/release-craft/__internal__/planner/extract.js";
+import {
+  deriveRanges,
+  loadTagHistory,
+} from "@ecoma-io/release-craft/__internal__/planner/history.js";
+import {
+  canonicalJson,
+  inputsFingerprint,
+  planFingerprint,
+} from "@ecoma-io/release-craft/__internal__/planner/identity.js";
+import { normalize } from "@ecoma-io/release-craft/__internal__/planner/input.js";
+import { planStreams, planTargets } from "@ecoma-io/release-craft/__internal__/planner/plan.js";
+import { planPropagation } from "@ecoma-io/release-craft/__internal__/planner/propagate.js";
+import { rebuildLineState } from "@ecoma-io/release-craft/__internal__/planner/state.js";
 import type {
   BootstrapDecision,
   CommitObservation,
@@ -53,7 +60,7 @@ import type {
   ReleasePlan,
   TagHistoryResult,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 // ---------------------------------------------------------------------------
 // Fixture builders — deterministic, closed inputs per §2.1, mirroring the

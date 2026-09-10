@@ -6,7 +6,7 @@
  * the barrel's runtime surface is the factory and nothing else.
  */
 
-import * as github from "../../../src/adapters/github/index.js";
+import * as github from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
 import {
   openGitHubAdapter,
   type GitHubAdapter,
@@ -14,13 +14,13 @@ import {
   type GitHubRequestInit,
   type GitHubResponse,
   type GitHubTransport,
-} from "../../../src/adapters/github/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
 import {
   openGitBinding,
   type GitBinding,
   type GitRun,
   type GitTagNaming,
-} from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import type { Claim, ClaimDenied, ClaimScope } from "../../../src/index.js";
 import { createTempRepo } from "../git/temp-repo.js";
 import { describe, expect, it } from "vitest";

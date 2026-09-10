@@ -21,7 +21,13 @@
     "noEmit": true,
     "skipLibCheck": true,
     "paths": {
-      "@ecoma-io/release-craft/domain": ["./core/domain/index.ts"]
+      "@ecoma-io/release-craft/domain": ["./core/domain/index.ts"],
+      "@ecoma-io/release-craft/planner": ["./src/planner/index.ts"],
+      "@ecoma-io/release-craft/execution": ["./src/execution/index.ts"],
+      "@ecoma-io/release-craft/app": ["./src/app/index.ts"],
+      "@ecoma-io/release-craft/adapters/git": ["./src/adapters/git/index.ts"],
+      "@ecoma-io/release-craft/adapters/github": ["./src/adapters/github/index.ts"],
+      "@ecoma-io/release-craft/__internal__/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "action/**/*.mjs", "vitest.config.ts"],

@@ -35,9 +35,9 @@ import {
   type StepRecordsView,
   type StepState,
   type TransitionRecord,
-} from "../../index.js";
+} from "@ecoma-io/release-craft/execution";
 
-import { canonicalJson } from "../../planner/index.js";
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
 
 import { deepFreeze, frozenParse } from "./freeze.js";
 import { casAppendCommit, commitRecord, firstParentHistory, readRef } from "./git-refs.js";

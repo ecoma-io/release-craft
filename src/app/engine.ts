@@ -32,7 +32,6 @@ import {
   isHookStepKey,
   ledgerRequestStep,
   openAttempt,
-  plan as planRelease,
   resolveBlocked,
   resume as resumeAttempt,
   scheduleArtifacts,
@@ -47,15 +46,18 @@ import {
   type ExecutionLedger,
   type HookAnchorPosition,
   type LedgerRecord,
-  type PlanningInput,
-  type PlanningOutcome,
-  type PlanLine,
   type ReleaseAttempt,
   type RequestStepOutcome,
   type StageKey,
-  type StepDrive,
   type StepKey,
-} from "../index.js";
+} from "@ecoma-io/release-craft/execution";
+import {
+  plan as planRelease,
+  type PlanLine,
+  type PlanningInput,
+  type PlanningOutcome,
+} from "@ecoma-io/release-craft/planner";
+import type { StepDrive } from "./types.js";
 import { acquireClaim, claimScopeForLine, claimViewFor } from "./claims.js";
 import { applyPlannedChannelTransitions, plannedChannelMoves } from "./channels.js";
 import type {

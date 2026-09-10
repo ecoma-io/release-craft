@@ -28,7 +28,7 @@ const ONLY_BUILTIN_FILE = "identity.ts";
 
 /** The one parent edge the kernel may draw — the planner's canonicalJson,
  * spelled exactly as the contract allows, never a planner-internal path. */
-const PLANNER_BARREL = "../planner/index.js";
+const PLANNER_BARREL = "@ecoma-io/release-craft/planner";
 
 /** One scanned-in offense: which file, and what the scan found there. */
 interface Violation {
@@ -123,7 +123,7 @@ describe("the execution kernel is an isolated layer", () => {
     const violations = render(scan(importViolations));
     expect(
       violations,
-      'the kernel imports nothing outside src/execution and "../planner/index.js" — the single permitted Node built-in is "node:crypto" in identity.ts (attempt identity hashing is pure computation)',
+      'the kernel imports nothing outside src/execution and the planner barrel (the @ecoma-io/release-craft/planner package alias) — the single permitted Node built-in is "node:crypto" in identity.ts (attempt identity hashing is pure computation)',
     ).toEqual([]);
   });
 

@@ -6,7 +6,7 @@
  * both are imported from the package barrel.
  */
 
-import type { ClaimScope, ClaimToken, LedgerRecord } from "../../index.js";
+import type { ClaimScope, ClaimToken, LedgerRecord } from "@ecoma-io/release-craft/execution";
 import type { ClaimRecord } from "./claim-store-git.js";
 
 /**

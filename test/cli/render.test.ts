@@ -13,8 +13,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { exitCodeFor } from "../../src/cli/exit-codes.js";
-import { renderHuman, renderJson } from "../../src/cli/render.js";
+import { exitCodeFor } from "@ecoma-io/release-craft/__internal__/cli/exit-codes.js";
+import { renderHuman, renderJson } from "@ecoma-io/release-craft/__internal__/cli/render.js";
 import type { Observation, RunOutcome } from "../../src/index.js";
 import { betaIntent, docBytes, memoryDoc, runCli } from "./harness.js";
 

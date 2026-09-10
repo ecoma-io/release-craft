@@ -1,0 +1,55 @@
+# The cli project — Phase 12's CLI surface, declared as its own Moon project
+# so the boundary between the cli and every other src/ layer is executable
+# (module-boundaries.config.mjs judges the `type-cli` tag).
+#
+# The CLI composes the app barrel (the run outcomes and engine value it
+# renders), the execution kernel, the planner barrel, the domain kernel,
+# and the git adapter's barrel — but never the package front door
+# (`@ecoma-io/release-craft`, which re-exports everything and was the
+# #155 defect this decomposition prevents).
+#
+# Task roster:
+#   - no `build` task: emitted as part of release-craft:build
+#   - `arch` runs once per workspace (release-craft:arch)
+id: cli
+language: typescript
+# The CLI composes the app barrel, the execution kernel, the planner
+# barrel, the domain kernel and the git adapter's barrel — but never the
+# package front door. `type-package` is deliberately absent from the
+# archkeep row (the #155 defect this decomposition prevents); `type-app`
+# IS present because the CLI renders the app's run outcomes. The edges
+# below satisfy both archkeep's cross-project rule and Moon's
+# affected-detection: when any layer's sources change, cli:typecheck
+# re-runs.
+dependsOn:
+  - core-domain
+  - planner
+  - execution
+  - app
+  - adapters-git
+fileGroups:
+  sources:
+    - "**/*"
+tags:
+  - type-cli
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "project://execution?group=sources"
+      - "project://app?group=sources"
+      - "project://adapters-git?group=sources"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

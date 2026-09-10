@@ -27,10 +27,13 @@ import { describe, expect, it } from "vitest";
 
 import { Version } from "@ecoma-io/release-craft/domain";
 
-import { plannedChannelTransitions } from "../../src/planner/channels.js";
-import { plan } from "../../src/planner/assemble.js";
-import { inputsFingerprint } from "../../src/planner/identity.js";
-import { InvalidPlanningInputError, normalize } from "../../src/planner/input.js";
+import { plannedChannelTransitions } from "@ecoma-io/release-craft/__internal__/planner/channels.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
+import { inputsFingerprint } from "@ecoma-io/release-craft/__internal__/planner/identity.js";
+import {
+  InvalidPlanningInputError,
+  normalize,
+} from "@ecoma-io/release-craft/__internal__/planner/input.js";
 import type {
   ChannelObservation,
   CommitObservation,
@@ -44,7 +47,7 @@ import type {
   PolicyInput,
   RefObservation,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 // ---------------------------------------------------------------------------
 // Fixture builders — deterministic, closed inputs per §2.1, mirroring

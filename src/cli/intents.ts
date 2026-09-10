@@ -7,7 +7,7 @@
  * boundary, not by a fault the engine discovers later).
  */
 
-import type { OperatorIntent } from "../index.js";
+import type { OperatorIntent } from "@ecoma-io/release-craft/planner";
 
 import { UsageFault } from "./parse.js";
 

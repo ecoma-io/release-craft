@@ -36,9 +36,9 @@
  */
 
 import { Version } from "@ecoma-io/release-craft/domain";
-import type { GitTagNaming } from "../adapters/git/index.js";
-import type { ClaimScope } from "../execution/index.js";
-import { formatTag } from "../planner/index.js";
+import type { GitTagNaming } from "@ecoma-io/release-craft/adapters/git";
+import type { ClaimScope } from "@ecoma-io/release-craft/execution";
+import { formatTag } from "@ecoma-io/release-craft/planner";
 
 /** The tag a claim scope derives, rendered exactly as the planner renders
  * the plan's own tag: through `formatTag` over the scope's line's declared

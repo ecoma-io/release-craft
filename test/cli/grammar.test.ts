@@ -11,7 +11,7 @@ import { writeFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { COMMANDS, GRAMMAR, usageText } from "../../src/cli/grammar.js";
+import { COMMANDS, GRAMMAR, usageText } from "@ecoma-io/release-craft/__internal__/cli/grammar.js";
 import { betaIntent, cliJson, docBytes, memoryDoc, runCli, withTempDir } from "./harness.js";
 
 const ABSENT_FLAGS = ["target", "naming-module", "declarations", "help", "h", "version"] as const;

@@ -1,0 +1,49 @@
+# The adapters-git project — the git binding (ADR-0009; phase 8),
+# declared as its own Moon project so the boundary between the git adapter
+# and every other src/ layer is executable (module-boundaries.config.mjs
+# judges the `type-adapters-git` tag).
+#
+# The git adapter reaches the planner barrel (`../../planner/index.js` —
+# `canonicalJson`), the execution barrel (`../../index.js` re-exports
+# execution types), and the domain kernel.  No app, cli, or
+# adapters-github import is legal here — adapters compose inward, never
+# toward the surface.
+#
+# Task roster:
+#   - no `build` task: emitted as part of release-craft:build
+#   - `arch` runs once per workspace (release-craft:arch)
+id: adapters-git
+language: typescript
+# The git adapter reaches the planner barrel (`canonicalJson`), the
+# execution barrel (port types re-exported through `../../index.js` →
+# `../execution/index.js`), and the domain kernel's alias. The edges
+# archkeep judges against `type-adapters-git → …`, and the edges Moon
+# needs for the `project://` inputs below.
+dependsOn:
+  - core-domain
+  - planner
+  - execution
+fileGroups:
+  sources:
+    - "**/*"
+tags:
+  - type-adapters-git
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "project://execution?group=sources"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

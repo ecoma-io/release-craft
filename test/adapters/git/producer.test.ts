@@ -3,8 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { GitFaultError, openGitRun, type GitRun } from "../../../src/adapters/git/index.js";
-import { GitArtifactProducer } from "../../../src/adapters/git/producer-git.js";
+import {
+  GitFaultError,
+  openGitRun,
+  type GitRun,
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
+import { GitArtifactProducer } from "@ecoma-io/release-craft/__internal__/adapters/git/producer-git.js";
 import type { ArtifactProducerInput } from "../../../src/index.js";
 import { withTempRepo } from "./temp-repo.js";
 

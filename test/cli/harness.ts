@@ -16,9 +16,13 @@ import { dirname, join } from "node:path";
 
 import { expect } from "vitest";
 
-import { channelRefFor, GitChannelStore, type GitRun } from "../../src/adapters/git/index.js";
-import { selectEngine } from "../../src/cli/selection.js";
-import type { AssemblySelection } from "../../src/cli/parse.js";
+import {
+  channelRefFor,
+  GitChannelStore,
+  type GitRun,
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
+import { selectEngine } from "@ecoma-io/release-craft/__internal__/cli/selection.js";
+import type { AssemblySelection } from "@ecoma-io/release-craft/__internal__/cli/parse.js";
 import type { Observation, OperatorIntent, PlanningInput, RunOutcome } from "../../src/index.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
 import { liveWorld, runInput, standingChannelStates } from "../vertical/matrix.js";

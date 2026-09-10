@@ -27,8 +27,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { plan } from "../../src/planner/assemble.js";
-import { InvalidPlanningInputError } from "../../src/planner/input.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
+import { InvalidPlanningInputError } from "@ecoma-io/release-craft/__internal__/planner/input.js";
 import type {
   BootstrapDecision,
   CommitObservation,
@@ -42,7 +42,7 @@ import type {
   PolicyInput,
   RefObservation,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 // ---------------------------------------------------------------------------
 // Fixture builders — deterministic, closed inputs per §2.1, mirroring the

@@ -8,8 +8,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { extract } from "../../src/planner/extract.js";
-import type { CommitObservation, ExtractionResult, PolicyInput } from "../../src/planner/types.js";
+import { extract } from "@ecoma-io/release-craft/__internal__/planner/extract.js";
+import type {
+  CommitObservation,
+  ExtractionResult,
+  PolicyInput,
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 const NAMESPACE = "Release-Craft:";
 const COMMITTED_AT = "2026-01-01T00:00:00Z";

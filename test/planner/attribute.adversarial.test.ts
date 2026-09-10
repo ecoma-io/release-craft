@@ -8,9 +8,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { attribute } from "../../src/planner/attribute.js";
-import { extract } from "../../src/planner/extract.js";
-import { InvalidPlanningInputError, normalize } from "../../src/planner/input.js";
+import { attribute } from "@ecoma-io/release-craft/__internal__/planner/attribute.js";
+import { extract } from "@ecoma-io/release-craft/__internal__/planner/extract.js";
+import {
+  InvalidPlanningInputError,
+  normalize,
+} from "@ecoma-io/release-craft/__internal__/planner/input.js";
 import type {
   CommitObservation,
   LineAttribution,
@@ -19,7 +22,7 @@ import type {
   PlanningInput,
   PolicyInput,
   RefObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 const POLICY_DIGEST = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const COMMITTED_AT = "2026-01-01T00:00:00Z";

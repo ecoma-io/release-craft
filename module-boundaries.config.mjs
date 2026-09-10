@@ -16,27 +16,46 @@
 
 /**
  * The dependency constraints, in the `@nx/enforce-module-boundaries` option
- * shape archkeep consumes. Three rows, one per project tag — kept exhaustive on
+ * shape archkeep consumes. One row per project tag — kept exhaustive on
  * purpose: an unlisted tag would be unconstrained, so a new tag must arrive
  * together with the row that judges it.
  *
  * The direction law this table states (ADR-0001 is its source of truth):
  *
- *   core-domain  →  core-domain      ✅  the kernel imports only itself — and
- *                                    nothing external at all (bannedExternalImports)
- *   release-craft →  core-domain     ✅  the package shell may re-export the domain
- *   core-domain  →  release-craft    ❌  the kernel never consumes its consumers
- *   gate-scripts →  anything else    ❌  a gate that imports what it judges stops
- *                                    being a gate
+ *   core-domain       →  core-domain       ✅  the kernel imports only itself — and
+ *                                             nothing external at all (bannedExternalImports)
+ *   planner           →  core-domain       ✅  the planning layer reaches the kernel only
+ *   execution         →  planner, domain   ✅  the execution kernel reaches the planner barrel
+ *   app               →  execution/planner/adapters-git ✅  the boundary composes the layers
+ *   adapters-git      →  execution/planner ✅  the binding reaches the layers it implements
+ *   adapters-github   →  adapters-git      ✅  the GitHub adapter reaches only the git binding
+ *   cli               →  app/execution/planner/adapters-git ✅  the CLI composes the layers it renders —
+ *                                             never the package front door
+ *   release-craft     →  every layer       ✅  the package shell re-exports the layers below
+ *   gate-scripts      →  gate-scripts only ❌  a gate that imports what it judges stops being a gate
+ *   adapters          →  app, cli          ❌  adapters compose inward, never toward the surface
  *
  * @type {Array<{ sourceTag: string, onlyDependOnLibsWithTags: string[], bannedExternalImports?: string[] }>}
  */
 export const depConstraints = [
-  // The package may depend on itself and on the domain kernel — and on
-  // nothing else. When the release engine arrives and internal layering
-  // becomes real, it is expressed as more tags here — never by loosening
-  // this row.
-  { sourceTag: "type-package", onlyDependOnLibsWithTags: ["type-package", "type-domain"] },
+  // The package shell re-exports the layers below it — the barrel
+  // src/index.ts is the public surface. The tag rows below are what makes
+  // the direction law executable: an upward edge (planner → execution,
+  // adapter → app, cli → the package front door) fails the arch gate with
+  // the row's verdict, not a human reading of the import graph.
+  {
+    sourceTag: "type-package",
+    onlyDependOnLibsWithTags: [
+      "type-package",
+      "type-domain",
+      "type-planner",
+      "type-execution",
+      "type-app",
+      "type-cli",
+      "type-adapters-git",
+      "type-adapters-github",
+    ],
+  },
 
   // The domain kernel is the bottom of the graph, in both directions at once:
   // `onlyDependOnLibsWithTags` keeps every other project out of its imports,
@@ -52,6 +71,61 @@ export const depConstraints = [
     sourceTag: "type-domain",
     onlyDependOnLibsWithTags: ["type-domain"],
     bannedExternalImports: ["*"],
+  },
+
+  // The planner reaches the domain kernel and nothing above it — no
+  // execution, no app, no adapter, no cli. Its only frozen built-in
+  // (`node:crypto` in identity.ts) is the scanner suite's allowance, not
+  // this table's — built-ins are not project edges.
+  { sourceTag: "type-planner", onlyDependOnLibsWithTags: ["type-domain"] },
+
+  // The execution kernel reaches the planner barrel (canonicalJson, the
+  // planner's own public surface) and the domain kernel. No app, adapter,
+  // or cli import is legal here.
+  { sourceTag: "type-execution", onlyDependOnLibsWithTags: ["type-domain", "type-planner"] },
+
+  // The application boundary composes execution, planner, domain and the
+  // git binding's barrel — never the cli, never the package front door.
+  {
+    sourceTag: "type-app",
+    onlyDependOnLibsWithTags: [
+      "type-domain",
+      "type-planner",
+      "type-execution",
+      "type-adapters-git",
+    ],
+  },
+
+  // The CLI composes the app barrel (the run outcomes and engine value it
+  // renders), the execution kernel, the planner barrel, the domain kernel
+  // and the git adapter's barrel — but never the package front door.
+  // `type-package` is deliberately absent from this row: the #155 defect
+  // (cli/naming.ts importing the package barrel, transitively evaluating
+  // the whole graph) is now a boundary violation the gate names by file.
+  {
+    sourceTag: "type-cli",
+    onlyDependOnLibsWithTags: [
+      "type-domain",
+      "type-planner",
+      "type-execution",
+      "type-app",
+      "type-adapters-git",
+    ],
+  },
+
+  // The git adapter reaches the layers it implements (planner, execution,
+  // domain) — never app, never cli, never the github adapter (the reverse
+  // direction is real; this one is not).
+  {
+    sourceTag: "type-adapters-git",
+    onlyDependOnLibsWithTags: ["type-domain", "type-planner", "type-execution"],
+  },
+
+  // The GitHub adapter reaches only the git binding's barrel — no planner,
+  // no execution, no app, no cli, never the package front door.
+  {
+    sourceTag: "type-adapters-github",
+    onlyDependOnLibsWithTags: ["type-domain", "type-adapters-git"],
   },
 
   // The repository gates (scripts/) are standalone: they may never import the

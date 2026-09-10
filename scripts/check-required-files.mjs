@@ -52,10 +52,19 @@ const REQUIRED_FILES = [
   ".prettierignore",
   ".editorconfig",
 
-  // Task graph and architecture law.
+  // Task graph and architecture law. The layer projects (planner, execution,
+  // app, cli, adapters) are Moon projects like the domain kernel: their
+  // moon.yml files carry the tags module-boundaries.config.mjs judges, so a
+  // missing one is a missing boundary, not a missing build input.
   ".moon/workspace.yml",
   "moon.yml",
   "scripts/moon.yml",
+  "src/planner/moon.yml",
+  "src/execution/moon.yml",
+  "src/app/moon.yml",
+  "src/cli/moon.yml",
+  "src/adapters/git/moon.yml",
+  "src/adapters/github/moon.yml",
   "module-boundaries.config.mjs",
   "lefthook.yml",
 

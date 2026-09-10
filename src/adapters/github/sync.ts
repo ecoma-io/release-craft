@@ -23,7 +23,7 @@
  * types only.
  */
 
-import { GitFaultError, type GitBinding } from "../git/index.js";
+import { GitFaultError, type GitBinding } from "@ecoma-io/release-craft/adapters/git";
 import type { GitHubCredentials, SyncReport, SyncedRef } from "./adapter-types.js";
 import {
   classifyGitFailure,

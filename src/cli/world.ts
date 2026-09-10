@@ -13,7 +13,7 @@
 
 import { readFileSync } from "node:fs";
 
-import type { PlanningInput } from "../index.js";
+import type { PlanningInput } from "@ecoma-io/release-craft/planner";
 
 import { UsageFault } from "./parse.js";
 

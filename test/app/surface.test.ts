@@ -23,7 +23,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import * as app from "../../src/app/index.js";
+import * as app from "@ecoma-io/release-craft/app";
 import { freshAssembly } from "./harness.js";
 
 // ---------------------------------------------------------------------------
@@ -61,9 +61,12 @@ function scan(
 }
 
 /** The exact sibling and barrel imports a boundary module may name (§2.1):
- * its own modules, the package barrel (kernel + planner), and the git
- * binding's barrel — never an internal adapter module. No Node built-in is
- * permitted: the boundary composes, it computes nothing that needs one. */
+ * its own modules and the layer barrels it composes, each named by its
+ * package alias (`@ecoma-io/release-craft/…` — the spelling archkeep's
+ * cross-project rule requires) — never an internal module of another layer,
+ * never the package front door (`@ecoma-io/release-craft`, the barrel that
+ * re-exports this very boundary). No Node built-in is permitted: the
+ * boundary composes, it computes nothing that needs one. */
 const ALLOWED_APP_IMPORTS: readonly string[] = [
   "./types.js",
   "./claims.js",
@@ -71,8 +74,9 @@ const ALLOWED_APP_IMPORTS: readonly string[] = [
   "./engine.js",
   "./assemble.js",
   "./index.js",
-  "../index.js",
-  "../adapters/git/index.js",
+  "@ecoma-io/release-craft/execution",
+  "@ecoma-io/release-craft/planner",
+  "@ecoma-io/release-craft/adapters/git",
 ];
 
 function importViolations(file: string, text: string): Violation[] {
@@ -168,7 +172,8 @@ function layerImportViolations(file: string, text: string): Violation[] {
   return violations;
 }
 
-const INTERNAL_LAYER_RE = /src\/(?:adapters|planner|execution)\/|src\/app\/(?!index\.js)/;
+const INTERNAL_LAYER_RE =
+  /src\/(?:adapters|planner|execution)\/|src\/app\/(?!index\.(?:js|ts))|@ecoma-io\/release-craft\/__internal__\//;
 
 /** No boundary test reaches past the barrels (obligation 7): the package
  * barrel, the boundary's own barrel, the fixtures, and this directory's
@@ -336,14 +341,21 @@ describe("the gate bites: each scanner reports its offense on synthetic text", (
       render(
         testImportViolations(
           "rogue.test.ts",
-          'import { x } from "../../src/execution/ledger.js";\n',
+          'import { x } from "@ecoma-io/release-craft/__internal__/execution/ledger.js";\n',
         ),
       ),
-    ).toEqual(['rogue.test.ts reaches an internal module "../../src/execution/ledger.js"']);
+    ).toEqual([
+      'rogue.test.ts reaches an internal module "@ecoma-io/release-craft/__internal__/execution/ledger.js"',
+    ]);
     expect(
       render(
-        testImportViolations("rogue.test.ts", 'import { y } from "../../src/app/engine.js";\n'),
+        testImportViolations(
+          "rogue.test.ts",
+          'import { y } from "@ecoma-io/release-craft/__internal__/app/engine.js";\n',
+        ),
       ),
-    ).toEqual(['rogue.test.ts reaches an internal module "../../src/app/engine.js"']);
+    ).toEqual([
+      'rogue.test.ts reaches an internal module "@ecoma-io/release-craft/__internal__/app/engine.js"',
+    ]);
   });
 });

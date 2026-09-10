@@ -8,13 +8,13 @@ import { describe, expect, it } from "vitest";
 
 import { Version } from "@ecoma-io/release-craft/domain";
 
-import { InvalidPlanningInputError } from "../../src/planner/input.js";
-import { planPropagation } from "../../src/planner/propagate.js";
+import { InvalidPlanningInputError } from "@ecoma-io/release-craft/__internal__/planner/input.js";
+import { planPropagation } from "@ecoma-io/release-craft/__internal__/planner/propagate.js";
 import type {
   ComponentDependency,
   ComponentMeta,
   PropagationPlan,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 function dependency(name: string, range: string): ComponentDependency {
   return { name, range };

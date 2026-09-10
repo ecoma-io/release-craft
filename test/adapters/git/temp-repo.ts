@@ -12,7 +12,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { hermeticGitEnv, openGitRun, type GitRun } from "../../../src/adapters/git/index.js";
+import {
+  hermeticGitEnv,
+  openGitRun,
+  type GitRun,
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 
 /** The shape createTempRepo hands back: the repository path, a runner bound
  * to it, and the cleanup every test owes. */

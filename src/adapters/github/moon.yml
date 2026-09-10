@@ -1,0 +1,45 @@
+# The adapters-github project — the GitHub adapter (ADR-0010; phase 9),
+# declared as its own Moon project so the boundary between the GitHub
+# adapter and every other src/ layer is executable
+# (module-boundaries.config.mjs judges the `type-adapters-github` tag).
+#
+# The GitHub adapter reaches only the git binding's barrel
+# (`../git/index.js`); no planner, execution, app, cli, or package
+# import is legal here — adapters compose inward, never toward the
+# surface.
+#
+# Task roster:
+#   - no `build` task: emitted as part of release-craft:build
+#   - `arch` runs once per workspace (release-craft:arch)
+id: adapters-github
+language: typescript
+# The GitHub adapter reaches only the git binding's barrel
+# (`../git/index.js`) and the domain kernel's alias. The edges archkeep
+# judges against `type-adapters-github → …`, and the edges Moon needs
+# for the `project://` inputs below.
+dependsOn:
+  - core-domain
+  - adapters-git
+fileGroups:
+  sources:
+    - "**/*"
+tags:
+  - type-adapters-github
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "project://core-domain?group=sources"
+      - "project://adapters-git?group=sources"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

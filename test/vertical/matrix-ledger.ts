@@ -39,14 +39,14 @@ import {
   type HookStep,
   type ReleaseAttempt,
   type StepKey,
-} from "../../src/execution/index.js";
-import { plan } from "../../src/planner/assemble.js";
+} from "@ecoma-io/release-craft/__internal__/execution/index.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import type {
   OperatorIntent,
   PlanLine,
   PlanningOutcome,
   ReleasePlan,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 import {
   actor,
   applyPlannedChannelTransitions,

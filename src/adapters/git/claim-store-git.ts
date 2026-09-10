@@ -26,8 +26,8 @@ import type {
   ClaimStore,
   ClaimToken,
   ClaimVerification,
-} from "../../index.js";
-import { canonicalJson } from "../../planner/index.js";
+} from "@ecoma-io/release-craft/execution";
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
 
 import { deepFreeze, frozenParse } from "./freeze.js";
 import { casAppendCommit, commitRecord, readRef } from "./git-refs.js";

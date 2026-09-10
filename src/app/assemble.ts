@@ -15,7 +15,7 @@
  * — the boundary's own thrown contract violation, before any store is
  * touched.
  */
-import type { GitBinding } from "../adapters/git/index.js";
+import type { GitBinding } from "@ecoma-io/release-craft/adapters/git";
 import { createEngine } from "./engine.js";
 import {
   InvalidAssemblyConfigError,

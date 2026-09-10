@@ -16,12 +16,12 @@ import { writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { InvalidAssemblyConfigError } from "../../src/index.js";
-import { overlayIntents, parseIntents } from "../../src/cli/intents.js";
-import { declaredTagNaming } from "../../src/cli/naming.js";
-import { parseArgv, UsageFault } from "../../src/cli/parse.js";
-import { selectEngine } from "../../src/cli/selection.js";
-import { deriveTargets } from "../../src/cli/targets.js";
-import { readWorldDocument } from "../../src/cli/world.js";
+import { overlayIntents, parseIntents } from "@ecoma-io/release-craft/__internal__/cli/intents.js";
+import { declaredTagNaming } from "@ecoma-io/release-craft/__internal__/cli/naming.js";
+import { parseArgv, UsageFault } from "@ecoma-io/release-craft/__internal__/cli/parse.js";
+import { selectEngine } from "@ecoma-io/release-craft/__internal__/cli/selection.js";
+import { deriveTargets } from "@ecoma-io/release-craft/__internal__/cli/targets.js";
+import { readWorldDocument } from "@ecoma-io/release-craft/__internal__/cli/world.js";
 import type { PlanningInput } from "../../src/index.js";
 import { betaIntent, memoryDoc, withTempDir } from "./harness.js";
 

@@ -11,9 +11,9 @@
  * every scope) — canonical form, forward-only, byte-exact reload.
  */
 
-import { type AttemptRegister } from "../../index.js";
+import { type AttemptRegister } from "@ecoma-io/release-craft/execution";
 
-import { canonicalJson } from "../../planner/index.js";
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
 
 import { frozenParse } from "./freeze.js";
 import { casAppendCommit, commitRecord, readRef } from "./git-refs.js";
