@@ -68,6 +68,11 @@ Moon graph, which is the real definition. Tasks are cache-aware and
 affected-aware: `pnpm exec moon ci --base <sha> ...:lint` runs exactly what a
 change can have moved.
 
+Running `pnpm exec vitest run` directly (bypassing Moon) requires the built
+CLI — run `pnpm build` first. A `globalSetup` preflight enforces this: if
+`dist/` is absent, vitest aborts before any suite with the exact fix named.
+The Moon-ordered entry points (`pnpm test`, `pnpm check`) build automatically.
+
 ## Governance
 
 Three workflows, three different questions — none is a god workflow:
