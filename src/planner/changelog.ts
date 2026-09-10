@@ -187,20 +187,37 @@ interface ExistingBlock {
  * order under the header; a version the file already carries is replaced in
  * place with the freshly rendered bytes — release-please's updater shape
  * (§3.5), and the reason re-rendering the same version onto the same file
- * is the identity (the pinned idempotence test). */
+ * is the identity (the pinned idempotence test).
+ *
+ * The same version on two lines is legal input (M-02: multiple lines
+ * release together; M-11: split per-line tag namespaces keep equal versions
+ * across lines), so the pairing is positional per version — the plan's
+ * k-th line of a version replaces the file's k-th block of that version.
+ * Keying a bare version→block Map would write the last line's bytes over
+ * every same-version block, silently deleting the other lines' notes.
+ * Lines beyond the file's blocks of their version are the not-carried ones
+ * — prepended in input order; blocks beyond the rendered lines of theirs
+ * stay verbatim — bytes this render does not replace are never dropped. */
 function update(
   existing: string,
   rendered: readonly { readonly version: string; readonly block: string }[],
 ): string {
   const blocks = parseBlocks(existing);
-  const carried = new Set(blocks.map((block) => block.version));
-  const replacement = new Map(rendered.map((entry) => [entry.version, entry.block]));
-  const out: string[] = rendered
-    .filter((entry) => !carried.has(entry.version))
-    .map((entry) => entry.block);
-  for (const block of blocks) {
-    const fresh = replacement.get(block.version);
-    out.push(fresh ?? `${block.lines.join("\n")}\n`);
+  const replaced = new Set<number>();
+  const fresh = new Map<number, string>();
+  const out: string[] = [];
+  for (const entry of rendered) {
+    const index = blocks.findIndex(
+      (block, i) => !replaced.has(i) && block.version === entry.version,
+    );
+    if (index === -1) out.push(entry.block);
+    else {
+      replaced.add(index);
+      fresh.set(index, entry.block);
+    }
+  }
+  for (const [i, block] of blocks.entries()) {
+    out.push(fresh.get(i) ?? `${block.lines.join("\n")}\n`);
   }
   return `${CHANGELOG_HEADER}\n\n${out.join("\n")}`;
 }

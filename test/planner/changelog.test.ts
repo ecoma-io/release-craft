@@ -418,3 +418,41 @@ describe("empty versions with and without existing", () => {
     expect(result).toBe("# Changelog\n");
   });
 });
+
+// ---------------------------------------------------------------------------
+// §14 — Same version on two lines (M-02/M-11): split per-line tag namespaces
+//        keep the same version legal across lines, so one CHANGELOG.md
+//        carries both plan lines' blocks. Each line's block must survive
+//        re-render — byte-identical onto its own output — never collapsed
+//        onto the last line's block.
+// ---------------------------------------------------------------------------
+
+describe("same version on two lines (M-02/M-11)", () => {
+  it("first render carries both lines' headings and entries", () => {
+    const first = renderChangelog(
+      input([
+        { version: "2.0.0", date: "2026-03-01", entries: [FEAT_BAR] },
+        { version: "2.0.0", date: "2026-03-01", entries: [FIX_FOO] },
+      ]),
+    );
+    expect(first).toContain("add the bar widget");
+    expect(first).toContain("fix the foo rendering");
+    const headings = first.split("\n").filter((line) => line.startsWith("## 2.0.0"));
+    expect(headings).toHaveLength(2);
+  });
+
+  it("re-rendering the same two lines onto their own output is byte-identical", () => {
+    const versions = [
+      { version: "2.0.0", date: "2026-03-01", entries: [FEAT_BAR] },
+      { version: "2.0.0", date: "2026-03-01", entries: [FIX_FOO] },
+    ];
+    const first = renderChangelog(input(versions));
+    const again = renderChangelog(input(versions, { existing: first }));
+    // The re-render never collapses the pair onto the last line's block —
+    // the pre-fix silent deletion of the first line's entries — and both
+    // lines' notes are still there.
+    expect(again).toBe(first);
+    expect(again).toContain("add the bar widget");
+    expect(again).toContain("fix the foo rendering");
+  });
+});
