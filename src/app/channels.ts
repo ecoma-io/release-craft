@@ -10,14 +10,19 @@
  * ```text
  * ledger.appendStart(attempt, "channel-transition", attribution, …)  // the walk, durable first
  * ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the walk, the claim guard —
- *                                                                    // only an advance or noop
- *                                                                    // proceeds; any other verdict
- *                                                                    // stops the walk before a
- *                                                                    // store CAS runs
- * for each planned move: channels.applyTransition(move)              // here, on that verdict —
- *                                                                    // the store's CAS, each record
- *                                                                    // carrying the claim verdict a
- *                                                                    // check actually performed; the
+ *                                                                    // only a rule-6-verified
+ *                                                                    // advance proceeds to the
+ *                                                                    // store; a completed stage's
+ *                                                                    // noop is walked past with no
+ *                                                                    // CAS; any other verdict stops
+ *                                                                    // the walk before a CAS runs
+ * for each planned move: channels.applyTransition(move)              // here, on that advance —
+ *                                                                    // the store's CAS (the
+ *                                                                    // crash-window replay's
+ *                                                                    // idempotent re-apply), each
+ *                                                                    // move record carrying the
+ *                                                                    // claim verdict a check
+ *                                                                    // actually performed; the
  *                                                                    // completion appends after the
  *                                                                    // moves (decision 3)
  * ```
@@ -27,13 +32,19 @@
  * never `from`). Every decided move appends one `channel-transition` ledger
  * record whose `contentFingerprint` is the store outcome's — the record's
  * idempotency key is what the store observed deciding, never what the plan
- * assumed (decision 4). `applied` proceeds; `noop` is the replay case; a
- * `conflict` or `ambiguous` stops the walk as a returned outcome — never a
- * throw, never a quiet second move: a half-moved promotion is never
- * reported green (invariants 2.5/2.6), and the recorded `started` record
- * is what a resume re-judges. The `promoted-from` edge and the stream
- * close are line-level facts needing no store — no move exists for a
- * channel that was never declared (ADR-0012's walk; decision-log D36).
+ * assumed (decision 4). `applied` proceeds; `noop` is an ADVANCING stage's
+ * own replay case — the crash window between the moves and the completion,
+ * where the verified claim stands and each already-landed move answers
+ * `noop`; a COMPLETED channel stage is never re-executed at all (the walk's
+ * CAS gate is the verified advance alone), so this function never runs over
+ * one and an out-of-band drifted ref is never re-pointed here — the silent
+ * second move the replay ladder forbids. A `conflict` or `ambiguous` stops
+ * the walk as a returned outcome — never a throw, never a quiet second
+ * move: a half-moved promotion is never reported green (invariants 2.5/2.6),
+ * and the recorded `started` record is what a resume re-judges. The
+ * `promoted-from` edge and the stream close are line-level facts needing no
+ * store — no move exists for a channel that was never declared (ADR-0012's
+ * walk; decision-log D36).
  *
  * No clock, no environment, no randomness (§3's law).
  */
@@ -57,10 +68,13 @@ export const plannedChannelMoves = (planLine: PlanLine): readonly PlannedChannel
 
 /**
  * Executes the recorded plan's moves through the wired store (§2.4's
- * point, above). Returns the moves that landed with the outcomes the store
- * returned, or the first undecidable move as the `conflict`/`ambiguous`
- * row that stops the walk — that move records nothing, and the stage's
- * completion never appends after it.
+ * point, above). The caller gates this on the stage guard's verified
+ * advance — a completed stage's noop replay never reaches here, so the
+ * `claim` row below is always a check the guard actually performed.
+ * Returns the moves that landed with the outcomes the store returned, or
+ * the first undecidable move as the `conflict`/`ambiguous` row that stops
+ * the walk — that move records nothing, and the stage's completion never
+ * appends after it.
  */
 export const applyPlannedChannelTransitions = (application: {
   readonly attempt: ReleaseAttempt;

@@ -21,7 +21,9 @@ import {
   type ClaimToken,
   type ClaimVerification,
   type ExecutionLedger,
+  type HookStep,
   type LedgerRecord,
+  type RunDeclarations,
 } from "../../src/index.js";
 import {
   assertStoreChannelsStanding,
@@ -354,5 +356,175 @@ describe("§2.4 — channel transitions respect the claim guard (issue #192)", (
       expect(move.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
       expect(move.claim).toBeDefined();
     }
+  });
+});
+
+/** One hook's declaration anchored at the channel-transition stage's after
+ * boundary — the extension whose refusal suspends the attempt only once the
+ * stage's completion and both moves are durable. The effect returns the
+ * given proof, or no proof at all when `proof` is undefined (the §2.5
+ * escalation window). */
+function channelHookDeclaration(proof: { readonly evidence: string } | undefined): RunDeclarations {
+  const hook: HookStep = {
+    id: "release-note",
+    anchor: { stage: "channel-transition", position: "after" },
+    guard: "release-line",
+    postconditions: ["evidence-present"],
+  };
+  return {
+    hooks: [hook],
+    hookEffects: new Map([
+      [
+        hook.id,
+        (input) => ({
+          attribution: { attemptId: input.attemptId, actor: "automation" },
+          ...(proof === undefined ? {} : proof),
+        }),
+      ],
+    ]),
+  };
+}
+
+/** One step's recorded transitions, append order — the durable evidence the
+ * resume re-judged from. */
+const recordedTos = (tail: readonly LedgerRecord[], stepKey: string): readonly string[] =>
+  tail.flatMap((record) =>
+    record.kind === "step" && record.record.stepKey === stepKey ? [record.record.to] : [],
+  );
+
+describe("§2.4 — a completed channel stage is never re-executed (issue #192's review)", () => {
+  it("a channel-anchored hook left uncompleted after the stage completed: the resume replays the stage noop and re-applies nothing", () => {
+    const assembly = freshAssembly();
+    const world = liveWorld();
+    stageLadder(assembly.engine, world);
+    const stopped = assembly.engine.run(
+      runRequest(world, "main", [promote], channelHookDeclaration(undefined)),
+    );
+    expect(stopped.kind).toBe("blocked");
+    if (stopped.kind !== "blocked" || stopped.handle === null || stopped.planId === null) {
+      throw new Error("expected a blocked outcome");
+    }
+    expect(stopped.cause).toBe("validation:hook:release-note:evidence-present");
+    const attemptId = stopped.handle.attemptId;
+    const tailBefore = assembly.stores.ledger.tail(attemptId);
+    // The stage completed with its moves before the hook refused: both moves
+    // landed and were recorded, the completion stands after them.
+    const movesBefore = channelRecordsOf(tailBefore);
+    expect(movesBefore.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
+    expect(recordedTos(tailBefore, "channel-transition")).toStrictEqual(["started", "completed"]);
+
+    const resolved = assembly.engine.resolve(stopped.handle, "hook:release-note", {
+      kind: "revalidation",
+      planFingerprint: stopped.planId,
+    });
+    expect(resolved.kind).toBe("resolved");
+
+    // The resume re-enters at the hook's anchor stage. The completed stage
+    // replays noop — and its moves never re-apply: every move was decided in
+    // the run that completed the stage, so the replay appends no second
+    // generation of move records over the same verdict that never verified
+    // the claim.
+    const outcome = assembly.engine.resume(
+      stopped.handle,
+      runRequest(
+        world,
+        "main",
+        [promote],
+        channelHookDeclaration({ evidence: "evidence:release-note" }),
+      ),
+    );
+    expect(outcome.kind).toBe("published");
+    if (outcome.kind !== "published" || outcome.handle === null) {
+      throw new Error("expected a published outcome");
+    }
+    expect(outcome.tag).toBe("5.0.0");
+    const tail = assembly.stores.ledger.tail(outcome.handle.attemptId);
+    expect(channelRecordsOf(tail)).toStrictEqual(movesBefore);
+    expect(recordedTos(tail, "channel-transition")).toStrictEqual(["started", "completed"]);
+    // The walk PROCEEDED past the stage-noop: the replay drive is the noop,
+    // and the later stages advanced to the published terminal.
+    expect(outcome.drives).toContainEqual({
+      stepKey: "channel-transition",
+      outcome: { kind: "noop", stepKey: "channel-transition" },
+    });
+    expect(recordedTos(tail, "hook:release-note")).toStrictEqual([
+      "started",
+      "failed",
+      "started",
+      "completed",
+    ]);
+    expect(recordedTos(tail, "publish")).toStrictEqual(["started", "completed"]);
+    expect(assembly.stores.channels.read("stable").target).toStrictEqual({
+      line: "main",
+      version: "5.0.0",
+    });
+    expect(assembly.stores.channels.read("next").target).toStrictEqual({
+      line: "main",
+      version: "5.0.0",
+    });
+  });
+
+  it("an out-of-band drift between the runs is not re-pointed by the completed stage's replay", () => {
+    const assembly = freshAssembly();
+    const world = liveWorld();
+    stageLadder(assembly.engine, world);
+    const stopped = assembly.engine.run(
+      runRequest(world, "main", [promote], channelHookDeclaration(undefined)),
+    );
+    expect(stopped.kind).toBe("blocked");
+    if (stopped.kind !== "blocked" || stopped.handle === null || stopped.planId === null) {
+      throw new Error("expected a blocked outcome");
+    }
+    const attemptId = stopped.handle.attemptId;
+    const movesBefore = channelRecordsOf(assembly.stores.ledger.tail(attemptId));
+    expect(movesBefore.map((record) => record.channelId)).toStrictEqual(["stable", "next"]);
+
+    // Between the runs, a concurrent writer moves stable past the plan's
+    // target — the drift the plan knows nothing of.
+    const drifted = assembly.stores.channels.applyTransition({
+      channelId: "stable",
+      from: { line: "main", version: "5.0.0" },
+      to: { line: "main", version: "6.0.0" },
+    });
+    expect(drifted.kind).toBe("applied");
+    const resolved = assembly.engine.resolve(stopped.handle, "hook:release-note", {
+      kind: "revalidation",
+      planFingerprint: stopped.planId,
+    });
+    expect(resolved.kind).toBe("resolved");
+
+    const outcome = assembly.engine.resume(
+      stopped.handle,
+      runRequest(
+        world,
+        "main",
+        [promote],
+        channelHookDeclaration({ evidence: "evidence:release-note" }),
+      ),
+    );
+    expect(outcome.kind).toBe("published");
+    if (outcome.kind !== "published" || outcome.handle === null) {
+      throw new Error("expected a published outcome");
+    }
+    // The store is NOT re-pointed: a completed stage's replay never CASes,
+    // so the drifted target stands and no move record lands over it — the
+    // silent second move ADR-0012's replay ladder forbids.
+    expect(assembly.stores.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "6.0.0" },
+    });
+    const tail = assembly.stores.ledger.tail(outcome.handle.attemptId);
+    expect(channelRecordsOf(tail)).toStrictEqual(movesBefore);
+    // The walk still proceeded past the stage-noop to the published terminal.
+    expect(outcome.drives).toContainEqual({
+      stepKey: "channel-transition",
+      outcome: { kind: "noop", stepKey: "channel-transition" },
+    });
+    expect(recordedTos(tail, "hook:release-note")).toStrictEqual([
+      "started",
+      "failed",
+      "started",
+      "completed",
+    ]);
   });
 });
