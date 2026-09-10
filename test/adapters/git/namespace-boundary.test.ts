@@ -6,6 +6,7 @@ import {
   channelRefFor,
   claimRegisterRefFor,
   ledgerRef,
+  GitLedger,
   openGitBinding,
   type GitBinding,
   type GitRun,
@@ -77,9 +78,16 @@ const allRefNames = (git: GitRun): readonly string[] =>
 const fullWalk = (binding: GitBinding, git: GitRun): void => {
   // The register: the plan's ordinal counter.
   expect(binding.register.nextOrdinal("plan-boundary")).toBe(1);
-  // The ledger: the write-ahead plan record and a completed step.
+  // The ledger: the write-ahead plan record, a completed step, and the
+  // externally observed satisfaction's own stream (E-03) — written
+  // through the concrete git ledger (the port exposes its read side).
   binding.ledger.appendStart(attempt(), "plan", actor("automation"), "content_sha256:boundary");
   binding.ledger.append(completedRecord());
+  new GitLedger(git).noteExternal({
+    attemptId: "attempt_sha256:boundary",
+    stepKey: "plan",
+    satisfaction: { attribution: actor("automation"), evidence: "ext:boundary" },
+  });
   // The claims: one held claim on the line's register.
   const claim = asClaim(
     binding.claims.acquire(
@@ -115,6 +123,7 @@ describe("the namespace boundary — refs/release-craft/ and nothing else (invar
       // The walk wrote something into every one of the binding's
       // namespaces — the assertion below is not vacuously green.
       expect(refs).toContain(ledgerRef("attempt_sha256:boundary"));
+      expect(refs.some((ref) => ref.startsWith("refs/release-craft/ledger-external/"))).toBe(true);
       expect(refs).toContain(claimRegisterRefFor("line-main"));
       expect(refs).toContain(channelRefFor("channel-stable"));
       expect(refs.some((ref) => ref.startsWith("refs/release-craft/register/"))).toBe(true);
