@@ -8,8 +8,20 @@
  * obligation 4), so a grammar drift fails the suite that names it.
  */
 
-/** The commands — one per `Engine` door (§2.2's table, verbatim). */
-export const COMMANDS = ["plan", "run", "resume", "resolve", "abort", "show"] as const;
+/** The commands — one per `Engine` door (§2.2's table, verbatim), plus
+ * issue #208's two compatibility doors: `release-pr` (the Release PR
+ * lifecycle's projection render) and `bootstrap` (issue #207's first-run
+ * completion). */
+export const COMMANDS = [
+  "plan",
+  "run",
+  "resume",
+  "resolve",
+  "abort",
+  "show",
+  "release-pr",
+  "bootstrap",
+] as const;
 
 export type CommandName = (typeof COMMANDS)[number];
 
@@ -105,6 +117,40 @@ export const GRAMMAR: Readonly<Record<CommandName, CommandGrammar>> = {
     boolean: ["json"],
     positionals: ["attempt", "channels"],
   },
+  "release-pr": {
+    // The closed inventory maps every flag onto exactly one boundary
+    // value: the identity triple (--component/--line/--target-branch),
+    // the per-line scoping repeat, and the dry-run switch whose render
+    // never mutates (issue #208: a "dry" run that writes is the worst
+    // kind of silent failure). Release-please-shaped flags
+    // (--release-type, --package-name, --token, ...) are outside the
+    // inventory — a usage fault, never a defaulted input.
+    flags: [
+      ...COMMON_FLAGS,
+      "world",
+      "component",
+      "line",
+      "target-branch",
+      "scope-line",
+      "dry-run",
+    ],
+    demanded: ["assembly", "world", "component", "line", "target-branch"],
+    repeatable: ["tag-namespace", "scope-line"],
+    boolean: ["json", "dry-run"],
+    positionals: [],
+  },
+  bootstrap: {
+    // `--out` names the configuration document the door writes; the
+    // pairing rule lives beside the dispatch in `parse.ts`: `--dry-run`
+    // refuses `--out` (the render writes nothing) and a real run demands
+    // it. The baseline policy and the line declarations the door proposes
+    // are the app door's business, not flags.
+    flags: [...COMMON_FLAGS, "world", "out", "dry-run"],
+    demanded: ["assembly", "world"],
+    repeatable: ["tag-namespace"],
+    boolean: ["json", "dry-run"],
+    positionals: [],
+  },
 };
 
 /** The synopsis block printed with every usage fault — §2.2's grammar
@@ -126,6 +172,9 @@ export const usageText = (): string =>
     "  abort   --assembly ... --actor <string>",
     "          --plan <planId> --attempt <attemptId> --reason <string>",
     "  show    --assembly ... ( attempt --plan <planId> --attempt <attemptId> | channels )",
+    "  release-pr --assembly ... --world ... --component <name> --line <lineId>",
+    "             --target-branch <branch> [--scope-line <lineId>]... [--dry-run]",
+    "  bootstrap  --assembly ... --world ... (--out <path> | --dry-run)",
     "",
     "  assembly flags: --repo <path> --tag-namespace <ns> (git only, repeatable)",
     "                  --max-retries <n> (default 0)",

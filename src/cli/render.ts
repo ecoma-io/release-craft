@@ -13,7 +13,7 @@
 import type { RunOutcome } from "@ecoma-io/release-craft/app";
 import type { PlanningOutcome } from "@ecoma-io/release-craft/planner";
 
-import type { DoorOutcome } from "./exit-codes.js";
+import type { BootstrapCliOutcome, DoorOutcome } from "./exit-codes.js";
 
 /** One JSON document, one trailing newline, compact — byte-stable for
  * determinism pins and trivially parseable by the next process. */
@@ -98,6 +98,14 @@ const attemptLines = (outcome: Extract<DoorOutcome, { kind: "attempt" }>): strin
   }
   return lines;
 };
+const bootstrapLines = (
+  outcome: Extract<BootstrapCliOutcome, { kind: "proposed" | "bootstrapped" }>,
+): string[] => {
+  const lines = outcome.kind === "proposed" ? ["proposed"] : ["bootstrapped", `out ${outcome.out}`];
+  lines.push(`plan ${outcome.plan.plan.planId}`, `policy ${outcome.plan.plan.policyDigest}`);
+  lines.push(`inferences ${String(outcome.inferences.length)}`);
+  return lines;
+};
 
 /** The human projection: a few short lines naming the kind, the plan, the
  * attempt, and the step that stopped the run — enough to read a process
@@ -121,6 +129,32 @@ export const renderHuman = (outcome: DoorOutcome): string => {
     case "abandoned":
       lines = runLines(outcome);
       break;
+    case "projection": {
+      lines = [
+        "projection",
+        `component ${outcome.identity.component}`,
+        `line ${outcome.identity.releaseLine}`,
+        `target-branch ${outcome.identity.targetBranch}`,
+        `plan ${outcome.planId}`,
+        `pending ${String(outcome.pendingLines.length)}`,
+        `title ${outcome.projection.title}`,
+        `labels ${outcome.projection.labels.join(", ") || "none"}`,
+        `files ${String(outcome.projection.files.length)}`,
+      ];
+      break;
+    }
+    case "nothing-pending":
+      lines = [
+        "nothing-pending",
+        `component ${outcome.identity.component}`,
+        `line ${outcome.identity.releaseLine}`,
+        `plan ${outcome.planId}`,
+      ];
+      break;
+    case "proposed":
+    case "bootstrapped":
+      lines = bootstrapLines(outcome);
+      break;
     case "attempt":
       lines = attemptLines(outcome);
       break;
@@ -135,11 +169,20 @@ export const renderHuman = (outcome: DoorOutcome): string => {
       ];
       break;
     case "refused":
-      // `refused` exists on all three unions; the payload discriminates.
+      // `refused` exists on all four unions; the payload discriminates.
       if ("refusal" in outcome) {
         lines = planningLines(outcome);
       } else if ("planId" in outcome) {
         lines = runLines(outcome);
+      } else if ("gaps" in outcome) {
+        // The bootstrap door's refusal (issue #208): the gaps the
+        // evidence cannot carry, or a first plan that refused — the
+        // proposal itself is never re-rendered as a verdict.
+        lines = [
+          "refused",
+          ...outcome.gaps.map((gap) => `${gap.field}: ${gap.problem}`),
+          ...(outcome.plan === null ? [] : planningLines(outcome.plan)),
+        ];
       } else {
         lines = ["refused", `detail ${outcome.detail}`];
       }

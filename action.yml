@@ -15,7 +15,13 @@
 #   - ONE door: `run` (§2.3). Every input below maps onto an exact decided
 #     grammar row (`GRAMMAR.run` in src/cli/grammar.ts) or is refused; the
 #     closed grammar is the validation, the metadata is not the enforcement
-#     layer;
+#     layer. Release-please-shaped inputs are refused by name at that
+#     boundary, never defaulted (issue #208): this surface declares no
+#     `release-type`, no `draft-pull-request`, no `label`, no
+#     `target-branch`, no `bootstrap-sha`, no `last-release-sha`, no
+#     `initial-version`, no `package-name`, no `separate-pull-requests` —
+#     a workflow that expects release-please's vocabulary gets a loud
+#     unknown-input refusal, not a silently different release.
 #   - `--assembly git` is pinned (§2.6): a memory run in CI is a walk whose
 #     every record evaporates with the runner;
 #   - no token input, no secret, no checkout (§2.8) — the mint is a local
@@ -62,8 +68,25 @@ inputs:
 # §3.1: ONE output, `outcome`, carrying the --json envelope byte-for-byte.
 # A composite exposes a step's $GITHUB_OUTPUT value to the consuming
 # workflow only through this declaration — the plumbing `steps.<id>.outputs.
-# outcome` presupposes, no shaped outputs beside it (a consumer extracts
-# with jq from the verbatim envelope, in the workflow that owns the reading).
+# outcome` presupposes, no shaped outputs beside it. The extraction guide
+# over the verbatim envelope (issue #208): the envelope's `kind` is
+# machine-decidable, and the consumer reads the fields it needs from the
+# same document the run door returned — never from derived side channels.
+# jq over `steps.<this>.outputs.outcome`:
+#
+#   # the verdict — the envelope's own discriminant:
+#   jq -r '.kind'
+#   # the published tag (null unless kind == "published"):
+#   jq -r '.tag'
+#   # the plan the run executed (present on every drive):
+#   jq -r '.planId'
+#   # the attempt's handle (null unless a claim was minted):
+#   jq -r '.handle.attemptId'
+#   # the drive trace — every step and its outcome, in order:
+#   jq -r '.drives[] | "\(.stepKey) \(.outcome.kind)"'
+#
+# The fields above are the recorded envelope's own names (src/app/types.ts's
+# RunOutcome); this metadata derives no second vocabulary.
 outputs:
   outcome:
     description: The run outcome's --json envelope, byte for byte

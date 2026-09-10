@@ -14,7 +14,25 @@ import { describe, expect, it } from "vitest";
 import { COMMANDS, GRAMMAR, usageText } from "@ecoma-io/release-craft/__internal__/cli/grammar.js";
 import { betaIntent, cliJson, docBytes, memoryDoc, runCli, withTempDir } from "./harness.js";
 
-const ABSENT_FLAGS = ["target", "naming-module", "declarations", "help", "h", "version"] as const;
+const ABSENT_FLAGS = [
+  "target",
+  "naming-module",
+  "declarations",
+  "help",
+  "h",
+  "version",
+  // release-please's vocabulary (issue #208): refused by the closed
+  // inventory of every command, never defaulted. `target-branch` is
+  // release-pr's own flag and deliberately not on this list.
+  "release-type",
+  "draft-pull-request",
+  "label",
+  "package-name",
+  "bootstrap-sha",
+  "last-release-sha",
+  "initial-version",
+  "separate-pull-requests",
+] as const;
 
 const expectUsageFault = (args: readonly string[], input?: string) => {
   const result = runCli(args, input === undefined ? {} : { input });
@@ -26,8 +44,17 @@ const expectUsageFault = (args: readonly string[], input?: string) => {
 };
 
 describe("§2.2 — the grammar as executable data", () => {
-  it("one command per Engine door, no sixth command", () => {
-    expect(COMMANDS).toStrictEqual(["plan", "run", "resume", "resolve", "abort", "show"]);
+  it("one command per Engine door plus issue #208's two compatibility doors", () => {
+    expect(COMMANDS).toStrictEqual([
+      "plan",
+      "run",
+      "resume",
+      "resolve",
+      "abort",
+      "show",
+      "release-pr",
+      "bootstrap",
+    ]);
   });
 
   it("every command's flag inventory is exactly its §2.2 row", () => {
@@ -98,6 +125,29 @@ describe("§2.2 — the grammar as executable data", () => {
       "plan",
       "attempt",
     ]);
+    expect(GRAMMAR["release-pr"].flags).toStrictEqual([
+      "assembly",
+      "repo",
+      "tag-namespace",
+      "max-retries",
+      "json",
+      "world",
+      "component",
+      "line",
+      "target-branch",
+      "scope-line",
+      "dry-run",
+    ]);
+    expect(GRAMMAR.bootstrap.flags).toStrictEqual([
+      "assembly",
+      "repo",
+      "tag-namespace",
+      "max-retries",
+      "json",
+      "world",
+      "out",
+      "dry-run",
+    ]);
   });
 
   it("the §2.2 demands: mutating doors demand --actor, run demands --line, plan does not", () => {
@@ -126,6 +176,14 @@ describe("§2.2 — the grammar as executable data", () => {
       "reason",
     ]);
     expect(GRAMMAR.show.demanded).toStrictEqual(["assembly"]);
+    expect(GRAMMAR["release-pr"].demanded).toStrictEqual([
+      "assembly",
+      "world",
+      "component",
+      "line",
+      "target-branch",
+    ]);
+    expect(GRAMMAR.bootstrap.demanded).toStrictEqual(["assembly", "world"]);
   });
 
   it("the deliberately absent flags are absent from every command's inventory", () => {
@@ -146,6 +204,50 @@ describe("§2.2 — the negative inventory, through the built bin (exit 64)", ()
   it("an unknown command", () => {
     const result = expectUsageFault(["release"]);
     expect(result.stderr).toContain('unknown command "release"');
+  });
+
+  it("release-pr demands the identity triple and the world", () => {
+    const result = expectUsageFault(["release-pr", "--assembly", "memory", "--world", "-"]);
+    expect(result.stderr).toContain("--component");
+  });
+
+  it("the release-please vocabulary is outside every inventory (run, the Action's own door)", () => {
+    const result = expectUsageFault([
+      "run",
+      "--assembly",
+      "memory",
+      "--world",
+      "-",
+      "--actor",
+      "automation",
+      "--line",
+      "main",
+      "--release-type",
+      "node",
+    ]);
+    expect(result.stderr).toContain("unknown flag --release-type");
+  });
+
+  it("bootstrap refuses --out on a dry run and demands it otherwise", () => {
+    const dryWithOut = expectUsageFault([
+      "bootstrap",
+      "--assembly",
+      "memory",
+      "--world",
+      "-",
+      "--dry-run",
+      "--out",
+      "world.json",
+    ]);
+    expect(dryWithOut.stderr).toContain("--dry-run renders without writing");
+
+    const realWithoutOut = expectUsageFault(["bootstrap", "--assembly", "memory", "--world", "-"]);
+    expect(realWithoutOut.stderr).toContain("the bootstrap write names its document");
+  });
+
+  it("the synopsis names both new doors", () => {
+    expect(usageText()).toContain("release-pr --assembly");
+    expect(usageText()).toContain("bootstrap  --assembly");
   });
 
   it("no command at all", () => {
