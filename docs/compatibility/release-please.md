@@ -35,6 +35,12 @@ Divergence classifications attached in the Differences column: `EQUIVALENT`,
 `UNKNOWN`. Two rules: a release-please quirk is never adopted merely because
 release-please does it, and `UNKNOWN` is a confession with a name, not a shrug.
 
+Two reference systems share the letter-D namespace and must not be confused: row
+references like `A5`, `D6`, `I3` are coordinates inside the section tables below,
+while `decision D1`–`D7` are the numbered open decisions listed in
+[Open decisions](#open-decisions). A `GAP` row may carry either; a decision-only
+row becomes a filed issue once its decision lands.
+
 Dogfood statuses: `none` — no recorded run; `self` — the engine's own repository releases
 through its own Action (the [self-dogfood PR #141] and its re-pins); `shadow` — a
 recorded release-please-vs-release-craft comparison run. No shadow run has been recorded
