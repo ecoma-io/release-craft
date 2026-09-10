@@ -11,7 +11,7 @@ import {
   type GitBinding,
   type GitRun,
   type GitTagNaming,
-} from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/adapters/git";
 import type {
   Attribution,
   Claim,

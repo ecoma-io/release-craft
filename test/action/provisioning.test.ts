@@ -26,7 +26,7 @@ import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { hermeticGitEnv } from "../../src/adapters/git/index.js";
+import { hermeticGitEnv } from "@ecoma-io/release-craft/adapters/git";
 
 import { describe, expect, it } from "vitest";
 
