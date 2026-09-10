@@ -10,7 +10,8 @@
  * render as outcomes).
  */
 
-import type { PlanningOutcome, RunOutcome } from "../index.js";
+import type { RunOutcome } from "@ecoma-io/release-craft/app";
+import type { PlanningOutcome } from "@ecoma-io/release-craft/planner";
 
 import type { DoorOutcome } from "./exit-codes.js";
 

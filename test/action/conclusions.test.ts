@@ -25,7 +25,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { EXIT_CODES } from "../../src/cli/exit-codes.js";
+import { EXIT_CODES } from "@ecoma-io/release-craft/__internal__/cli/exit-codes.js";
 import { betaIntent, docBytes, gitDoc, promoteIntent } from "../cli/harness.js";
 import {
   ARGV_ECHO_BIN,

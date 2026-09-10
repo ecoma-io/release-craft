@@ -21,7 +21,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { plan } from "../../src/planner/assemble.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import {
   CANONICAL_STAGES,
   channelStateFingerprint,
@@ -55,7 +55,7 @@ import {
   claimRegisterRefFor,
   openGitBinding,
   readRef,
-} from "../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import {
   buildShim,
   claimView,

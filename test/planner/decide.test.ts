@@ -11,8 +11,8 @@
 import { describe, expect, it } from "vitest";
 
 import { Change } from "@ecoma-io/release-craft/domain";
-import { decideLine, resolveBump } from "../../src/planner/decide.js";
-import { InvalidPlanningInputError } from "../../src/planner/input.js";
+import { decideLine, resolveBump } from "@ecoma-io/release-craft/__internal__/planner/decide.js";
+import { InvalidPlanningInputError } from "@ecoma-io/release-craft/__internal__/planner/input.js";
 import type {
   BootstrapDecision,
   CommitObservation,
@@ -24,7 +24,7 @@ import type {
   PlanningInput,
   PolicyInput,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 const POLICY_DIGEST = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const COMMITTED_AT = "2026-01-01T00:00:00Z";

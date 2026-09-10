@@ -19,7 +19,11 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { EXIT_CODES, EXIT_FAULT, EXIT_USAGE } from "../../src/cli/exit-codes.js";
+import {
+  EXIT_CODES,
+  EXIT_FAULT,
+  EXIT_USAGE,
+} from "@ecoma-io/release-craft/__internal__/cli/exit-codes.js";
 import { RECORDED_EXIT_TABLE } from "../certification/exit-table.js";
 import {
   betaIntent,

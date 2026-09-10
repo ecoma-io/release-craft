@@ -39,8 +39,8 @@ import {
   channelStateFingerprint,
   type ChannelState,
   type ChannelStore,
-} from "../../index.js";
-import { canonicalJson } from "../../planner/index.js";
+} from "@ecoma-io/release-craft/execution";
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
 
 import { casAppendCommit, commitRecord, readRef } from "./git-refs.js";
 import { deepFreeze, frozenParse } from "./freeze.js";

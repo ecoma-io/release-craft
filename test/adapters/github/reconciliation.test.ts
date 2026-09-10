@@ -18,8 +18,11 @@ import {
   type GitHubResponse,
   type GitHubTransport,
   type ReconciliationReport,
-} from "../../../src/adapters/github/index.js";
-import { openGitBinding, type GitTagNaming } from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
+import {
+  openGitBinding,
+  type GitTagNaming,
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import type { Claim, ClaimDenied, ClaimScope } from "../../../src/index.js";
 import { createTempRepo } from "../git/temp-repo.js";
 

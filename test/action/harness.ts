@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { betaIntent, docBytes, gitDoc, withSeededRepo } from "../cli/harness.js";
-import type { GitRun } from "../../src/adapters/git/index.js";
+import type { GitRun } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 
 /** The invocation program — the composite's step and this suite drive the
  * same file; there is no second definition of the projection. */

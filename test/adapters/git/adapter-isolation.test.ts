@@ -10,10 +10,11 @@ import { describe, expect, it } from "vitest";
  *   names "../adapters/" — that parent edge is not one the engine may
  *   draw, in code or in prose;
  * - the binding consumes, never re-owns: every import under
- *   `src/adapters/git` is a Node built-in, the package barrel
- *   ("../../index.js"), the planner barrel ("../../planner/index.js"),
- *   or a relative sibling ("./…"). Engine internals beyond the barrel,
- *   test tooling, and provider packages are all outside the allowlist.
+ *   `src/adapters/git` is a Node built-in, the execution barrel
+ *   ("@ecoma-io/release-craft/execution"), the planner barrel
+ *   ("@ecoma-io/release-craft/planner"), or a relative sibling
+ *   ("./…"). Engine internals beyond the barrel, test tooling, and
+ *   provider packages are all outside the allowlist.
  *
  * The subject is the layer, not a module list: each scan walks its
  * directory, so a new file inherits the gate without this suite naming
@@ -27,9 +28,11 @@ const ROOT = join(import.meta.dirname, "..", "..", "..");
 const ENGINE_DIR = join(ROOT, "src", "execution");
 const BINDING_DIR = join(ROOT, "src", "adapters", "git");
 
-/** The two parent barrels the binding may name, spelled exactly. */
-const ENGINE_BARREL = "../../index.js";
-const PLANNER_BARREL = "../../planner/index.js";
+/** The two parent barrels the binding may name, spelled exactly — the
+ * layer aliases archkeep's cross-project rule requires (never a relative
+ * path out of src/adapters/git, never the package front door). */
+const ENGINE_BARREL = "@ecoma-io/release-craft/execution";
+const PLANNER_BARREL = "@ecoma-io/release-craft/planner";
 
 /** One scanned-in offense: which file, and what the scan found there. */
 interface Violation {
@@ -49,10 +52,15 @@ function scanLayer(dir: string, project: (file: string, text: string) => Violati
   return layerFiles(dir).flatMap((file) => project(file, readFileSync(join(dir, file), "utf8")));
 }
 
-/** The engine's one forbidden edge: any reach toward "../adapters/" —
- * in code or in prose; the gate fails closed either way. */
+/** The engine's one forbidden edge: any reach toward the binding — the
+ * relative "../adapters/" spelling and the package alias alike, in code or
+ * in prose; the gate fails closed either way. */
 function engineReachViolations(file: string, text: string): Violation[] {
-  return text.includes("../adapters/") ? [{ file, detail: 'reaches "../adapters/"' }] : [];
+  const violations: Violation[] = [];
+  if (text.includes("../adapters/")) violations.push({ file, detail: 'reaches "../adapters/"' });
+  if (text.includes('"@ecoma-io/release-craft/adapters'))
+    violations.push({ file, detail: 'reaches "@ecoma-io/release-craft/adapters"' });
+  return violations;
 }
 
 /**
@@ -113,6 +121,12 @@ describe("the git binding is an isolated layer", () => {
       ).map((violation) => `src/execution/${violation.file} ${violation.detail}`),
     ).toEqual(['src/execution/rogue.ts reaches "../adapters/"']);
     expect(
+      engineReachViolations(
+        "rogue-alias.ts",
+        'import { openGitBinding } from "@ecoma-io/release-craft/adapters/git";\n',
+      ).map((violation) => `src/execution/${violation.file} ${violation.detail}`),
+    ).toEqual(['src/execution/rogue-alias.ts reaches "@ecoma-io/release-craft/adapters"']);
+    expect(
       engineReachViolations("clean.ts", 'import { requestStep } from "./attempt.js";\n'),
     ).toEqual([]);
 
@@ -127,8 +141,8 @@ describe("the git binding is an isolated layer", () => {
         "clean.ts",
         [
           'import { spawnSync } from "node:child_process";',
-          'import { requestStep } from "../../index.js";',
-          'import { canonicalJson } from "../../planner/index.js";',
+          'import { requestStep } from "@ecoma-io/release-craft/execution";',
+          'import { canonicalJson } from "@ecoma-io/release-craft/planner";',
           'import { openGitRun } from "./git-run.js";',
         ].join("\n"),
       ),

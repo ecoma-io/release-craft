@@ -12,7 +12,7 @@
  */
 import { createHash } from "node:crypto";
 
-import { canonicalJson } from "../planner/index.js";
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
 
 /**
  * The attempt id (§2.1): `attempt_sha256:<hex>` over the canonical JSON of

@@ -32,10 +32,9 @@ import type {
   ChannelApplyOutcome,
   ChannelStore,
   ExecutionLedger,
-  PlannedChannelMove,
-  PlanLine,
   ReleaseAttempt,
-} from "../index.js";
+} from "@ecoma-io/release-craft/execution";
+import type { PlannedChannelMove, PlanLine } from "@ecoma-io/release-craft/planner";
 import type { AppliedChannelMove, ChannelStageResult } from "./types.js";
 
 /**

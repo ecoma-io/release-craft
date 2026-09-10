@@ -2,7 +2,7 @@
 id: 0001-domain-kernel-and-semantic-version
 status: accepted
 created: 2026-09-05
-updated: 2026-09-06
+updated: 2026-09-10
 ---
 
 # The domain kernel starts as a boundary and one value: the semantic Version
@@ -167,6 +167,28 @@ seam originally named
 primitive meant extending all three declarations — that friction was the point
 while the kernel's population was one file; since the barrel, adding a
 primitive extends the barrel and no longer touches the declarations).
+
+(Amended 2026-09-10, issue #157: the seam is no longer the kernel's alone.
+Every `src/` layer became its own Moon project — planner, execution, app, cli,
+adapters/git, adapters/github — so every cross-layer import is now a
+cross-project import judged by archkeep, and each layer barrel is declared
+through the same three-tool seam: `@ecoma-io/release-craft/planner`,
+`/execution`, `/app`, `/adapters/git`, `/adapters/github`, each naming its
+`index.ts`. The direction law this expresses — planner → domain only;
+execution → planner, domain; app → execution, planner, domain, adapters-git;
+cli → app, execution, planner, domain, adapters-git; adapters compose inward,
+never upward; and nothing but the package shell itself may import the package
+front door `@ecoma-io/release-craft` — lives in
+[`module-boundaries.config.mjs`](../../module-boundaries.config.mjs)'s
+`depConstraints` rows, one row per `type-*` tag. Two spellings complete the
+seam: same-project imports stay relative (a project importing itself through
+the alias is refused — archkeep judges by resolved project, not by specifier),
+and the test suites' `@ecoma-io/release-craft/__internal__/*` prefix maps onto
+`src/*` in `paths` and Vitest's alias only — it is deliberately absent from
+`exports`, so tests can reach a layer's internals while a dist file that ever
+referenced the prefix would fail to resolve loudly. Whether a cross-project
+import names a barrel or an internal module is the one thing the tags cannot
+see; that barrel-seam rule stays with the scanner suites.)
 
 ### 9. Tests are external consumers; the kernel project has no test files
 

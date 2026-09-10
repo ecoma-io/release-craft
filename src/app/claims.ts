@@ -23,8 +23,8 @@ import {
   type ClaimScope,
   type ClaimStore,
   type ClaimView,
-  type PlanLine,
-} from "../index.js";
+} from "@ecoma-io/release-craft/execution";
+import type { PlanLine } from "@ecoma-io/release-craft/planner";
 import type { AssemblyConfig } from "./types.js";
 
 /** One acquisition's verdict (§2.5 step 3): `held` carries the claim; the

@@ -8,7 +8,8 @@
  * environment, the working directory, or anywhere else (§4).
  */
 
-import type { ObservationQuery, OperatorIntent } from "../index.js";
+import type { ObservationQuery } from "@ecoma-io/release-craft/app";
+import type { OperatorIntent } from "@ecoma-io/release-craft/planner";
 
 import { parseIntents } from "./intents.js";
 import { ASSEMBLIES, COMMANDS, GRAMMAR, type CommandName, usageText } from "./grammar.js";

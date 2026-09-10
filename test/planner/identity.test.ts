@@ -8,13 +8,17 @@ import { describe, expect, it } from "vitest";
 
 import { Version } from "@ecoma-io/release-craft/domain";
 
-import { canonicalJson, inputsFingerprint, planFingerprint } from "../../src/planner/identity.js";
+import {
+  canonicalJson,
+  inputsFingerprint,
+  planFingerprint,
+} from "@ecoma-io/release-craft/__internal__/planner/identity.js";
 import type {
   CommitObservation,
   PlanLine,
   PlanningInput,
   ReleasePlan,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 const COMMITTED_AT = "2026-01-01T00:00:00Z";
 

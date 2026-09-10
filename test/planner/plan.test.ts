@@ -15,8 +15,8 @@ import { describe, expect, it } from "vitest";
 import { Version } from "@ecoma-io/release-craft/domain";
 import type { Bump } from "@ecoma-io/release-craft/domain";
 
-import { InvalidPlanningInputError } from "../../src/planner/input.js";
-import { planStreams, planTargets } from "../../src/planner/plan.js";
+import { InvalidPlanningInputError } from "@ecoma-io/release-craft/__internal__/planner/input.js";
+import { planStreams, planTargets } from "@ecoma-io/release-craft/__internal__/planner/plan.js";
 import type {
   LineConfig,
   LineDecision,
@@ -25,7 +25,7 @@ import type {
   OperatorIntent,
   PolicyInput,
   StreamKeyState,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 const POLICY_DIGEST = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

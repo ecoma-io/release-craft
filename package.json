@@ -33,6 +33,26 @@
     "./domain": {
       "types": "./dist/core/domain/index.d.ts",
       "default": "./dist/core/domain/index.js"
+    },
+    "./planner": {
+      "types": "./dist/src/planner/index.d.ts",
+      "default": "./dist/src/planner/index.js"
+    },
+    "./execution": {
+      "types": "./dist/src/execution/index.d.ts",
+      "default": "./dist/src/execution/index.js"
+    },
+    "./app": {
+      "types": "./dist/src/app/index.d.ts",
+      "default": "./dist/src/app/index.js"
+    },
+    "./adapters/git": {
+      "types": "./dist/src/adapters/git/index.d.ts",
+      "default": "./dist/src/adapters/git/index.js"
+    },
+    "./adapters/github": {
+      "types": "./dist/src/adapters/github/index.d.ts",
+      "default": "./dist/src/adapters/github/index.js"
     }
   },
   "packageManager": "pnpm@11.25.0",

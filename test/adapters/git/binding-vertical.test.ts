@@ -17,7 +17,7 @@ import {
   type GitTagNaming,
   type TagMintResult,
   openGitBinding,
-} from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { withTempRepo } from "./temp-repo.js";
 
 /**

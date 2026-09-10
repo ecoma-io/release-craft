@@ -14,7 +14,7 @@
  * translated into a fault and a fault never renders as an outcome.
  */
 
-import type { StepKey } from "../index.js";
+import type { StepKey } from "@ecoma-io/release-craft/execution";
 import { EXIT_FAULT, EXIT_USAGE, exitCodeFor, type DoorOutcome } from "./exit-codes.js";
 import { usageText } from "./grammar.js";
 import { overlayIntents } from "./intents.js";

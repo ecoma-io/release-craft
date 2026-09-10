@@ -18,11 +18,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import { attribute } from "../../src/planner/attribute.js";
-import { decideLine, resolveBump } from "../../src/planner/decide.js";
-import { extract } from "../../src/planner/extract.js";
-import { deriveRanges, loadTagHistory } from "../../src/planner/history.js";
-import { normalize } from "../../src/planner/input.js";
+import { attribute } from "@ecoma-io/release-craft/__internal__/planner/attribute.js";
+import { decideLine, resolveBump } from "@ecoma-io/release-craft/__internal__/planner/decide.js";
+import { extract } from "@ecoma-io/release-craft/__internal__/planner/extract.js";
+import {
+  deriveRanges,
+  loadTagHistory,
+} from "@ecoma-io/release-craft/__internal__/planner/history.js";
+import { normalize } from "@ecoma-io/release-craft/__internal__/planner/input.js";
 import type {
   BootstrapDecision,
   CommitObservation,
@@ -38,7 +41,7 @@ import type {
   RefObservation,
   TagHistoryResult,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 // ---------------------------------------------------------------------------
 // Fixture builders — deterministic, closed inputs per §2.1, mirroring the

@@ -5,21 +5,21 @@ import {
   readRef,
   type GitRun,
   type GitTagNaming,
-} from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import {
   claimRegisterRefFor,
   GitClaimStore,
   GitTagDoor,
   openGitBinding,
   type TagMint,
-} from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import {
   canonicalJson,
   type Claim,
   type ClaimDenied,
   type ClaimScope,
 } from "../../../src/index.js";
-import type { TagMintResult } from "../../../src/adapters/git/index.js";
+import type { TagMintResult } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { withTempRepo } from "./temp-repo.js";
 
 /**

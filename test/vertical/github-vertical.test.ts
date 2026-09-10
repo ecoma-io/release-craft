@@ -38,13 +38,13 @@ import {
   type Claim,
   type ClaimDenied,
 } from "../../src/index.js";
-import { openGitHubAdapter } from "../../src/adapters/github/index.js";
+import { openGitHubAdapter } from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
 import {
   claimRegisterRefFor,
   GitFaultError,
   openGitBinding,
-} from "../../src/adapters/git/index.js";
-import { plan } from "../../src/planner/assemble.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
 import {
   applyPlannedChannelTransitions,

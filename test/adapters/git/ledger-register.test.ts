@@ -17,8 +17,12 @@ import {
   GitFaultError,
   readRef,
   type GitRun,
-} from "../../../src/adapters/git/index.js";
-import { GitAttemptRegister, GitLedger, ledgerRef } from "../../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
+import {
+  GitAttemptRegister,
+  GitLedger,
+  ledgerRef,
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { withTempRepo } from "./temp-repo.js";
 
 /**

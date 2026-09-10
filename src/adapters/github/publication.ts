@@ -34,7 +34,7 @@
  * transport speaks the credentials, the unit speaks the repository.
  */
 
-import type { GitBinding } from "../git/index.js";
+import type { GitBinding } from "@ecoma-io/release-craft/adapters/git";
 import type {
   GitHubCredentials,
   GitHubResponse,

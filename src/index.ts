@@ -37,27 +37,29 @@
 // between what ships and what the contract suite imports.
 export * from "@ecoma-io/release-craft/domain";
 
-// The Phase 2 planner's public contract. This re-export is an ordinary
-// within-project edge — the planner lives in this package's own tree, so
-// the relative specifier is the honest spelling; the package-alias
-// treatment stays reserved for the cross-project `type-package →
-// type-domain` edge commented above. The surface is the planner barrel's,
+// The Phase 2 planner's public contract. This re-export crosses a project
+// edge — the planner is its own Moon project (ADR-0001 decision 8, as this
+// file's domain re-export is) — so the specifier is the package alias, not
+// a relative path: archkeep refuses cross-project relative imports before
+// its constraint table is read. The surface is the planner barrel's,
 // wholesale (one declaration, no drift), and its isolation is enforced by
 // test/planner/isolation.test.ts.
-export * from "./planner/index.js";
+export * from "@ecoma-io/release-craft/planner";
 
-// The Phase 4 execution kernel's public contract (ADR-0005). Within this
-// package's own tree, so the relative specifier is the honest spelling;
-// the surface is the execution barrel's, wholesale (one declaration, no
-// drift), and its isolation is enforced by test/execution/isolation.test.ts.
-export * from "./execution/index.js";
+// The Phase 4 execution kernel's public contract (ADR-0005) — its own Moon
+// project, reached through the same package-alias treatment as the planner
+// above. The surface is the execution barrel's, wholesale (one declaration,
+// no drift), and its isolation is enforced by
+// test/execution/isolation.test.ts.
+export * from "@ecoma-io/release-craft/execution";
 
 // The Phase 11 application boundary's public contract (the application
-// boundary contract, docs/design/phase11-application-boundary-contract.md).
-// Within this package's own tree, so the relative specifier is the honest
-// spelling; the surface is the app barrel's, wholesale (one declaration, no
-// drift), and its isolation is enforced by test/app/surface.test.ts.
-export * from "./app/index.js";
+// boundary contract, docs/design/phase11-application-boundary-contract.md)
+// — its own Moon project, reached through the same package-alias treatment
+// as the planner and execution re-exports above. The surface is the app
+// barrel's, wholesale (one declaration, no drift), and its isolation is
+// enforced by test/app/surface.test.ts.
+export * from "@ecoma-io/release-craft/app";
 
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;

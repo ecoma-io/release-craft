@@ -10,7 +10,11 @@
  * `git-tree:<tree-oid-of-HEAD>`.
  */
 
-import type { ArtifactObservation, ArtifactProducer, ArtifactProducerInput } from "../../index.js";
+import type {
+  ArtifactObservation,
+  ArtifactProducer,
+  ArtifactProducerInput,
+} from "@ecoma-io/release-craft/execution";
 
 import { openGitRun } from "./git-run.js";
 

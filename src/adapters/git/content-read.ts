@@ -11,7 +11,7 @@
  * tree and never `HEAD` (ADR-0009 decision 4's discipline, read side).
  */
 
-import type { ExecutionLedger } from "../../index.js";
+import type { ExecutionLedger } from "@ecoma-io/release-craft/execution";
 import type { ContentRead, GitTagNaming } from "./binding-types.js";
 import { readRegister } from "./claim-store-git.js";
 import { GitFaultError, type GitRun } from "./git-run.js";

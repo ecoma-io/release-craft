@@ -8,7 +8,7 @@
  * adapter's binding; this class is the ownership truth the kernel and the
  * suite consume.
  */
-import { canonicalJson } from "../planner/index.js";
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
 import {
   type Claim,
   type ClaimDenied,

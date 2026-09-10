@@ -15,8 +15,12 @@ import { describe, expect, it } from "vitest";
 
 import { Version } from "@ecoma-io/release-craft/domain";
 
-import { rebuildLineState } from "../../src/planner/state.js";
-import type { AdmissibleTag, LineHistory, LineState } from "../../src/planner/types.js";
+import { rebuildLineState } from "@ecoma-io/release-craft/__internal__/planner/state.js";
+import type {
+  AdmissibleTag,
+  LineHistory,
+  LineState,
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 /** A tag in the loader's shape: the parsed version is the observation's name. */
 function tag(version: string): AdmissibleTag {

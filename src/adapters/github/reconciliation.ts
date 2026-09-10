@@ -19,7 +19,7 @@
  * its sibling's.
  */
 
-import type { GitBinding } from "../git/index.js";
+import type { GitBinding } from "@ecoma-io/release-craft/adapters/git";
 import type {
   Divergence,
   GitHubCredentials,

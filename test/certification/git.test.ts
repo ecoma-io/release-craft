@@ -41,7 +41,7 @@ import {
   claimRegisterRefFor,
   commitRecord,
   readRef,
-} from "../../src/adapters/git/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { beta, fullDeclaration, promote, rc, runRequest, runToWorld } from "../app/harness.js";
 import { liveWorld } from "../vertical/matrix.js";
 import { naming, recordedTags } from "../vertical/matrix-git.js";

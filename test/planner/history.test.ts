@@ -8,8 +8,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { deriveRanges, loadTagHistory } from "../../src/planner/history.js";
-import { InvalidPlanningInputError } from "../../src/planner/input.js";
+import {
+  deriveRanges,
+  loadTagHistory,
+} from "@ecoma-io/release-craft/__internal__/planner/history.js";
+import { InvalidPlanningInputError } from "@ecoma-io/release-craft/__internal__/planner/input.js";
 import type {
   ForeignTag,
   LineConfig,
@@ -18,7 +21,7 @@ import type {
   RefObservation,
   TagHistoryResult,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 const POLICY_DIGEST = "test-history-v1";
 

@@ -1,0 +1,45 @@
+# The execution project — Phase 4's execution kernel, declared as its own
+# Moon project so the boundary between execution and every other src/ layer
+# is executable (module-boundaries.config.mjs judges the `type-execution`
+# tag) rather than a scanner suite alone.
+#
+# The execution kernel reaches the planner barrel
+# (`../planner/index.js` — `canonicalJson` and planner types) and the
+# frozen `node:crypto` in identity.ts.  No app, adapter, or cli import
+# is legal here.
+#
+# Task roster:
+#   - no `build` task: emitted as part of release-craft:build
+#   - `arch` runs once per workspace (release-craft:arch)
+id: execution
+language: typescript
+# The execution kernel imports the planner barrel (`../planner/index.js`)
+# and the domain kernel's alias. The edges archkeep judges against
+# `type-execution → type-planner, type-execution → type-domain`, and the
+# edges Moon needs for the `project://` inputs below.
+dependsOn:
+  - core-domain
+  - planner
+fileGroups:
+  sources:
+    - "**/*"
+tags:
+  - type-execution
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

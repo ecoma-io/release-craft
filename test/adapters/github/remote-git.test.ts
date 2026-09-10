@@ -11,7 +11,7 @@
  * reachable public paths (transport failure, ambiguous) stay pinned in
  * the public suites (`sync.test.ts`, `publication.test.ts`).
  */
-import { classifyGitFailure } from "../../../src/adapters/github/remote-git.js";
+import { classifyGitFailure } from "@ecoma-io/release-craft/__internal__/adapters/github/remote-git.js";
 
 import { describe, expect, it } from "vitest";
 

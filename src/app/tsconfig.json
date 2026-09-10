@@ -1,0 +1,5 @@
+{
+  "$comment": "The app layer's typecheck baseline — extends the repository root (its strict flags, its `paths` aliases) and typechecks exactly this project's sources. Root-declared `paths` stay root-relative when extended (TS 4.1 semantics), so the package aliases resolve identically here and in the root compile. Node built-ins stay on (`types` inherits the root's node entry) — this layer's frozen `node:crypto` and `node:fs` uses are judged by the scanner suites, not removed here.",
+  "extends": "../../tsconfig.json",
+  "include": ["**/*.ts"]
+}

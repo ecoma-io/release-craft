@@ -10,7 +10,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RunOutcome } from "../../src/index.js";
-import { GitChannelStore } from "../../src/adapters/git/index.js";
+import { GitChannelStore } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import { beta, runRequest } from "../app/harness.js";
 import { liveWorld } from "../vertical/matrix.js";
 import { naming, recordedTags } from "../vertical/matrix-git.js";

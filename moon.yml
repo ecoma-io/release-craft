@@ -9,23 +9,29 @@
 # why its caching is disabled.
 id: release-craft
 language: typescript
-# The package consumes the kernel (src/index.ts re-exports
-# @ecoma-io/release-craft/domain), so the graph must say so: `moon ci --base`
-# affected detection walks exactly these edges. Measured without it, a
-# kernel-only change resolved to ZERO targets for release-craft:test and
-# release-craft:arch in CI — the gates that judge the kernel would silently
-# not run.
+# The package consumes the kernel and every layer project (src/index.ts
+# re-exports @ecoma-io/release-craft/domain plus planner, execution and
+# app), so the graph must say so: `moon ci --base` affected detection walks
+# exactly these edges. Measured without them, a kernel-only change resolved
+# to ZERO targets for release-craft:test and release-craft:arch in CI — the
+# gates that judge the kernel would silently not run.
 #
-# Only this edge exists, and it points the architecture's way: the package
-# consumes the kernel, never the reverse, and never the gates. Measured,
-# archkeep judges declared edges too — a bookkeeping dependsOn to gate-scripts
-# failed `pnpm arch` outright ("a dependsOn edge crosses a boundary
-# depConstraints forbids"), which is the law working as designed, and Moon
-# refuses `project://gate-scripts` inputs without that edge. So the
-# workspace-wide tasks cannot name the gate scripts as hashed inputs at all;
-# they opt out of caching instead of lying about what they read.
+# Every edge exists and points the architecture's way: the package consumes
+# the layers, never the reverse, and never the gates. Measured, archkeep
+# judges declared edges too — a bookkeeping dependsOn to gate-scripts failed
+# `pnpm arch` outright ("a dependsOn edge crosses a boundary depConstraints
+# forbids"), which is the law working as designed, and Moon refuses
+# `project://<id>` inputs without that edge. So the workspace-wide tasks
+# cannot name the gate scripts as hashed inputs at all; they opt out of
+# caching instead of lying about what they read.
 dependsOn:
   - core-domain
+  - planner
+  - execution
+  - app
+  - cli
+  - adapters-git
+  - adapters-github
 tags:
   # Moon tags cannot contain colons, so the boundary vocabulary's `type:` is
   # spelled `type-`. module-boundaries.config.mjs judges this tag.
@@ -67,10 +73,16 @@ tasks:
   typecheck:
     command: tsc --noEmit
     inputs:
-      - "src/**/*"
+      - "src/index.ts"
       - "test/**/*"
       - "action/**/*"
       - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "project://execution?group=sources"
+      - "project://app?group=sources"
+      - "project://cli?group=sources"
+      - "project://adapters-git?group=sources"
+      - "project://adapters-github?group=sources"
       - "vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -89,11 +101,17 @@ tasks:
     dependsOn:
       - build
     inputs:
-      - "src/**/*"
+      - "src/index.ts"
       - "test/**/*"
       - "action/**/*"
       - "/action.yml"
       - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "project://execution?group=sources"
+      - "project://app?group=sources"
+      - "project://cli?group=sources"
+      - "project://adapters-git?group=sources"
+      - "project://adapters-github?group=sources"
       - "/vitest.config.ts"
       - "/tsconfig.json"
       - "/package.json"
@@ -104,8 +122,14 @@ tasks:
   build:
     command: tsc -p tsconfig.build.json
     inputs:
-      - "src/**/*"
+      - "src/index.ts"
       - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "project://execution?group=sources"
+      - "project://app?group=sources"
+      - "project://cli?group=sources"
+      - "project://adapters-git?group=sources"
+      - "project://adapters-github?group=sources"
       - "/tsconfig.build.json"
       - "/tsconfig.json"
       - "/package.json"
@@ -125,15 +149,29 @@ tasks:
     # recomputed every run — a boundary change anywhere re-judges, and the
     # cache can never outlive the boundary it judged. Cross-project files the
     # task genuinely reads are still declared where Moon can hash them: the
-    # kernel through its URI, the config files at the workspace root.
+    # kernel and every layer through their URIs, the config files at the
+    # workspace root, and each project's moon.yml (the tag vocabulary the
+    # provider reads).
     command: archkeep check
     options:
       cache: false
     inputs:
       - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "project://execution?group=sources"
+      - "project://app?group=sources"
+      - "project://cli?group=sources"
+      - "project://adapters-git?group=sources"
+      - "project://adapters-github?group=sources"
       - "/module-boundaries.config.mjs"
       - "/.moon/workspace.yml"
       - "/moon.yml"
+      - "/src/planner/moon.yml"
+      - "/src/execution/moon.yml"
+      - "/src/app/moon.yml"
+      - "/src/cli/moon.yml"
+      - "/src/adapters/git/moon.yml"
+      - "/src/adapters/github/moon.yml"
       - "/scripts/moon.yml"
       - "/core/domain/moon.yml"
       - "/tsconfig.json"

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { InvalidPlanningInputError, normalize } from "../../src/planner/input.js";
+import {
+  InvalidPlanningInputError,
+  normalize,
+} from "@ecoma-io/release-craft/__internal__/planner/input.js";
 import type {
   CommitObservation,
   ComponentMeta,
@@ -10,7 +13,7 @@ import type {
   PolicyInput,
   RefObservation,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 /**
  * The contract suite for the planner's input boundary (phase2 contract

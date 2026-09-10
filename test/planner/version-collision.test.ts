@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { plan } from "../../src/planner/assemble.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import type {
   CommitObservation,
   ComponentMeta,
@@ -21,7 +21,7 @@ import type {
   PolicyInput,
   RefObservation,
   TagObservation,
-} from "../../src/planner/index.js";
+} from "@ecoma-io/release-craft/__internal__/planner/index.js";
 
 const COMMITTED_AT = "2026-01-01T00:00:00Z";
 

@@ -20,18 +20,46 @@ import { defineConfig } from "vitest/config";
 const SOURCES = ["src/**/*.ts", "core/domain/**/*.ts"];
 
 export default defineConfig({
-  // The package alias is declared once per tool that must resolve it: tsconfig
-  // `paths` for tsc and archkeep's resolution, package.json `exports` for the
-  // emitted dist, and here for Vitest, which executes the sources and does not
-  // read tsconfig paths. All three name the same kernel entrypoint — the
-  // barrel core/domain/index.ts (ADR-0001 decision 8, as amended by ADR-0002
-  // decision-log D6); each value's contract lives in its own file behind it.
+  // The package aliases are declared once per tool that must resolve them:
+  // tsconfig `paths` for tsc and archkeep's resolution, package.json
+  // `exports` for the emitted dist, and here for Vitest, which executes the
+  // sources and does not read tsconfig paths. Each alias names its layer's
+  // barrel (ADR-0001 decision 8, as amended by ADR-0002 decision-log D6);
+  // each value's contract lives in its own file behind it. The `__internal__`
+  // prefix maps the test suites onto the src tree without an exports entry —
+  // tests import inside the layers, and a dist file that ever referenced the
+  // prefix would fail to resolve loudly rather than silently re-export.
   resolve: {
-    alias: {
-      "@ecoma-io/release-craft/domain": fileURLToPath(
-        new URL("./core/domain/index.ts", import.meta.url),
-      ),
-    },
+    alias: [
+      {
+        find: "@ecoma-io/release-craft/__internal__/",
+        replacement: fileURLToPath(new URL("./src/", import.meta.url)),
+      },
+      {
+        find: "@ecoma-io/release-craft/domain",
+        replacement: fileURLToPath(new URL("./core/domain/index.ts", import.meta.url)),
+      },
+      {
+        find: "@ecoma-io/release-craft/planner",
+        replacement: fileURLToPath(new URL("./src/planner/index.ts", import.meta.url)),
+      },
+      {
+        find: "@ecoma-io/release-craft/execution",
+        replacement: fileURLToPath(new URL("./src/execution/index.ts", import.meta.url)),
+      },
+      {
+        find: "@ecoma-io/release-craft/app",
+        replacement: fileURLToPath(new URL("./src/app/index.ts", import.meta.url)),
+      },
+      {
+        find: "@ecoma-io/release-craft/adapters/git",
+        replacement: fileURLToPath(new URL("./src/adapters/git/index.ts", import.meta.url)),
+      },
+      {
+        find: "@ecoma-io/release-craft/adapters/github",
+        replacement: fileURLToPath(new URL("./src/adapters/github/index.ts", import.meta.url)),
+      },
+    ],
   },
   test: {
     environment: "node",

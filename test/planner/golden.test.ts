@@ -25,10 +25,10 @@ import type {
   LineRange,
   PlanningInput,
   PolicyInput,
-} from "../../src/planner/types.js";
-import { attribute } from "../../src/planner/attribute.js";
-import { extract } from "../../src/planner/extract.js";
-import { planChanges } from "../../src/planner/harness.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
+import { attribute } from "@ecoma-io/release-craft/__internal__/planner/attribute.js";
+import { extract } from "@ecoma-io/release-craft/__internal__/planner/extract.js";
+import { planChanges } from "@ecoma-io/release-craft/__internal__/planner/harness.js";
 
 // ---------------------------------------------------------------------------
 // Fixture builders — deterministic, closed inputs per §2.1

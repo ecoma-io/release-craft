@@ -6,22 +6,43 @@
 # to every other gate too. The pre-push hook's `moon projects` step and the
 # `check:files` gate both pin this file as the authoritative project map.
 #
-# Three projects, because the tree has exactly three populations of code:
+# Nine projects, because the tree has nine populations of code:
 #
-#   - release-craft (the workspace root) — the package itself: sources, tests
-#     (including the domain kernel's external-consumer suite), and the
-#     toolchain targets that judge them. `src/` re-exports the domain; the
-#     release engine will grow here.
+#   - release-craft (the workspace root) — the package shell: the public
+#     barrel (src/index.ts), the tests (every suite, including the domain
+#     kernel's external-consumer suite), and the toolchain targets that
+#     judge them. The barrel re-exports the domain and the layers below.
 #   - core-domain (core/domain/) — the kernel: pure domain values with no
 #     external imports at all, enforced by module-boundaries.config.mjs.
 #     Recorded in docs/adr/0001-domain-kernel-and-semantic-version.md.
-#   - gate-scripts (scripts/) — the repository's own gates. They are a project
-#     of their own so the boundary between "code that ships" and "code that
-#     judges" is enforceable (module-boundaries.config.mjs) rather than
-#     remembered.
+#   - planner (src/planner/) — Phase 2's planning layer: reaches only the
+#     domain kernel and its own frozen `node:crypto` (identity.ts).
+#   - execution (src/execution/) — Phase 4's execution kernel: reaches the
+#     planner barrel and the same frozen `node:crypto`.
+#   - app (src/app/) — Phase 11's application boundary: composes the
+#     execution kernel, planner door, domain kernel and the git binding's
+#     barrel. Never the cli, never the package front door.
+#   - cli (src/cli/) — Phase 12's CLI surface: composes the execution and
+#     planner barrels, the domain kernel and the git adapter. Never the
+#     app layer, never the package front door — the #155 defect this
+#     split makes impossible at the gate.
+#   - adapters-git (src/adapters/git/) — the git binding (ADR-0009):
+#     reaches the planner and execution barrels; never app or cli.
+#   - adapters-github (src/adapters/github/) — the GitHub adapter
+#     (ADR-0010): reaches only the git binding's barrel; never upward.
+#   - gate-scripts (scripts/) — the repository's own gates. They are a
+#     project of their own so the boundary between "code that ships" and
+#     "code that judges" is enforceable (module-boundaries.config.mjs)
+#     rather than remembered.
 projects:
   release-craft: "."
   core-domain: "core/domain"
+  planner: "src/planner"
+  execution: "src/execution"
+  app: "src/app"
+  cli: "src/cli"
+  adapters-git: "src/adapters/git"
+  adapters-github: "src/adapters/github"
   gate-scripts: "scripts"
 vcs:
   provider: other

@@ -43,9 +43,12 @@ import {
   type GitHubRequestInit,
   type GitHubResponse,
   type GitHubTransport,
-} from "../../src/adapters/github/index.js";
-import { hermeticGitEnv, type GitRun } from "../../src/adapters/git/index.js";
-import type { ArtifactProducer } from "../../src/execution/index.js";
+} from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
+import {
+  hermeticGitEnv,
+  type GitRun,
+} from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
+import type { ArtifactProducer } from "@ecoma-io/release-craft/__internal__/execution/index.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
 import { openGitState, type Declarations, type GitState } from "./matrix-git.js";
 import { artifactProducers, hookEffects, matrixArtifacts, matrixHooks } from "./matrix.js";

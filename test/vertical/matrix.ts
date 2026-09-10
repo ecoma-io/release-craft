@@ -34,8 +34,8 @@ import {
   type HookStep,
   type ReleaseAttempt,
   type StepKey,
-} from "../../src/execution/index.js";
-import { plan } from "../../src/planner/assemble.js";
+} from "@ecoma-io/release-craft/__internal__/execution/index.js";
+import { plan } from "@ecoma-io/release-craft/__internal__/planner/assemble.js";
 import type {
   ChannelObservation,
   CommitObservation,
@@ -50,7 +50,7 @@ import type {
   RefObservation,
   ReleasePlan,
   TagObservation,
-} from "../../src/planner/types.js";
+} from "@ecoma-io/release-craft/__internal__/planner/types.js";
 
 // ---------------------------------------------------------------------------
 // The policy and the five lines (§3.1) — recorded data

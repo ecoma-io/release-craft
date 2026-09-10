@@ -18,7 +18,7 @@
 
 import { spawnSync } from "node:child_process";
 
-import { GitFaultError, hermeticGitEnv } from "../git/index.js";
+import { GitFaultError, hermeticGitEnv } from "@ecoma-io/release-craft/adapters/git";
 import type { RefusalReason } from "./adapter-types.js";
 
 /** Ledger tails and claim records are small; the ceiling exists so a

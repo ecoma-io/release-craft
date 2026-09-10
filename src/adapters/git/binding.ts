@@ -18,7 +18,7 @@ import type {
   ChannelStore,
   ClaimStore,
   ExecutionLedger,
-} from "../../index.js";
+} from "@ecoma-io/release-craft/execution";
 
 import type { BindingConfig, ContentRead, RefRead } from "./binding-types.js";
 import { GitChannelStore } from "./channel-store-git.js";
