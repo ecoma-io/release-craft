@@ -84,17 +84,30 @@ const MAX_LOCK_ATTEMPTS = 3;
  * '<ref>': Unable to create '<path>.lock': File exists.` (the EEXIST
  * branch of `unable_to_lock_message`, `strerror(EEXIST)` under the
  * runner's pinned C locale; verified in git's source at v2.34.0 and
- * v2.55.0 and first-hand on this machine's git). The advisory text that
- * follows the first line varies across git versions and `core.lockfilePid`
- * states, so the shape keys on the first line alone. Everything else — a
- * permission denial (`…lock': Permission denied`, no trailing period), the
- * old-value refusals (`is at … but expected …`, `reference already
- * exists`), a foreign lock file's path — does not match and fails closed.
+ * v2.55.0 and first-hand on this machine's git). The match is structural,
+ * not a byte span: the sentence's fixed prefix and suffix anchor it, and
+ * the lock path between them stays opaque — a quote inside the path (an
+ * operator's repository path can carry one; the binding's own ref
+ * components are percent-encoded, so the refname in the prefix never
+ * can) must not break the span and turn a benign loser back into a
+ * fault (#183's defect, that one spelling of it). Prefix and suffix must
+ * share one line of stderr — the first line in every message git emits;
+ * the advisory that follows it varies across git versions and
+ * `core.lockfilePid` states. Everything else — a permission denial
+ * (`…lock': Permission denied`, no trailing period), the old-value
+ * refusals (`is at … but expected …`, `reference already exists`), a
+ * foreign lock file's path — does not match and fails closed.
  */
 const isRefLockContention = (ref: string, stderr: string): boolean => {
-  const marker = `cannot lock ref '${ref}': Unable to create '`;
-  const start = stderr.indexOf(marker);
-  return start >= 0 && /^[^'\n]+\.lock': File exists\.\n/.test(stderr.slice(start + marker.length));
+  const prefix = `cannot lock ref '${ref}': Unable to create '`;
+  const suffix = `.lock': File exists.`;
+  const start = stderr.indexOf(prefix);
+  if (start < 0) {
+    return false;
+  }
+  const pathStart = start + prefix.length;
+  const end = stderr.indexOf(suffix, pathStart);
+  return end >= 0 && !stderr.slice(pathStart, end).includes("\n");
 };
 
 /**

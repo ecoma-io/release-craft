@@ -321,9 +321,11 @@ describe("the git binding's shared surface", () => {
 const buildCasFaultShim = (spec: {
   readonly ref: string;
   /** The stderr the intercepted compare-and-swap dies with: the ref-lock
-   *  contention shape (EEXIST), or the permission-denied spelling — the
-   *  fail-closed residual's stand-in for every unrecognized shape. */
-  readonly fault: "lock-held" | "denied";
+   *  contention shape (EEXIST, plain or with a quote inside the lock
+   *  path), the permission-denied spelling — the fail-closed residual's
+   *  stand-in for every unrecognized shape — or the old-value refusal
+   *  spelling, the no-match pin's other shape. */
+  readonly fault: "lock-held" | "lock-held-quoted-path" | "ref-moved" | "denied";
   /** What a later intercepted invocation does: pass through (the winner
    *  released, the ref never moved — the retry lands), diverge (the
    *  winner's landing moves the ref first, then pass through — git's own
@@ -351,20 +353,40 @@ const buildCasFaultShim = (spec: {
   // and the advisory; the denied branch (git's non-EEXIST format) carries
   // neither. The embedded lock path spelling is git's — absolute on the
   // real message; any path the shape keys on identically here.
-  const faultLines =
-    spec.fault === "lock-held"
+  const lockHeldLines = [
+    `  LOCK=$("${real}" rev-parse --git-path "$2")`,
+    `  echo "fatal: update_ref failed for ref '$2': cannot lock ref '$2': Unable to create '\${LOCK}.lock': File exists." >&2`,
+    `  echo "" >&2`,
+    `  echo "Another git process seems to be running in this repository, or the lock file may be stale" >&2`,
+    `  exit 128`,
+  ];
+  const faultLines: readonly string[] =
+    spec.fault === "denied"
       ? [
-          `  LOCK=$("${real}" rev-parse --git-path "$2")`,
-          `  echo "fatal: update_ref failed for ref '$2': cannot lock ref '$2': Unable to create '\${LOCK}.lock': File exists." >&2`,
-          `  echo "" >&2`,
-          `  echo "Another git process seems to be running in this repository, or the lock file may be stale" >&2`,
-          `  exit 128`,
-        ]
-      : [
           `  LOCK=$("${real}" rev-parse --git-path "$2")`,
           `  echo "fatal: update_ref failed for ref '$2': cannot lock ref '$2': Unable to create '\${LOCK}.lock': Permission denied" >&2`,
           `  exit 128`,
-        ];
+        ]
+      : spec.fault === "ref-moved"
+        ? [
+            // The old-value refusal, ref unchanged: the shape says a
+            // concurrent winner moved the ref, the re-read says nobody
+            // did. Not contention — one attempt, then the fault.
+            `  echo "fatal: update_ref failed for ref '$2': cannot lock ref '$2': is at 1111111111111111111111111111111111111111 but expected 2222222222222222222222222222222222222222" >&2`,
+            `  exit 128`,
+          ]
+        : spec.fault === "lock-held-quoted-path"
+          ? [
+              // The EEXIST sentence as an operator's quoted repository
+              // path would spell it — the binding's own ref components
+              // are percent-encoded, so the quote is reachable only
+              // through the path. The anchored match must survive it.
+              `  echo "fatal: update_ref failed for ref '$2': cannot lock ref '$2': Unable to create '/tmp/releas'e-craft/repo/.git/refs/heads/x.lock': File exists." >&2`,
+              `  echo "" >&2`,
+              `  echo "Another git process seems to be running in this repository, or the lock file may be stale" >&2`,
+              `  exit 128`,
+            ]
+          : lockHeldLines;
   const payload = join(dir, "payload");
   writeFileSync(payload, spec.divergePayload ?? "writer-b");
   const divergeLines = [
@@ -590,6 +612,65 @@ describe("the compare-and-swap's fault classification (#183; D52)", () => {
         // Same lock-file sentence, but the permission-denied spelling: no
         // trailing period, no contention. One attempt, no retry, loud.
         expect(fault.stderr).toContain("Permission denied");
+        expect(shim.invocations()).toBe(1);
+        expect(readRef(git, ref)).toBe(first);
+      } finally {
+        shim.cleanup();
+      }
+    });
+  });
+
+  it("a quote inside the repository's lock path does not break the contention shape", () => {
+    withRepo((git, repo) => {
+      const ref = "refs/heads/cas-lock-quoted-path";
+      const first = asOid(casAppendCommit(git, ref, '{"n":1}', null));
+      const shim = buildCasFaultShim({
+        ref,
+        fault: "lock-held-quoted-path",
+        after: "passthrough",
+      });
+      try {
+        let landed: string | null | undefined;
+        withHostilePath(shim.dir, () => {
+          landed = casAppendCommit(openGitRun(repo), ref, '{"n":2}', first);
+        });
+        // The EEXIST sentence's anchor is the fixed prefix and suffix, not
+        // a span between two quotes: the lock path between them — with its
+        // quote — stays opaque, the retry lands, and the benign loser is
+        // still not a fault (#183's surviving spelling).
+        expect(landed).not.toBeNull();
+        expect(landed).not.toBeUndefined();
+        expect(commitRecord(git, landed as string)).toBe('{"n":2}');
+        expect(shim.invocations()).toBe(2);
+      } finally {
+        shim.cleanup();
+      }
+    });
+  });
+
+  it("the old-value refusal spelling is not lock contention — one attempt, then the fault", () => {
+    withRepo((git, repo) => {
+      const ref = "refs/heads/cas-lock-ref-moved";
+      const first = asOid(casAppendCommit(git, ref, '{"n":1}', null));
+      const shim = buildCasFaultShim({ ref, fault: "ref-moved", after: "fault-forever" });
+      try {
+        let fault: GitFaultError | undefined;
+        withHostilePath(shim.dir, () => {
+          try {
+            casAppendCommit(openGitRun(repo), ref, '{"n":2}', first);
+          } catch (error) {
+            fault = asFault(error);
+          }
+        });
+        if (fault === undefined) {
+          throw new Error("expected the ref-moved spelling to fault");
+        }
+        // The shape names a concurrent winner, but the ref never moved: an
+        // over-broad matcher would read the sentence's winner wording as
+        // contention and burn the budget on a shape it cannot resolve. The
+        // re-read decides the loss, and a ref still at `first` is not one —
+        // so this faults after exactly one spawn.
+        expect(fault.stderr).toContain("is at");
         expect(shim.invocations()).toBe(1);
         expect(readRef(git, ref)).toBe(first);
       } finally {
