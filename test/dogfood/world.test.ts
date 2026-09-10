@@ -86,7 +86,20 @@ describe("the self-dogfood's world closure", () => {
       expect(world.history.tags).toStrictEqual([]);
 
       // The observed half over the controlled tree: exactly the seeded
-      // commits, the fixture's root first-born, newest at the front.
+      // commits, the fixture's root first-born, newest at the front. A count
+      // that is not 2 means the closure observed a tree this fixture did not
+      // seed — the ambient-repository fault the closure's own posture
+      // refuses, and the evidence the count names on failure.
+      const count = world.repository.commits.length;
+      if (count !== 2) {
+        throw new Error(
+          `closure observed ${String(count)} commits over ${repo} — subjects: ` +
+            world.repository.commits
+              .map((c) => c.message.split("\n")[0])
+              .slice(0, 5)
+              .join(" | "),
+        );
+      }
       expect(world.repository.commits).toHaveLength(2);
       const subjects = world.repository.commits.map((commit) => commit.message.split("\n")[0]);
       expect(subjects[0]).toContain("feat: seed the component's manifest");
