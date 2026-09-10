@@ -104,7 +104,7 @@ export const applyPlannedChannelTransitions = (application: {
         from: observed.target,
         to,
         attribution: { attemptId: application.attempt.attemptId, actor: application.actor },
-        guards: [{ guard: "claim-held", passed: true }],
+        guards: [{ guard: "claim-held", passed: application.claim !== undefined }],
         ...(application.claim === undefined ? {} : { claim: application.claim }),
         contentFingerprint: outcome.contentFingerprint,
       },

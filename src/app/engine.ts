@@ -320,7 +320,24 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
         contentFingerprintFor(stage, ctx.handle.attemptId),
       );
     }
-    if (stage === "channel-transition") {
+    const outcome: RequestStepOutcome = ledgerRequestStep(
+      ctx.attempt,
+      {
+        stepKey: stage,
+        attribution: attributionFor(ctx.handle),
+        contentFingerprint: contentFingerprintFor(stage, ctx.handle.attemptId),
+        ...(preconditions === undefined ? {} : { preconditions }),
+      },
+      claimViewFor(ctx.claim, ctx.ports.claims, ctx.handle.attemptId),
+      ctx.ports.ledger,
+    );
+    ctx.drives.push({ stepKey: stage, outcome });
+    // §2.4's point: the channel stage's moves land only on a verdict that
+    // lets the stage proceed — the guard's claim-lost (E-07) or any other
+    // non-advancing outcome stops the walk before a store CAS runs, never
+    // ahead of it. A noop replay still re-applies: the recorded moves
+    // classify noop against the state that already landed.
+    if (stage === "channel-transition" && (outcome.kind === "advance" || outcome.kind === "noop")) {
       const channels = ctx.ports.channels;
       if (channels === null) {
         if (plannedChannelMoves(ctx.planLine).length > 0) {
@@ -346,18 +363,6 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
         }
       }
     }
-    const outcome: RequestStepOutcome = ledgerRequestStep(
-      ctx.attempt,
-      {
-        stepKey: stage,
-        attribution: attributionFor(ctx.handle),
-        contentFingerprint: contentFingerprintFor(stage, ctx.handle.attemptId),
-        ...(preconditions === undefined ? {} : { preconditions }),
-      },
-      claimViewFor(ctx.claim, ctx.ports.claims, ctx.handle.attemptId),
-      ctx.ports.ledger,
-    );
-    ctx.drives.push({ stepKey: stage, outcome });
     if (outcome.kind === "advance") {
       ctx.ports.ledger.append({ kind: "step", record: outcome.record });
     } else if (outcome.kind !== "noop") {

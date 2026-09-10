@@ -14,6 +14,13 @@ import {
   channelStateFingerprint,
   MemoryChannelStore,
   type ChannelTransitionRecord,
+  type Claim,
+  type ClaimDenied,
+  type ClaimScope,
+  type ClaimStore,
+  type ClaimToken,
+  type ClaimVerification,
+  type ExecutionLedger,
   type LedgerRecord,
 } from "../../src/index.js";
 import {
@@ -254,5 +261,98 @@ describe("obligation 4 — ambiguity never reads as success (invariant 2.6), pin
         (record) => record.kind === "step" && record.record.stepKey === "channel-transition",
       ),
     ).toBe(true);
+  });
+});
+
+/** A claim store whose token stops verifying once the holder's tag stage
+ * has completed and the sever is armed — the E-07 loser path produced
+ * through the port itself, aimed at the window between tag and the
+ * channel stage. Acquisition and release always delegate; the ladder's
+ * runs are never armed, so they walk honestly. (The delegation methods
+ * are the DI seam this test fault stands on.) */
+class SeverAfterTagClaimStore implements ClaimStore {
+  readonly #inner: ClaimStore;
+  readonly #ledger: ExecutionLedger;
+  /** When true, a held token whose holder has completed tag verifies lost. */
+  severAfterTag = false;
+  constructor(inner: ClaimStore, ledger: ExecutionLedger) {
+    this.#inner = inner;
+    this.#ledger = ledger;
+  }
+  acquire(scope: ClaimScope, attemptId: string): Claim | ClaimDenied {
+    return this.#inner.acquire(scope, attemptId);
+  }
+  verify(token: ClaimToken): ClaimVerification {
+    const verification = this.#inner.verify(token);
+    if (verification.kind !== "held") {
+      return verification;
+    }
+    if (this.severAfterTag && this.#ledger.step(verification.claim.holder, "tag") === "completed") {
+      return { kind: "lost" };
+    }
+    return verification;
+  }
+  release(token: ClaimToken): void {
+    this.#inner.release(token);
+  }
+}
+
+describe("§2.4 — channel transitions respect the claim guard (issue #192)", () => {
+  it("a claim lost before the channel stage must not let moves land", () => {
+    const stores = freshStores();
+    const claims = new SeverAfterTagClaimStore(stores.claims, stores.ledger);
+    const engine = assembleMemoryStores(
+      {
+        register: stores.register,
+        ledger: stores.ledger,
+        claims,
+        channels: stores.channels,
+      },
+      { maxRetries: 2 },
+    );
+    const world = liveWorld();
+    stageLadder(engine, world);
+    // The promote run walks with the claim severed after tag — the guard at
+    // the channel stage must then refuse the stage before any store CAS
+    // runs (§2.4: a move lands only under a held claim, E-07's loser path).
+    claims.severAfterTag = true;
+    const outcome = engine.run(runRequest(world, "main", [promote]));
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind !== "failed" || outcome.handle === null) {
+      throw new Error("expected a failed outcome");
+    }
+    expect(outcome.cause).toContain("no longer verifies");
+    // The walk stopped at the channel stage with the claim-lost outcome.
+    const last = outcome.drives.at(-1);
+    expect(last?.stepKey).toBe("channel-transition");
+    expect(last?.outcome.kind).toBe("claim-lost");
+    // No pointer moved: the store still reads its §3.1 seed — the moves
+    // never landed ahead of the guard.
+    expect(stores.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "4.9.2" },
+    });
+    // The durable evidence agrees: the stage recorded no move at all.
+    const tail = stores.ledger.tail(outcome.handle.attemptId);
+    expect(channelRecordsOf(tail)).toStrictEqual([]);
+  });
+
+  it("the landed move's record carries the claim verdict a check actually performed", () => {
+    const { engine, stores } = freshAssembly();
+    const world = liveWorld();
+    stageLadder(engine, world);
+    const outcome = engine.run(runRequest(world, "main", [promote]));
+    expect(outcome.kind).toBe("published");
+    if (outcome.kind !== "published" || outcome.handle === null) {
+      throw new Error("expected a published outcome");
+    }
+    const moves = channelRecordsOf(stores.ledger.tail(outcome.handle.attemptId));
+    expect(moves.length).toBe(2);
+    for (const move of moves) {
+      // The claim was held and verified under this walk: the record
+      // carries the guard's real verdict and the token that verified.
+      expect(move.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
+      expect(move.claim).toBeDefined();
+    }
   });
 });
