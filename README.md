@@ -88,10 +88,13 @@ Three workflows, three different questions — none is a god workflow:
   finalized PR description — the gate born from #6, which merged with a
   "(To be finalized)" body and an untouched checklist.
 
-A fourth workflow, `triage.yml`, sits outside this layering: the
-action-agents dogfood run (#101) — a consumer of a released sibling action,
-not a governance gate — and it appears in no gate's `needs:`. Its YAML is
-held to the same `check:workflows` posture as the three above.
+Two workflows sit outside this layering — the action-agents dogfood runs,
+consumers of released sibling actions, not governance gates, and neither
+appears in any gate's `needs:`; both are held to the same `check:workflows`
+posture as the three above. `triage.yml` (#101) labels issues and pull
+requests from a model verdict. `review.yml` (#214) reviews pull requests
+with the same sibling's `review` action, currently in its documented
+dry-run posture: the run record is the whole output until the flip.
 
 The three layers rest on GitHub rulesets on `main`: pull requests only, the
 required checks above, linear history, up-to-date branches, resolved
