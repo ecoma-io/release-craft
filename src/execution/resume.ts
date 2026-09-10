@@ -14,7 +14,7 @@
  */
 import { InvalidExecutionTransitionError } from "./attempt.js";
 import { effectiveSteps } from "./hooks.js";
-import { isArtifactStepKey, isHookStepKey } from "./step-keys.js";
+import { isArtifactStepKey, isHookStepKey, isUpdaterStepKey } from "./step-keys.js";
 import { requestStep } from "./outcome.js";
 import {
   CANONICAL_STAGES,
@@ -152,7 +152,11 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
       // blocked(validation) attempt, and §2.7's resolution loop answers
       // it. The same record under a non-blocked attempt is a tail
       // contradiction — recorded state a human must judge.
-      if (isHookStepKey(step.stepKey) || isArtifactStepKey(step.stepKey)) {
+      if (
+        isHookStepKey(step.stepKey) ||
+        isArtifactStepKey(step.stepKey) ||
+        isUpdaterStepKey(step.stepKey)
+      ) {
         // A failed extension-step record is classified, not crashed.
         // Blocked now: the §2.7 loop answers below. Re-armed already: the
         // append-only failed record never leaves the tail, so its

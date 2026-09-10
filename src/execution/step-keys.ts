@@ -8,7 +8,7 @@
  * Pure values only: no clock, randomness, environment, filesystem, or
  * network reads (§2.10).
  */
-import type { ArtifactStepKey, HookStepKey, StepKey } from "./types.js";
+import type { ArtifactStepKey, HookStepKey, StepKey, UpdaterStepKey } from "./types.js";
 
 /** The hook's ledger key (§2.1): `hook:<id>`, unique per attempt. */
 export const hookStepKey = (id: string): HookStepKey => `hook:${id}`;
@@ -30,3 +30,15 @@ export const artifactStepKey = (id: string): ArtifactStepKey => `artifact:${id}`
  * from the generation record this key names. */
 export const isArtifactStepKey = (stepKey: StepKey): stepKey is ArtifactStepKey =>
   stepKey.startsWith("artifact:");
+
+/** The updater step's ledger key (issue #203): `updater:<id>`, unique
+ * per attempt — the key the mutation record is filed under. */
+export const updaterStepKey = (id: string): UpdaterStepKey => `updater:${id}`;
+
+/** The key-space test: is this step key an updater step's? The resume
+ * classification routes a failed updater record exactly as a hook's
+ * (§2.5: extension steps share the blocked(validation) escalation),
+ * and the scheduler's replay answers from the mutation record this
+ * key names. */
+export const isUpdaterStepKey = (stepKey: StepKey): stepKey is UpdaterStepKey =>
+  stepKey.startsWith("updater:");
