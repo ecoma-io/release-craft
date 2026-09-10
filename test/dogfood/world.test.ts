@@ -19,6 +19,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { hermeticGitEnv } from "../../src/adapters/git/index.js";
 import { plan, type PlanningInput, type PlanningOutcome } from "../../src/index.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
 
@@ -45,13 +46,21 @@ describe("the self-dogfood's world closure", () => {
   it("closes the seeded repository into a world the planner's own door accepts", () => {
     withTempRepo("dogfood-world", (repo, git) => {
       seedFixture(repo, git);
-
+      // The closure script spawns `git` subprocesses against the fixture
+      // repo; the env is the binding's own hermetic floor so an ambient
+      // GIT_* leak or a translated locale cannot reword a fault line the
+      // suite (or the planner) discriminates on — exactly what every other
+      // git fixture in this repo runs on.
       const child = spawnSync(process.execPath, [CLOSURE_SCRIPT, "--repo", repo], {
         encoding: "utf8",
+        env: hermeticGitEnv(),
         maxBuffer: 64 * 1024 * 1024,
       });
-      expect(child.error).toBeUndefined();
-      expect(child.status).toBe(0);
+      expect(child.error, `closure failed to spawn: ${String(child.error)}`).toBeUndefined();
+      expect(
+        child.status,
+        `closure exited ${String(child.status)} — its stderr:\n${child.stderr}`,
+      ).toBe(0);
 
       const world = JSON.parse(child.stdout) as PlanningInput;
 
