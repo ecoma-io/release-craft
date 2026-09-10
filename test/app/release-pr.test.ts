@@ -242,7 +242,7 @@ describe("parseIdentityClaim", () => {
 describe("openReleasePRGate.detect", () => {
   it("returns detected when a pending release has no existing PR", () => {
     const port = fakePort(null);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const result = gate.detect(identity, makePlan());
     expect(result.kind).toBe("detected");
   });
@@ -260,14 +260,14 @@ describe("openReleasePRGate.detect", () => {
       labels: ["release-craft"],
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const outcome = gate.detect(identity, plan);
     expect(outcome.kind).toBe("found");
   });
 
   it("returns nothing-pending for a plan with no pending lines", () => {
     const port = fakePort();
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const plan = makePlan({ lines: [noopLine] });
     expect(gate.detect(identity, plan).kind).toBe("nothing-pending");
   });
@@ -336,7 +336,7 @@ describe("openReleasePRGate.create", () => {
       labels: ["release-craft"],
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const outcome = gate.create(identity, plan);
     expect(outcome.kind).toBe("found");
     expect(port.created).toHaveLength(0); // no duplicate
@@ -383,7 +383,7 @@ describe("openReleasePRGate.create", () => {
 describe("openReleasePRGate.update", () => {
   it("detects when no existing PR is found", () => {
     const port = fakePort(null);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     expect(gate.update(identity, makePlan()).kind).toBe("detected");
   });
 
@@ -400,7 +400,7 @@ describe("openReleasePRGate.update", () => {
       labels: [...render.projection.labels],
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const outcome = gate.update(identity, plan);
     expect(outcome.kind).toBe("current");
     expect(port.updates).toHaveLength(0); // no write
@@ -419,7 +419,7 @@ describe("openReleasePRGate.update", () => {
       labels: [...render.projection.labels],
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const outcome = gate.update(identity, plan, { draft: false });
     expect(outcome.kind).toBe("updated");
     if (outcome.kind !== "updated") throw new Error("expected updated");
@@ -499,7 +499,7 @@ describe("openReleasePRGate.update", () => {
       labels: [...render.projection.labels],
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const outcome = gate.update(identity, plan);
     expect(outcome.kind).toBe("plan-conflict");
     if (outcome.kind !== "plan-conflict") throw new Error("expected plan-conflict");
@@ -516,7 +516,7 @@ describe("openReleasePRGate.update", () => {
       draft: false,
       labels: [],
     });
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const outcome = gate.update(identity, makePlan());
     expect(outcome.kind).toBe("plan-conflict");
     if (outcome.kind !== "plan-conflict") throw new Error("expected plan-conflict");
@@ -536,7 +536,7 @@ describe("openReleasePRGate.update", () => {
       labels: [...render.projection.labels],
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const differentIdentity: ReleasePRIdentity = {
       component: "lib-b",
       releaseLine: "lib-b",
@@ -563,7 +563,7 @@ describe("openReleasePRGate.update", () => {
       labels: [...render.projection.labels],
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const recomputed = makePlan({
       planId: "plan_sha256:bbbb",
       supersedes: null, // not superseding the recorded plan
@@ -614,7 +614,7 @@ describe("openReleasePRGate.update", () => {
       labels: ["human-added-label", "something-else"], // labels differ from projection
     };
     const port = fakePort(existing);
-    const gate = openReleasePRGate(port);
+    const gate = openReleasePRGate(port, new MemoryRecordSink());
     const outcome = gate.update(identity, plan);
     // body and title match the projection → current (label drift is cosmetic)
     expect(outcome.kind).toBe("current");
@@ -663,5 +663,23 @@ describe("MemoryRecordSink", () => {
     });
     expect(snapshot).toHaveLength(1); // snapshot is stale, not mutated
     expect(sink.tail()).toHaveLength(2);
+  });
+});
+// ---------------------------------------------------------------------------
+// §7 — door assembly (the write-ahead discipline is not opt-in)
+// ---------------------------------------------------------------------------
+
+describe("openReleasePRGate assembly", () => {
+  it("demands a record sink at the door (a sink-less gate does not typecheck)", () => {
+    // The sink is a required parameter: an optional sink would make the
+    // write-ahead discipline a choice, and a crash mid-mutation would leave
+    // no evidence. The refusal is compile-time — @ts-expect-error turns an
+    // unused directive into a typecheck failure (tsc compiles test/**/*), so
+    // this test fails the moment a sink-less call becomes legal again.
+    // @ts-expect-error openReleasePRGate requires a ReleasePRRecordSink
+    const gate = openReleasePRGate(fakePort());
+    // Still the door's shape at runtime; the refusal is a type error.
+    expect(typeof gate.detect).toBe("function");
+    expect(typeof gate.update).toBe("function");
   });
 });

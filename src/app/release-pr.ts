@@ -337,12 +337,15 @@ const mergeLabels = (existing: readonly string[], projected: readonly string[]):
   return merged;
 };
 
-/** Open the gate over an injected port (and optionally a record sink).
- * The door wires; it owns nothing — consistent with the assembled
- * adapter's injection discipline. */
+/** Open the gate over an injected port and a record sink. The sink is
+ * required, not optional: the write-ahead discipline (ADR-0006) is part
+ * of the door, and a gate assembled without one could crash mid-mutation
+ * with no evidence — the same demand-at-assembly discipline as the
+ * engine doors' stores. The door wires; it owns nothing — consistent
+ * with the assembled adapter's injection discipline. */
 export const openReleasePRGate = (
   port: ReleasePRPort,
-  sink?: ReleasePRRecordSink,
+  sink: ReleasePRRecordSink,
 ): ReleasePRGate => {
   const recordOutcome = (
     action: ReleasePRGateAction,
@@ -350,7 +353,7 @@ export const openReleasePRGate = (
     planId: string,
     outcome: ReleasePROutcome,
   ): void => {
-    sink?.append({ kind: "gate-outcome", action, identity, planId, outcome });
+    sink.append({ kind: "gate-outcome", action, identity, planId, outcome });
   };
 
   /** The identity lookup, wrapped like every other port call: a
@@ -380,7 +383,7 @@ export const openReleasePRGate = (
     projection: ReleasePRProjection,
     draft: boolean,
   ): ReleasePROutcome => {
-    sink?.append({ kind: "gate-start", action: "create", identity, planId: plan.planId });
+    sink.append({ kind: "gate-start", action: "create", identity, planId: plan.planId });
     try {
       const pr = port.createPR({
         identity,
@@ -409,7 +412,7 @@ export const openReleasePRGate = (
     projection: ReleasePRProjection,
     existing: ExistingPR,
   ): ReleasePROutcome => {
-    sink?.append({ kind: "gate-start", action: "update", identity, planId: plan.planId });
+    sink.append({ kind: "gate-start", action: "update", identity, planId: plan.planId });
     try {
       const pr = port.updatePR({
         prNumber: existing.number,
