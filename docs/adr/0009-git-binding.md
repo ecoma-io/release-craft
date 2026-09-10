@@ -1,8 +1,6 @@
 ---
-id: "0009"
-title: "The git binding — persistence, the tag-push CAS, and the ref-side namespace door"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/39"
+id: 0009-git-binding
+status: proposed
 created: 2026-09-06
 updated: 2026-09-07
 ---

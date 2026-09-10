@@ -1,8 +1,6 @@
 ---
-id: "0005"
-title: "The execution kernel — attempts, claims, and guarded transitions"
-status: Accepted
-implements: "https://github.com/ecoma-io/release-craft/issues/27"
+id: 0005-execution-kernel
+status: accepted
 created: 2026-09-06
 updated: 2026-09-06
 ---

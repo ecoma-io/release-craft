@@ -1,8 +1,6 @@
 ---
-id: "0012"
-title: "The channel-transition door — one explicit, durable stage for moving channel pointers"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/76"
+id: 0012-channel-transition
+status: proposed
 created: 2026-09-08
 updated: 2026-09-08
 ---

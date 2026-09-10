@@ -1,7 +1,6 @@
 ---
-id: ADR-0004
-title: Line policy — declared per-line configuration as planning input
-status: Accepted
+id: 0004-line-policy
+status: accepted
 created: 2026-09-06
 updated: 2026-09-06
 ---

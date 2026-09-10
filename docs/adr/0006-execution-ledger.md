@@ -1,8 +1,6 @@
 ---
-id: "0006"
-title: "The execution ledger — durable records, resume as classification, and adoption"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/30"
+id: 0006-execution-ledger
+status: proposed
 created: 2026-09-06
 updated: 2026-09-06
 ---

@@ -1,8 +1,6 @@
 ---
-id: "0013"
-title: "The abandonment record — the human abort as durable ledger evidence"
-status: Proposed
-implements: "https://github.com/ecoma-io/release-craft/issues/111"
+id: 0013-abandonment-record
+status: proposed
 created: 2026-09-09
 updated: 2026-09-09
 ---
