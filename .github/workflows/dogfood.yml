@@ -129,7 +129,7 @@ jobs:
           echo '## the refs after the run'
           git for-each-ref
           echo '## the recorded ledger tails'
-          for ref in $(git for-each-ref --format='%(refname)' 'refs/ecoma/ledger/'); do
+          for ref in $(git for-each-ref --format='%(refname)' 'refs/release-craft/ledger/'); do
             echo "== ${ref}"
             for sha in $(git rev-list --first-parent "${ref}"); do
               echo "-- commit ${sha}"

@@ -2,7 +2,7 @@
 id: 0010-github-adapter
 status: proposed
 created: 2026-09-07
-updated: 2026-09-07
+updated: 2026-09-10
 ---
 
 # ADR-0010: The GitHub adapter — remote synchronization, tag publication, and release publication
@@ -78,13 +78,15 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
 
 3. **Remote synchronization is push-only for writes, fetch-only for
    discovery.** The adapter pushes refs (the binding's claim refs under
-   `refs/ecoma/`, minted tags under `refs/tags/`) to the configured remote
-   (`origin` by default). It never fetches remote state into the local
+   `refs/release-craft/`, minted tags under `refs/tags/`) to the configured
+   remote (`origin` by default). It never fetches remote state into the local
    binding's claim or ledger namespace — the binding is the source of truth,
    and a fetch that introduces unverified claim refs would break that
    invariant. Discovery (pre-existing tags and releases) reads the remote
    through the API and compares against the binding's recorded state, never
-   merging remote refs into the local namespace.
+   merging remote refs into the local namespace. Revised in #133: the
+   binding's namespace is `refs/release-craft/` (product-neutral, invariant
+   2.12) — the mapping's shape is unchanged.
 
 4. **Every remote write carries an idempotency identity.** Tag pushes and
    GitHub Release creations include the attempt's `attemptId` or the

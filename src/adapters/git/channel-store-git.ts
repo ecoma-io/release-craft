@@ -1,10 +1,10 @@
 /**
  * The git-backed channel store (ADR-0012 decision 6's physical half) —
  * the deliverability pointer's durable record. One ref per channel under
- * the binding's channel namespace — `refs/ecoma/channels/<sha256 of the
+ * the binding's channel namespace — `refs/release-craft/channels/<sha256 of the
  * channel id's UTF-8 bytes>`, the claim register's own mapping (ADR-0011):
  * channel ids are opaque strings a refname cannot carry verbatim, and
- * ADR-0012's `refs/ecoma/channels/<id>` names the channel the ref is for,
+ * ADR-0012's `refs/release-craft/channels/<id>` names the channel the ref is for,
  * not the literal bytes. The tip commit's blob is the channel's state in
  * canonical form — `{"channel":{"id":…,"target":{…}|null}}`; a channel
  * ref whose blob is anything else refuses loudly, because a corrupted
@@ -47,7 +47,7 @@ import { deepFreeze, frozenParse } from "./freeze.js";
 import { GitFaultError, openGitRun, type GitRun } from "./git-run.js";
 
 /** The binding's channel-ref namespace: one state ref per channel. */
-export const CHANNEL_REF_NAMESPACE = "refs/ecoma/channels/";
+export const CHANNEL_REF_NAMESPACE = "refs/release-craft/channels/";
 
 /** The channel's state ref: the sha256 over the channel id's UTF-8 bytes. */
 export function channelRefFor(channelId: string): string {

@@ -153,7 +153,7 @@ describe("the git-backed claim store (fixture 3)", () => {
       // One line, one register ref — the sha256 of the lineId — whose
       // tip's blob is the register envelope holding the claim record in
       // canonical form.
-      const refs = refNames(git, "refs/ecoma/claims/");
+      const refs = refNames(git, "refs/release-craft/claims/");
       expect(refs).toEqual([claimRegisterRefFor("line-main")]);
       const tip = asTip(readRef(git, firstRef(refs)));
       expect(commitRecord(git, tip)).toBe(
@@ -172,7 +172,7 @@ describe("the git-backed claim store (fixture 3)", () => {
       const first = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       const again = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       expect(again).toEqual(first);
-      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(1);
+      expect(refNames(git, "refs/release-craft/claims/")).toHaveLength(1);
     });
   });
 
@@ -208,7 +208,7 @@ describe("the git-backed claim store (fixture 3)", () => {
       expect(coexisting.token).not.toBe(held.token);
       expect(lineHolder.token).not.toBe(held.token);
       // Two lines, two registers — the claims of a line live together.
-      expect(refNames(git, "refs/ecoma/claims/")).toEqual([
+      expect(refNames(git, "refs/release-craft/claims/")).toEqual([
         claimRegisterRefFor("line-main"),
         claimRegisterRefFor("line-other"),
       ]);
@@ -225,7 +225,7 @@ describe("the git-backed claim store (fixture 3)", () => {
       expect(store.verify(claim.token)).toEqual({ kind: "lost" });
       // The empty register persists — the ref is never deleted, so the
       // write path stays one primitive (ADR-0011 decision 4).
-      const refs = refNames(git, "refs/ecoma/claims/");
+      const refs = refNames(git, "refs/release-craft/claims/");
       expect(refs).toEqual([claimRegisterRefFor("line-main")]);
       expect(commitRecord(git, asTip(readRef(git, refs[0] ?? "")))).toBe('{"claims":[]}');
     });
@@ -236,7 +236,7 @@ describe("the git-backed claim store (fixture 3)", () => {
       const claim = asClaim(store.acquire(stableVersion("1.2.3"), "attempt_a"));
       store.release(claim.token);
       expect(store.verify(claim.token)).toEqual({ kind: "held", claim });
-      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(1);
+      expect(refNames(git, "refs/release-craft/claims/")).toHaveLength(1);
     });
   });
 });
@@ -287,7 +287,7 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
       // CAS: both accepts land in their own lines' registers, but the tag
       // ref has one value and the second mint's target loses.
       const second = asClaim(store.acquire(stableVersion("1.2.3", "line-b"), "attempt_b"));
-      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(2);
+      expect(refNames(git, "refs/release-craft/claims/")).toHaveLength(2);
       const raced = asConflict(
         mint({ attemptId: "attempt_b", token: second.token, tag: "v1.2.3", target: elsewhere }),
       );
@@ -329,7 +329,7 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
       // The policy refusal left nothing behind: no tag ref, and the claim
       // ref is exactly where the accept put it.
       expect(refNames(git, "refs/tags/")).toHaveLength(0);
-      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(1);
+      expect(refNames(git, "refs/release-craft/claims/")).toHaveLength(1);
     });
   });
 
@@ -379,7 +379,7 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
       expect(denied.refusal).toBe("namespace");
       expect(denied.holder).toBeUndefined();
       // The claim state never moved: no claim ref was written.
-      expect(refNames(git, "refs/ecoma/claims/")).toHaveLength(0);
+      expect(refNames(git, "refs/release-craft/claims/")).toHaveLength(0);
       // And the binding's own naming still admits the scopes it maps.
       const held = binding.claims.acquire(stableVersion("1.2.3"), "attempt_a");
       expect(held.kind).toBe("claim");

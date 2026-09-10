@@ -513,7 +513,7 @@ The predicate is whole-value, never substring, and that is load-bearing:
 the same surfaces carry 64-hex substrings inside deterministic values — the
 `planId` (`plan_sha256:<64 hex>`, verified: `planFingerprint`), the attempt
 id (`attempt_sha256:<64 hex>`, verified: `attemptIdentity`), the channel
-state refs (`refs/ecoma/channels/<64 hex>`, verified: `channelRefFor`) —
+state refs (`refs/release-craft/channels/<64 hex>`, verified: `channelRefFor`) —
 and a substring reading would commit `plan_sha256:CLAIM` into the reviewed
 bytes and blind the pins to planId, attemptId, and ref drift. Under the
 whole-value rule those values stay verbatim and legible; the claim token is

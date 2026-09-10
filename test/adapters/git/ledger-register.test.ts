@@ -94,7 +94,7 @@ describe("the git-backed ledger and register (phase 8 contract ยง4, fixtures 1โ€
       expect(register.nextOrdinal(planId)).toBe(2);
 
       // The counter's bytes are the canonical form, exactly as written.
-      const counterRef = `refs/ecoma/register/${planId}`;
+      const counterRef = `refs/release-craft/register/${planId}`;
       const tip = readRef(git, counterRef);
       if (tip === null) {
         throw new Error("expected the ordinal counter ref to exist");

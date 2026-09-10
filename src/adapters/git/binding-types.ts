@@ -69,7 +69,7 @@ export interface BindingConfig {
  * peeled commit for an annotated one.
  */
 export interface RecordedRef {
-  /** The full ref name — `refs/ecoma/claims/<record>` or
+  /** The full ref name — `refs/release-craft/claims/<record>` or
    *  `refs/tags/<tag>`. */
   readonly ref: string;
   /** The object the ref names — the claim record's blob oid for a claim

@@ -300,7 +300,7 @@ describe("the git-backed channel store (ADR-0012 decision 6)", () => {
         repo,
         ".git",
         "refs",
-        "ecoma",
+        "release-craft",
         "channels",
         channelRefFor("stable").slice(CHANNEL_REF_NAMESPACE.length),
       );

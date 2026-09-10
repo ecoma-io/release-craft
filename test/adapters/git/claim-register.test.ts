@@ -551,7 +551,7 @@ describe("the per-line claim register (ADR-0011)", () => {
           repo,
           ".git",
           "refs",
-          "ecoma",
+          "release-craft",
           "claims",
           ref.slice(CLAIM_REF_NAMESPACE.length),
         );

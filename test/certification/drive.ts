@@ -109,7 +109,7 @@ export const PROJECTION_RULE =
   "phase 14 §4.3 v1 — the repository path becomes REPO in plain and JSON-escaped " +
   "text spellings; a JSON string whose parsed value is exactly 64 lowercase hex " +
   "characters (the claim token's whole shape) becomes CLAIM. Whole-value, never " +
-  "substring: plan_sha256/attempt_sha256 values and refs/ecoma/channels names " +
+  "substring: plan_sha256/attempt_sha256 values and refs/release-craft/channels names " +
   "carry 64-hex substrings inside longer strings and stay verbatim.";
 
 /** The projection applied over envelope or fault text. The repo path is
@@ -277,10 +277,10 @@ const decodeRefComponent = (value: string): string =>
  * refs are named by attempt id under the adapter's percent encoding; the
  * ids decode back to the engine's spelling (`attempt_sha256:<hex>`). */
 export const ledgerAttemptIds = (repo: string): readonly string[] =>
-  openGitRun(repo)(["for-each-ref", "--format=%(refname)", "refs/ecoma/ledger/"])
+  openGitRun(repo)(["for-each-ref", "--format=%(refname)", "refs/release-craft/ledger/"])
     .split("\n")
     .filter((ref) => ref.length > 0)
-    .map((ref) => decodeRefComponent(ref.slice("refs/ecoma/ledger/".length)));
+    .map((ref) => decodeRefComponent(ref.slice("refs/release-craft/ledger/".length)));
 
 /** The mint target per line: the recorded base the tag door mints onto —
  * the run line's own ref head from the same world. */

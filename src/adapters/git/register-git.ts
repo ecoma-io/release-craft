@@ -1,7 +1,7 @@
 /**
  * The git-backed attempt register (ADR-0009 decisions 2–3; contract §2.2) —
  * the durable `AttemptRegister` (E-05): each plan's ordinal counter is one
- * fast-forward-only ref, `refs/ecoma/register/<planId>`, whose tip commit's
+ * fast-forward-only ref, `refs/release-craft/register/<planId>`, whose tip commit's
  * blob is `{"nextOrdinal":N}` in canonical JSON. Allocating an ordinal is a
  * compare-and-swap of that blob — one ref update decides, so two racing
  * allocators see exactly one winner; the loser re-reads the tip and
@@ -26,7 +26,8 @@ const MAX_CAS_ATTEMPTS = 3;
 
 /** The ref holding a plan's ordinal counter (E-05) — one commit per
  * allocation, the counter's canonical JSON as the blob. */
-const registerRef = (planId: string): string => `refs/ecoma/register/${encodeRefComponent(planId)}`;
+const registerRef = (planId: string): string =>
+  `refs/release-craft/register/${encodeRefComponent(planId)}`;
 
 export class GitAttemptRegister implements AttemptRegister {
   readonly #git: GitRun;

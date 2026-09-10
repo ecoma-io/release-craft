@@ -1,7 +1,7 @@
 /**
  * The git-backed claim store — the per-line register (ADR-0011; contract
  * §2.3 as amended, the physical half of E-07). One ref per release line
- * under the binding's claim namespace — `refs/ecoma/claims/<sha256 of the
+ * under the binding's claim namespace — `refs/release-craft/claims/<sha256 of the
  * lineId's UTF-8 bytes>` — whose tip commit holds the line's claim set in
  * canonical form: `{"claims":[<claim record>…]}`, the records sorted by
  * their scope's canonical JSON. Every mutation is a compare-and-set of the
@@ -34,7 +34,7 @@ import { casAppendCommit, commitRecord, readRef } from "./git-refs.js";
 import { openGitRun, type GitRun } from "./git-run.js";
 
 /** The binding's claim-ref namespace: one register ref per release line. */
-export const CLAIM_REF_NAMESPACE = "refs/ecoma/claims/";
+export const CLAIM_REF_NAMESPACE = "refs/release-craft/claims/";
 
 /**
  * The claim record a register holds: the held claim's own values — the
