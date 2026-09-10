@@ -59,6 +59,7 @@ import {
   gitRunArgs,
   ladderExtraTags,
   ledgerAttemptIds,
+  ledgerIdentityLog,
   ledgerPlanId,
   ledgerTail,
   ledgerTailBytes,
@@ -241,6 +242,15 @@ describe("the certification fixture · A-git", () => {
         const recorded = expectedScenario("git-01", "promote (the process envelope)");
         expect(child.status).toBe(recorded.exit);
         expect(project(child.stdout, repo)).toBe(recorded.stdout);
+
+        // The identity layer: the substrate commits as git itself reports
+        // them (#164) — the ledger chain carries the binding's fixed
+        // author/committer identity and its append subject verbatim, so a
+        // drift in either constant fails this comparison instead of
+        // passing silently into consumer repositories.
+        const recordedIdentity = expectedScenario("git-01", "the substrate commits' identity");
+        expect(recordedIdentity.exit).toBe(0);
+        expect(project(ledgerIdentityLog(repo), repo)).toBe(recordedIdentity.stdout);
       });
     },
   );

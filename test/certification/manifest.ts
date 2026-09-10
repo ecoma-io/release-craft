@@ -297,6 +297,7 @@ export const MANIFEST: readonly ManifestRow[] = [
       "phase 14 §3.3",
       "phase 12 §3.1 (the envelope pinned as reviewed bytes; the minted 5.0.0; the drives list riding verbatim)",
       "ADR-0012 (the promote door end to end)",
+      "#164 (the substrate commits' identity pinned as reviewed bytes: the ledger chain's author/committer identity and append subject, so a drift in either constant fails the cell)",
     ],
     status: "live",
   },

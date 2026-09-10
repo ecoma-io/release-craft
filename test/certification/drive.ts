@@ -282,6 +282,21 @@ export const ledgerAttemptIds = (repo: string): readonly string[] =>
     .filter((ref) => ref.length > 0)
     .map((ref) => decodeRefComponent(ref.slice("refs/release-craft/ledger/".length)));
 
+/** The attempt-ledger refs' commit chains, exactly as git reports them —
+ * one `%an|%ae|%cn|%ce|%s` line per substrate commit, ref by ref in
+ * for-each-ref order. This is the fixture's identity pin (#164): the
+ * binding writes COMMIT_ENV's author/committer name and email and the
+ * append subject template into the consumer repository's git metadata, so
+ * the recorded bytes carry them verbatim — a drift in either constant
+ * fails the byte comparison instead of passing silently. */
+export const ledgerIdentityLog = (repo: string): string => {
+  const git = openGitRun(repo);
+  const refs = git(["for-each-ref", "--format=%(refname)", "refs/release-craft/ledger/"])
+    .split("\n")
+    .filter((ref) => ref.length > 0);
+  return refs.map((ref) => git(["log", "--format=%an|%ae|%cn|%ce|%s", ref]).trimEnd()).join("\n");
+};
+
 /** The mint target per line: the recorded base the tag door mints onto —
  * the run line's own ref head from the same world. */
 export const gitTarget = (heads: Readonly<Record<string, string>>, lineId: string): string => {
