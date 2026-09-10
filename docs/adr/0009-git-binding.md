@@ -2,7 +2,7 @@
 id: 0009-git-binding
 status: proposed
 created: 2026-09-06
-updated: 2026-09-07
+updated: 2026-09-11
 ---
 
 # ADR-0009: The git binding — persistence, the tag-push CAS, and the ref-side namespace door
@@ -52,6 +52,20 @@ job is to express that discipline over git, not to invent a second one.
    binding before it reaches git; and reloading is byte-exact — the
    reloaded tail must equal the recorded tail, and resume classification
    over a reloaded ledger must equal classification over the original.
+   Amendment (issue #185; D44): the append-only discipline is
+   content-aware at the write door — an append whose canonical bytes the
+   scope's stream's current tip already holds is satisfied already and
+   grows no commit: the stale writer's duplicate of a concurrent
+   winner's record is one fact, not two. The check is tip-relative —
+   identity is the tip's canonical bytes, never a key and never the
+   history: a byte-identical record the stream carried but moved past is
+   a new positional fact (a re-armed start, a crash window's re-issue)
+   and lands, as does any record differing in a field (a different
+   `recordedAt`, evidence, claim token, or digest) — and the check rides
+   the compare-and-swap's classify step, re-evaluated against the moved
+   tip on every retry round. The guarantee lives at the binding layer
+   (the engine's own start-identity discipline, #195, is its complement
+   at the engine layer, not its substitute).
    Where a decision record's home is needed (Phase 2's records; D14's
    "persistence is adjacent"), the same guarantees serve it — no second
    storage format. The decision-record door itself is deferred: no
@@ -135,6 +149,23 @@ job is to express that discipline over git, not to invent a second one.
    engine exactly as ADR-0008 decision 2 fixed: it arrives, it is never
    computed inside the engine; the binding merely makes it a real digest
    of real content.
+   Amendment (issue #185; D43): the digest input is fixed as the
+   recorded tree of the commit `HEAD` names at the call — one atomic
+   `rev-parse` read per invocation, the binding's one ambient-ref read,
+   never the commit itself — and `HEAD`-stability is a declared
+   precondition of the binding: `HEAD` names one commit for the span of
+   an attempt. Moving it in the consumer's checkout mid-attempt is a
+   caller violation, and its failure mode is loud at the binding's only
+   surface: the digest changes exactly as any recorded-content change
+   does, so under the declared precondition a digest change is a
+   recorded-content change — nothing downstream can read the drift as
+   continuity. The producer stays stateless per call; an attempt-scoped
+   pin was rejected as architecturally wrong at this seam: the input is
+   identity only and never the ledger (ADR-0008 decision 7), so a pin
+   needs either a port widening (the engine layer's own reviewed
+   change) or a stateful first-call-wins cache keyed on the attempt
+   id — the latter makes the input shape the digest and silently
+   swallows a real content change inside the attempt it pins.
 7. **No provider behavior enters this layer.** No API calls, no
    environments, no registry interactions, no scheduling — the GitHub
    adapter (Phase 9) consumes this binding and stays its own phase, its

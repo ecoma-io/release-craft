@@ -20,7 +20,10 @@ import { withTempRepo } from "./temp-repo.js";
  * mapping itself is pinned — `git-tree:<tree-oid-of-HEAD>` — and the
  * engine's fail-closed digest rule (opaque, non-empty, unpadded) never
  * trips on what the producer returns. The port's input contract is
- * unchanged: identity only, no binding-added validation.
+ * unchanged: identity only, no binding-added validation. The digest
+ * input's source — the tree of the commit HEAD names, never the commit —
+ * and the HEAD-stability precondition it carries are pinned too
+ * (issue #185; D43).
  */
 
 /** A seam input — identity and the declared labels only (types.ts §2.5c). */
@@ -84,6 +87,43 @@ describe("the git-backed artifact producer", () => {
 
       // Staging is still not recording: the index is invisible too.
       git(["add", "-A"]);
+      expect(produce(producerInput()).digest).toBe(recorded);
+    });
+  });
+
+  it("digests the tree of the commit HEAD names — never the commit itself", () => {
+    withTempRepo("producer-tree-not-commit", (repo, git) => {
+      const produce = GitArtifactProducer(repo);
+      const recorded = produce(producerInput()).digest;
+
+      // Another commit, the identical tree content: the digest must not
+      // move. The input source is the tree of the commit HEAD names —
+      // digest the commit oid instead and this pin goes red (issue #185;
+      // D43's fixed digest input).
+      git(["checkout", "-b", "same-tree"]);
+      git(["commit", "--allow-empty", "-m", "release-craft: same tree, another commit"]);
+      expect(produce(producerInput()).digest).toBe(recorded);
+    });
+  });
+
+  it("a HEAD move mid-attempt changes the digest, and checking the attempt's branch back restores it", () => {
+    withTempRepo("producer-head-move-drift", (repo, git) => {
+      const produce = GitArtifactProducer(repo);
+      const recorded = produce(producerInput()).digest;
+      const branch = git(["symbolic-ref", "--short", "HEAD"]).trim();
+
+      // The declared precondition's loud face (issue #185; D43): another
+      // process checks out another branch mid-attempt and records content
+      // there — the drift is not swallowed. The digest changes exactly as
+      // any recorded-content change does, and the attempt's own digest
+      // returns when HEAD comes back: identical recorded content digests
+      // identically, and nothing retains the moved branch's identity.
+      git(["checkout", "-b", "drifted"]);
+      writeFileSync(join(repo, "drift.txt"), "recorded on the moved branch\n");
+      commitAll(git, "ecoma: record content elsewhere");
+      expect(produce(producerInput()).digest).not.toBe(recorded);
+
+      git(["checkout", branch]);
       expect(produce(producerInput()).digest).toBe(recorded);
     });
   });
