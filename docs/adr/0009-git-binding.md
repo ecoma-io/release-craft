@@ -151,8 +151,8 @@ job is to express that discipline over git, not to invent a second one.
    of real content.
    Amendment (issue #185; D43): the digest input is fixed as the
    recorded tree of the commit `HEAD` names at the call — one atomic
-   `rev-parse` read per invocation, the binding's one ambient-ref read,
-   never the commit itself — and `HEAD`-stability is a declared
+   `rev-parse` read per invocation, the producer's one ambient-`HEAD`
+   read, never the commit itself — and `HEAD`-stability is a declared
    precondition of the binding: `HEAD` names one commit for the span of
    an attempt. Moving it in the consumer's checkout mid-attempt is a
    caller violation, and its failure mode is loud at the binding's only

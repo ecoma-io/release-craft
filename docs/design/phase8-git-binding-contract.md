@@ -212,9 +212,9 @@ mint(tag, target) — the binding's tag door, not the port —
   stable across identical content, different under any content change.
 - The digest input is fixed: the recorded tree of the commit `HEAD`
   names at the call — one atomic `rev-parse` read per invocation, the
-  binding's one ambient-ref read, and never the commit itself (the same
-  tree content under a different commit digests identically; the test
-  pins the input source — mutating it to the commit oid goes red).
+  producer's one ambient-`HEAD` read, and never the commit itself (the
+  same tree content under a different commit digests identically; the
+  test pins the input source — mutating it to the commit oid goes red).
 - The producer carries one declared precondition (issue #185; D43):
   **`HEAD` names one commit for the span of an attempt.** Moving `HEAD`
   in the consumer's checkout mid-attempt is a caller violation of the
