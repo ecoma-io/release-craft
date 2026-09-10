@@ -8,9 +8,12 @@
  * succeed there — its `git rev-parse` exits 128, the install fails, and the
  * run door is never reached.
  *
- * This fixture rebuilds the materialization's exact shape — the two files
- * the install consumes, `package.json` and `pnpm-lock.yaml`, copied from
- * this repository, no `.git`, under the tmpdir — and pins the scripts-free
+ * This fixture rebuilds the materialization's exact shape — the three
+ * files the install consumes, `package.json`, `pnpm-lock.yaml`, and the
+ * policy file `pnpm-workspace.yaml` (pnpm 11.25 verifies the lockfile
+ * against the supply-chain age policy declared there; the runner's
+ * archive materialization carries it, so the fixture must too), copied
+ * from this repository, no `.git`, under the tmpdir — and pins the
  * posture both ways (§2.2): without the flag, pnpm runs the package's
  * lifecycle scripts and they die; with the flag the composite's step
  * carries, the same install completes in the same tree. The metadata row
@@ -37,6 +40,7 @@ function withMaterialization(fn: (dir: string) => void): void {
   try {
     copyFileSync(join(REPO_ROOT, "package.json"), join(dir, "package.json"));
     copyFileSync(join(REPO_ROOT, "pnpm-lock.yaml"), join(dir, "pnpm-lock.yaml"));
+    copyFileSync(join(REPO_ROOT, "pnpm-workspace.yaml"), join(dir, "pnpm-workspace.yaml"));
     fn(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
