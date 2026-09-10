@@ -291,7 +291,6 @@ describe("the certification fixture · A-memory", () => {
     expect(invocations).toBe(2);
     expect(recordedTos(stores.ledger.tail(attemptId), "hook:announce")).toStrictEqual([
       "started",
-      "started",
       "completed",
     ]);
   });

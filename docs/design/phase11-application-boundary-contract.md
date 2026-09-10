@@ -496,7 +496,8 @@ left open, each with its proposed default:
    `abort`, and the observation, whose same reconstruction (and the
    residuals it would close — the stable-scope dead lock and the
    prerelease tail-strand) is the maintainer's call, its own reviewed
-   change when it lands.
+   change when it lands; the holder policy that decides what may
+   supersede a dead holder's claim stays tracked as #227.
 7. **Multi-line runs.** The fixtures run one line per run (M-02's
    posture) and the proposal keeps `lineIds` per run; a whole-plan pass
    needs a cross-line claim-ordering decision and is deferred until a

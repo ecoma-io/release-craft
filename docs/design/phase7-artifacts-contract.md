@@ -156,7 +156,18 @@ obligation 6 machinery). Identity within a generation is the digest
 (ADR-0008 decision 6): a second completion record for the same
 `artifact:<id>` whose recorded digest differs from the first is a
 `conflict` (E-02's done-vs-conflict) — same digest replays as
-`completed` carrying the recorded proof.
+`completed` carrying the recorded proof. A completion record that
+records no generation triple beside one that does is the same `conflict`:
+a missing side is a disagreement, the evidence verification's
+fail-closed rule (ADR-0005 decision 8) — a partial proof judges, it
+never passes. Matching digests replay the stored record as
+`completed`. A generation recording no triple at all passes this
+reconciliation, but on the artifacts path the replay door's
+generation-record invariant governs before any replay — a completed
+record without its generation record is the door's fail-closed
+contradiction (verified: `src/execution/artifacts.ts`), never a
+replay; the all-bare row that replays as `completed` is the hooks
+path's (phase 6 §2.4).
 
 ### 2.4 The dependency DAG and its verify precondition
 
@@ -199,6 +210,12 @@ artifact-side).
   engine computes no digest.
 - Determinism: identical declarations, ledgers, claims, and producers
   classify identically — provable by double-run.
+- Recorded digest reconciliation on replay/resume — the producer never
+  re-runs to answer replay; completions agreeing on one digest (or
+  recording no generation triple at all) replay `completed`, a
+  disagreement — including a triple-less completion beside a proven one
+  — is the `digest-conflict` refusal; kill-anywhere holds at artifact
+  boundaries.
 - Records deep-freeze on append (the ledger's discipline, unchanged);
   artifact observations are recorded values, frozen when they land.
 - Coordinates are labels: no parse, compare, order, or dereference of a
@@ -229,10 +246,11 @@ fixtures:
    digests ride the completion record verbatim.
 4. **Digest reconciliation on replay/resume** — the producer never
    re-runs to answer replay; same digest replays `completed`, a
-   differing digest on the same `artifact:<id>` is a `conflict`;
-   kill-anywhere holds at artifact boundaries (truncation classifies
-   identically under double-run; resume continues at the recorded next
-   step).
+   differing digest on the same `artifact:<id>` is a `conflict`, and a
+   completion record with no generation triple beside a proven one is
+   the same `conflict` (§2.3's partial-proof rule); kill-anywhere holds
+   at artifact boundaries (truncation classifies identically under
+   double-run; resume continues at the recorded next step).
 5. **The publish gate and fail-closed proofs** — publish over an
    incomplete generation is the recorded refusal; missing postcondition
    proof → `failed` record + `blocked(validation:artifact:...)` naming

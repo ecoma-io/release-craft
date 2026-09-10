@@ -14,6 +14,7 @@ import {
   InvalidExecutionTransitionError,
   assembleMemoryStores,
   attemptIdentity,
+  stageContentFingerprint,
   MemoryAttemptRegister,
   plan,
   type RunDeclarations,
@@ -313,13 +314,21 @@ describe("§2.8 — satisfied-externally: ledger-first done-ness never terminali
     });
     expect(resolved.kind).toBe("resolved");
     const attemptId = stopped.handle.attemptId;
+    // §2.6's consumer-side derivation: the external satisfaction is keyed
+    // to the request's own content fingerprint, re-derived from the line's
+    // declared inputs (the minted tag publish observes) — never from the
+    // attempt identity, which an external observer has no stake in.
+    const line = planLineFor(
+      plannedOf(plan(runRequest(liveWorld(), "main", [beta]).input)).plan,
+      "main",
+    );
     stores.ledger.noteExternal({
       attemptId,
       stepKey: "publish",
       satisfaction: {
         attribution: { attemptId, actor: "auditor" },
         evidence: "evidence:external-publish",
-        contentFingerprint: `content:publish:${attemptId}`,
+        contentFingerprint: stageContentFingerprint("publish", line),
       },
     });
     // With the hook succeeding, the resume walks to publish and reads the
@@ -344,6 +353,58 @@ describe("§2.8 — satisfied-externally: ledger-first done-ness never terminali
       runRequest(liveWorld(), "main", [beta], succeedingAttestDeclaration()),
     );
     expect(again.kind).toBe("satisfied-externally");
+  });
+
+  it("an external satisfaction keyed to different declared content is a recorded conflict (E-03, #195)", () => {
+    const { engine, stores } = freshAssembly();
+    const stopped = engine.run(runRequest(liveWorld(), "main", [beta], attestDeclaration()));
+    if (stopped.kind !== "blocked" || stopped.handle === null || stopped.planId === null) {
+      throw new Error("fixture broken: expected a blocked outcome with a plan id");
+    }
+    expect(
+      engine.resolve(stopped.handle, "hook:attest", {
+        kind: "revalidation",
+        planFingerprint: stopped.planId,
+      }).kind,
+    ).toBe("resolved");
+    // The observed satisfaction declares DIFFERENT content — the rc
+    // stream's tag where the run walks the beta stream's — so the §2.6
+    // digest disagrees with the request's own, and the resume must record
+    // the conflict instead of silently executing over it.
+    const foreignLine = planLineFor(
+      plannedOf(plan(runRequest(liveWorld(), "main", [rc]).input)).plan,
+      "main",
+    );
+    const attemptId = stopped.handle.attemptId;
+    stores.ledger.noteExternal({
+      attemptId,
+      stepKey: "publish",
+      satisfaction: {
+        attribution: { attemptId, actor: "auditor" },
+        evidence: "evidence:foreign-publish",
+        contentFingerprint: stageContentFingerprint("publish", foreignLine),
+      },
+    });
+    const outcome = engine.resume(
+      stopped.handle,
+      runRequest(liveWorld(), "main", [beta], succeedingAttestDeclaration()),
+    );
+    expect(outcome.kind).toBe("conflict");
+    if (outcome.kind !== "conflict") {
+      throw new Error("expected the differing-content satisfaction to conflict");
+    }
+    expect(outcome.detail).toContain("external evidence inconsistent");
+    const last = outcome.drives.find((drive) => drive.stepKey === "publish");
+    if (last === undefined || last.outcome.kind !== "conflict") {
+      throw new Error("expected the publish drive to carry the recorded conflict");
+    }
+    // The conflict is recorded state, never terminal: the attempt stands
+    // open for the human decision (§2.8's table).
+    const observation = engine.observe({ kind: "attempt", handle: stopped.handle });
+    if (observation.kind !== "attempt") {
+      throw new Error(`expected an attempt observation, got ${observation.kind}`);
+    }
+    expect(observation.state).toBe("executing");
   });
 });
 

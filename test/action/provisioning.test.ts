@@ -57,15 +57,64 @@ function withMaterialization(fn: (dir: string) => void): void {
  * unflagged install exits 0, the materialization shape stops reproducing the
  * defect. The installs therefore run on the binding's hermetic floor, the
  * same one the world fixture's closure runs on — sufficiency of that leak is
- * proven by the positive control leg below. The agent markers are stripped on
- * top to pin the reporter's shape: they never moved the exit code (refuted as
- * the historical trigger), but pnpm switches to NDJSON output when they leak,
- * and the fixture reads the reporter's lines as fault-shape evidence.
+ * proven by the positive control leg below.
+ *
+ * The agent markers are stripped on top to pin the reporter's shape: they
+ * never moved the exit code (refuted as the historical trigger), but a
+ * marker leak flips the install's reporter to NDJSON, and the fixture reads
+ * the reporter's lines as fault-shape evidence. The emitter is not pnpm
+ * itself — no pnpm bundle on the writer's machine, 10.32.0 through 12.3.4,
+ * carries the banner (#221): moon routes task commands through proto's
+ * shims (`~/.proto/shims` leads the task PATH ahead of the corepack shim),
+ * and proto prints its NDJSON agent banner onto the child's stdout when any
+ * of its detection inputs survives the spawn env. The old three-variable
+ * strip leaked exactly such an input — the ambient `AI_AGENT` — which is
+ * why the failure fired only in moon-driven full-suite runs (proto-first
+ * PATH) and never in isolation (corepack-first PATH) or CI (no agent
+ * ambient). The list below mirrors the env inputs that fire
+ * `detect_agent_from_vars` in the `ai_env` crate 0.1.3 — the version proto
+ * 0.60.2 pins in its Cargo.toml — read from the crate source, plus `AGENT`,
+ * kept from the original strip as defense in depth for detectors beyond
+ * proto's. The source, not a bisect, is the authority here: a bisect that
+ * sets each candidate to a generic non-empty value is structurally blind to
+ * the crate's value-gated checks (`CURSOR_EXTENSION_HOST_ROLE` fires only
+ * on `agent-exec`; `AI_AGENT` only on a self-id it classifies), and the
+ * first bisect's candidate list simply omitted `CODEX_CI` and `OPENCODE`.
+ * For the two value-gated inputs the strip still takes the exact key for
+ * ANY value, an over-strip that is correct for a sanitizing fixture: the
+ * env pin below asserts key absence, which only a value-independent rule
+ * can guarantee, and no leg of this fixture needs a non-agent
+ * extension-host role or self-id to survive the spawn env. (The crate also
+ * reads `CLAUDE_CODE_IS_COWORK`, but only to refine the classification
+ * after `CLAUDECODE`/`CLAUDE_CODE` already fired, so it cannot flip the
+ * reporter alone; and it probes the filesystem for `/opt/.devin`, which no
+ * env strip can cover.) With none of these inputs set, the detection never
+ * fires and no proto resolution can flip the reporter; the banner line
+ * itself is additionally event-gated inside proto — it rides exec-error
+ * events, and healthy runs print nothing even where a marker leaked — so
+ * the pins below, not the reporter assertion alone, carry the guarantee.
  */
 const AGENT_MARKERS: Record<string, true> = {
+  AI_AGENT: true,
+  AGENT: true,
+  ANTIGRAVITY_AGENT: true,
+  AUGMENT_AGENT: true,
   CLAUDECODE: true,
   CLAUDE_CODE: true,
-  AGENT: true,
+  CODEX_CI: true,
+  CODEX_SANDBOX: true,
+  CODEX_THREAD_ID: true,
+  COPILOT_ALLOW_ALL: true,
+  COPILOT_CLI: true,
+  COPILOT_GITHUB_TOKEN: true,
+  COPILOT_MODEL: true,
+  CURSOR_AGENT: true,
+  CURSOR_EXTENSION_HOST_ROLE: true,
+  CURSOR_TRACE_ID: true,
+  GEMINI_CLI: true,
+  OPENCODE: true,
+  OPENCODE_CLIENT: true,
+  REPL_ID: true,
 };
 
 const INSTALL_ENV: NodeJS.ProcessEnv = Object.fromEntries(
@@ -100,12 +149,48 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
         );
         // The hermeticity contract, pinned so the floor is mutation-proven:
         // the env handed to the spawns carries none of the markers whose
-        // ambient presence flips pnpm's reporter to NDJSON. Removing the
-        // strip fails here wherever the harness ambient carries them.
+        // ambient presence flips the spawned toolchain's reporter to NDJSON
+        // (proto's detection, see AGENT_MARKERS). Removing the strip fails
+        // here wherever the harness ambient carries any of them — it does
+        // on agent-driven machines (`AI_AGENT`).
         expect(
           Object.keys(INSTALL_ENV).filter((key) => key in AGENT_MARKERS),
           "the fixture's installs inherited the ambient agent markers — the strip was removed",
         ).toEqual([]);
+        // The strip itself, pinned against silent trimming: every env input
+        // `ai_env` 0.1.3's `detect_agent_from_vars` fires on — nineteen of
+        // them, in the crate's own evaluation order (see AGENT_MARKERS for
+        // the source) — must stay in the map. `AGENT` is deliberately
+        // unpinned: it is not one of the crate's inputs, it is this
+        // fixture's own defense-in-depth addition. The env pin above is
+        // vacuous on machines whose ambient lacks a given marker, so a
+        // "simplifying" deletion of exactly those entries would otherwise
+        // pass everywhere until an ambient that carries one meets the
+        // proto-first PATH again.
+        expect(Object.keys(AGENT_MARKERS)).toEqual(
+          expect.arrayContaining([
+            // The crate's evaluation order, top to bottom.
+            "CURSOR_TRACE_ID",
+            "CURSOR_AGENT",
+            "CURSOR_EXTENSION_HOST_ROLE",
+            "GEMINI_CLI",
+            "CODEX_SANDBOX",
+            "CODEX_CI",
+            "CODEX_THREAD_ID",
+            "ANTIGRAVITY_AGENT",
+            "AUGMENT_AGENT",
+            "OPENCODE_CLIENT",
+            "OPENCODE",
+            "CLAUDECODE",
+            "CLAUDE_CODE",
+            "REPL_ID",
+            "COPILOT_CLI",
+            "COPILOT_MODEL",
+            "COPILOT_ALLOW_ALL",
+            "COPILOT_GITHUB_TOKEN",
+            "AI_AGENT",
+          ]),
+        );
         expect(
           scriptsRun.status,
           `the unflagged install exited 0 — the materialization shape no longer reproduces the defect:\n${scriptsRun.stdout}${scriptsRun.stderr}`,
@@ -124,14 +209,14 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
           witnessed,
           "the unflagged install failed without pnpm's ELIFECYCLE marker — the cause is not a lifecycle script",
         ).toMatch(/\[ELIFECYCLE\]/);
-        // The reporter's shape, pinned observably: pnpm's NDJSON agent mode
+        // The reporter's shape, pinned observably: the NDJSON agent banner
         // would ride this discriminator line into the output above and
         // re-shape the fault evidence the assertions read. In a marker-free
         // CI ambient this passes vacuously; wherever the markers leak, it
         // fails loudly — the strip's contract is never silently lost.
         expect(
           witnessed,
-          "the install reported through pnpm's NDJSON agent reporter — the ambient markers leaked past the floor",
+          "the install reported through the toolchain shim's NDJSON agent reporter — the ambient agent markers leaked past the floor",
         ).not.toMatch(/Detected an AI agent environment/);
       });
       // The positive control, deterministic by construction: the SAME tree
