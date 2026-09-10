@@ -24,9 +24,19 @@ import {
   MemoryLedger,
   classifyResume,
   ledgerRequestStep,
+  resolveBlocked,
+  resume,
   type ChannelTransitionRecord,
+  type HookEffect,
 } from "../../src/index.js";
-import { actor, applyPlannedChannelTransitions, liveWorld, snapshot } from "./matrix.js";
+import {
+  actor,
+  applyPlannedChannelTransitions,
+  hookEffects,
+  liveWorld,
+  matrixHooks,
+  snapshot,
+} from "./matrix.js";
 import {
   freshStores,
   fullDeclaration,
@@ -34,7 +44,7 @@ import {
   replayReference,
   tailBytes,
 } from "./matrix-ledger.js";
-import type { RunResult as LedgerRunResult } from "./matrix-ledger.js";
+import type { Declarations, RunResult as LedgerRunResult } from "./matrix-ledger.js";
 
 // ---------------------------------------------------------------------------
 // Shared staging helpers — recorded declarations, no fixture computes
@@ -226,6 +236,109 @@ describe("V7 — recovery, replayed", () => {
     expect(stores.ledger.step(stopped.attempt.attemptId, "artifact:changelog")).toBe("completed");
     expect(stores.ledger.step(stopped.attempt.attemptId, "artifact:publish-all")).toBe("completed");
     const uninterrupted = replayReference(snapshot(liveWorld()), "main", [beta], fullDeclaration());
+    expect(completedKeys(resumed)).toStrictEqual(completedKeys(uninterrupted));
+  });
+
+  it("V7 · hook:attest failure · the refusal records, the attempt blocks, and only a resolution re-arms", () => {
+    const world = liveWorld();
+    const stores = freshStores();
+    const hooks = matrixHooks();
+    const declaration: Declarations = {
+      ...fullDeclaration(),
+      hooks: [hooks.attest, hooks.notify],
+      // The effect RUNS and its observation refuses the proof — the
+      // engine records what the caller-injected seam returned (§2.5).
+      hookEffects: hookEffects({
+        attest: {},
+        notify: { evidence: "evidence:notify" },
+      }),
+    };
+    const stopped = runLedgerRelease({
+      stores,
+      world,
+      lineId: "main",
+      intents: [beta],
+      declarations: declaration,
+    });
+    expect(stopped.stoppedAt).toBe("publish");
+    expect(stopped.attempt.state).toBe("blocked");
+    expect(stopped.attempt.blockedCause).toBe("validation:hook:attest:evidence-present");
+    // The failure is a recorded step in the ledger, never a throw —
+    // `failed` sits in the tail.
+    expect(stores.ledger.step(stopped.attempt.attemptId, "hook:attest")).toBe("failed");
+    // Blocked without a recorded resolution: escalation, not revival (E-04).
+    expect(classifyResume(stopped.attempt, stores.ledger).kind).toBe("escalate");
+  });
+
+  it("V7 · hook:sign retried · the first refusal blocks, the resolution re-arms, the second observation lands beside it", () => {
+    const world = liveWorld();
+    const stores = freshStores();
+    const hooks = matrixHooks();
+    let signCalls = 0;
+    const signEffect: HookEffect = (input) => {
+      signCalls += 1;
+      return {
+        attribution: { attemptId: input.attemptId, actor: "automation" },
+        ...(signCalls === 1 ? {} : { contentFingerprint: `content:sign:${String(signCalls)}` }),
+      };
+    };
+    const declaration: Declarations = {
+      ...fullDeclaration(),
+      hooks: [hooks.sign, hooks.notify],
+      hookEffects: new Map<string, HookEffect>([
+        ...hookEffects({ notify: { evidence: "evidence:notify" } }),
+        ["sign", signEffect],
+      ]),
+    };
+    const stopped = runLedgerRelease({
+      stores,
+      world,
+      lineId: "main",
+      intents: [beta],
+      declarations: declaration,
+    });
+    expect(stopped.stoppedAt).toBe("publish");
+    expect(stopped.attempt.state).toBe("blocked");
+    expect(stopped.attempt.blockedCause).toBe("validation:hook:sign:content-fingerprint-present");
+
+    // resolveBlocked is the only re-arm door: the resolution appends to the
+    // ledger, the attempt re-arms, and classification walks back to the
+    // refused key (§2.7).
+    resolveBlocked(
+      stopped.attempt,
+      "hook:sign",
+      { kind: "revalidation", planFingerprint: stopped.attempt.planFingerprint },
+      stores.ledger,
+      actor(stopped.attempt),
+    );
+    const rearmed = resume(stopped.attempt, "revalidation recorded");
+    expect(classifyResume(rearmed, stores.ledger)).toStrictEqual({
+      kind: "resume",
+      from: "hook:sign",
+    });
+    // Re-run the SAME release over the SAME persisted stores — the walk
+    // re-enters at the recorded tail's refused key and the second
+    // observation lands.
+    stores.rearm(rearmed);
+    const resumed = runLedgerRelease({
+      stores,
+      world,
+      lineId: "main",
+      intents: [beta],
+      declarations: declaration,
+    });
+    expect(resumed.stoppedAt).toBeNull();
+    // The retry appends beside the refusal — the failed record stays in the
+    // tail, never rewritten (§2.5).
+    expect(stores.ledger.step(stopped.attempt.attemptId, "hook:sign")).toBe("completed");
+    const signRecords = stores.ledger
+      .tail(stopped.attempt.attemptId)
+      .flatMap((record) =>
+        record.kind === "step" && record.record.stepKey === "hook:sign" ? [record.record.to] : [],
+      );
+    expect(signRecords).toStrictEqual(["started", "failed", "started", "completed"]);
+    expect(signCalls).toBe(2);
+    const uninterrupted = replayReference(snapshot(liveWorld()), "main", [beta], declaration);
     expect(completedKeys(resumed)).toStrictEqual(completedKeys(uninterrupted));
   });
 });
