@@ -1,7 +1,7 @@
 name: Feature request
 description: Propose a capability for the release engine or its foundation.
 title: "feat: "
-labels: ["enhancement", "needs triage"]
+labels: ["needs triage"]
 body:
   - type: markdown
     attributes:
