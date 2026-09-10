@@ -126,6 +126,22 @@ nothing less.
    re-evaluates exactly as `acquire` does, so the port's release — like
    the in-memory store's — cannot surface a lost race as an error;
    sustained same-line contention costs retries, not failures.
+   Amendment landed in #231 (issue #194): the release half of that
+   sentence is engine-unreachable on today's main. The token is minted
+   at `acquire`
+   and the acquiring process is its only carrier — no engine code path
+   calls `claims.release` (the binding's passthrough is the port's only
+   caller in `src/`), and a fresh process cannot name the token, so
+   "released by token" never fires after process death. Cross-process
+   recovery remains unsupported: a restarted process is a fresh attempt
+   id (the durable register's ordinal), and the same-scope adjudication
+   denies it as a non-holder of the dead holder's still-recorded claim —
+   a permanent denial for a stable-version record (the stable-scope dead
+   lock, E-07) and a `holderSequence+1` success that strands the dead
+   attempt's tail for a prerelease sequence (phase 11 contract §2.7's
+   accepted residuals). The durable plan-keyed attempt lookup and the
+   holder policy that would make a takeover honest are tracked as #227,
+   not provided by the register.
 
 7. **Denials match the in-memory store exactly (issue #69, folded
    here).** An exclusion-path denial carries no `holderSequence` — the

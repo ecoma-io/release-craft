@@ -341,18 +341,65 @@ RunRequest
 The fixtures carry attempt values in a process map keyed by `planId`; the
 boundary inherits the posture under a name and a rule. The assembly owns
 an attempt store (process-local today), `resume` continues the SAME
-attempt from it, and a resume naming a plan it does not carry is a
-returned refusal (`unknown attempt`, naming the handle) — never a fresh
-ordinal silently allocated over someone else's recorded tail. The store
-is bookkeeping, not authority: the recorded tail and the claim store are
-the truth, a stale carried attempt reconciles through classification
-(`stale`/`escalate`) and the claim protocol, and two processes resuming
-one plan each classify against the recorded tail while the claims
-arbitrate (invariant 2.7 — the map never gates anyone). Whether the
-attempt store becomes a durable port — the plan-keyed lookup door the
-ledger port does not name today — is
+attempt from it, and a carried-attempt door naming a plan the process
+does not carry is a returned refusal (`unknown attempt`, naming the
+handle) — never a fresh ordinal silently allocated over someone else's
+recorded tail. All four carried-attempt doors refuse this way —
+`resume`, `resolve`, `abort`, and the attempt observation (verified:
+`carriedEntry` in `src/app/engine.ts`) — so on today's main a mid-flight
+attempt is untouchable from any process but the one that opened it: the
+recovery support envelope is the process. (Pinned as the certification
+fixture's `x-01`, phase 14 §3.5.)
+
+The store is bookkeeping, not authority: the recorded tail and the claim
+store are the truth, a stale carried attempt reconciles through
+classification (`stale`/`escalate`) and the claim protocol. Two claimants
+for one scope are arbitrated by the claim store's CAS (invariant 2.7) —
+and never two resumers of one attempt: resuming is the same holder
+re-acquiring, and the store's idempotent same-holder adjudication returns
+the held claim with no arbitration at all.
+
+Across processes the map is exactly what gates: a fresh engine carries no
+entry, every carried-attempt door refuses before any claim is read, and
+the claims never arbitrate a cross-process resume. The one cross-process
+arbitration today is a fresh `.run`'s fresh ordinal meeting a recorded
+claim — the split the two residuals below name.
+
+The refusal is the envelope's soft edge; the fresh allocation is the hard
+one. A restarted process re-entering the same plan is a fresh `.run`: the
+git register's ordinal counter is durable
+(`refs/release-craft/register/<planId>`), so the restart mints a NEW
+attempt id (`attempt_sha256` over plan id and ordinal) and meets the dead
+holder's still-recorded claim as a non-holder. The two scope kinds then
+diverge, and both divergences are accepted residuals:
+
+- **The stable-scope dead lock (E-07).** A stable-version claim is a
+  record, not a lease: releasing its token is a no-op, no engine code path
+  calls `claims.release` (the binding's passthrough is the port's only
+  caller in `src/`), and the token itself is engine-unreachable after
+  process death. The restart's denial names the dead holder and repeats
+  forever — the plan can never complete.
+- **The prerelease E-08 retry at holderSequence+1 stranding the tail.**
+  A prerelease-sequence denial carries the winner's sequence, and where
+  the declared retry bound allows it, the E-08 retry at
+  `holderSequence+1` succeeds past the dead lease: the restart completes
+  the plan at the next sequence, stranding the dead attempt's unrecorded
+  tail work and consuming the sequence. (The CLI's default
+  `--max-retries 0` exhausts the bound first, landing the explicit
+  conflict — the stranding is the declared bound's own choice.)
+
+(The memory assembly never sees this divergence — its register restarts
+the counter per engine instance, so a restarted memory engine re-mints
+the same attempt id; only the durable git register produces it.)
+
+Whether the attempt store becomes a durable port — the plan-keyed lookup
+door the ledger port does not name today — is
 [§4](#4-open-questions-for-the-maintainer) question 6, and a port
-widening is its own reviewed change, not a drive-by.
+widening is its own reviewed change, not a drive-by: tracked as #227,
+which owns the durable lookup, the holder policy for a dead holder's
+claim, and the fingerprint pinning. Until it lands, cross-process
+recovery is unsupported — the envelope is the process, and the two
+residuals above are its recorded cost.
 
 ### 2.8 How outcomes cross the boundary
 
@@ -430,8 +477,10 @@ in the message (phase 4 §2.2, §2.7).
   and waits for a read.
 - **Claims are the concurrency control** (invariant 2.7): no mutex, no
   queue, no lease, no single-writer assumption enters at the boundary;
-  the claim store's CAS is the arbitration, and the attempt store gates
-  nobody ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)).
+  the claim store's CAS is the arbitration, and within the process the
+  attempt store gates nobody — across processes its refusals are the
+  envelope ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)),
+  never a lock.
 - **One channel door** (invariant 2.8): every channel move flows through
   the wired stage executor at [§2.4](#24-the-channel-transition-wiring-point)'s
   point; a boundary that moves a channel anywhere else is wrong by
@@ -486,10 +535,13 @@ left open, each with its proposed default:
    through the package barrel; whether they reuse the vertical matrix's
    fixture data is the next slice's call.
 6. **The attempt store's future.** Process-local bookkeeping now
-   ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)); a durable
-   plan-keyed attempt lookup (a ledger port widening or a register read
-   door) is the honest cross-process resume and is its own reviewed
-   change — the maintainer decides when.
+   ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)) —
+   cross-process recovery is unsupported on main, and §2.7's two
+   residuals are its recorded cost. The durable plan-keyed attempt
+   lookup (a ledger port widening or a register read door), the holder
+   policy that decides what may supersede a dead holder's claim, and the
+   fingerprint pinning a durable resume needs are one reviewed change —
+   tracked as #227; the maintainer decides when.
 7. **Multi-line runs.** The fixtures run one line per run (M-02's
    posture) and the proposal keeps `lineIds` per run; a whole-plan pass
    needs a cross-line claim-ordering decision and is deferred until a
@@ -540,7 +592,7 @@ barrel only. The phase's named fixtures:
   [ADR-0012](../adr/0012-channel-transition.md)'s own slices; the wiring
   point here is decided, the port is not.
 - A durable attempt lookup — [§4](#4-open-questions-for-the-maintainer)
-  question 6's own reviewed change.
+  question 6's own reviewed change, tracked as #227.
 - Remote effect executors for the publish stage — adapter and publishing
   slice territory ([ADR-0007](../adr/0007-hooks-as-steps.md) decision 12;
   [ADR-0008](../adr/0008-artifact-graph.md) decision 12;
