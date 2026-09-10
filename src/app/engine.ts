@@ -27,6 +27,7 @@ import {
   attemptIdentity,
   block,
   classifyResume,
+  contentFingerprint,
   effectiveSteps,
   isArtifactStepKey,
   isHookStepKey,
@@ -52,6 +53,7 @@ import {
   type StepKey,
 } from "@ecoma-io/release-craft/execution";
 import {
+  canonicalJson,
   plan as planRelease,
   type PlanLine,
   type PlanningInput,
@@ -101,11 +103,6 @@ type WalkStop =
   | { readonly kind: "channel-conflict"; readonly detail: string }
   | { readonly kind: "channel-ambiguous"; readonly detail: string };
 
-/** The step content fingerprint convention the fixtures pin: the stage and
- * the attempt identity — the idempotency key every replay is proven over. */
-const contentFingerprintFor = (stage: StepKey, attemptId: string): string =>
-  `content:${stage}:${attemptId}`;
-
 /** The attribution every record this run appends carries (E-09). */
 const attributionFor = (handle: AttemptHandle): Attribution => ({
   attemptId: handle.attemptId,
@@ -116,6 +113,58 @@ const attributionFor = (handle: AttemptHandle): Attribution => ({
  * derivation verbatim: the first stream's tag, else the stable tag. */
 const plannedTagOf = (planLine: PlanLine): string | null =>
   planLine.streams[0]?.tag ?? planLine.stable?.tag ?? null;
+
+/**
+ * One canonical stage's content fingerprint (phase 5 contract §2.6):
+ * `content_sha256:<hex>` over the canonical JSON of the stage's declared
+ * content inputs — the plan-derived values that stage's record describes,
+ * the same derivation on the write-ahead start and the completion, never
+ * the attempt identity. The table is the walk's own reading of "declared
+ * content inputs" (issue #195): the plan stage digests the whole plan line
+ * (the attempt opens over it), claim the scope the boundary derives,
+ * prepare and commit the change set they land, validate the preconditions
+ * it re-proves, the tag stages the minted tag they bind, and the channel
+ * stage the planned moves it executes — each keyed to the line and the
+ * stage, so two stages over one line never collide. Attempt identity stays
+ * out on purpose: the same declared content under any attempt hashes
+ * equal, so replay equality is judged by content alone (E-02, E-03) and a
+ * §2.6 consumer re-derives every digest from the plan line. The mint
+ * target is equally out: it is the tag door's own input, carried by the
+ * run and recorded in the minted ref — never a field of the stage's
+ * record. Pure and closed: no clock, no environment, no identity.
+ */
+export const stageContentFingerprint = (stage: StageKey, planLine: PlanLine): string => {
+  const lineId = planLine.lineId;
+  switch (stage) {
+    case "plan":
+      return contentFingerprint({ line: canonicalJson(planLine), lineId, stage });
+    case "claim":
+      return contentFingerprint({
+        lineId,
+        scope: canonicalJson(claimScopeForLine(planLine)),
+        stage,
+      });
+    case "prepare":
+    case "commit":
+      return contentFingerprint({ changes: canonicalJson(planLine.changes), lineId, stage });
+    case "validate":
+      return contentFingerprint({
+        lineId,
+        preconditions: canonicalJson(planLine.preconditions),
+        stage,
+      });
+    case "tag":
+    case "publish":
+    case "verify":
+      return contentFingerprint({ lineId, stage, tag: canonicalJson(plannedTagOf(planLine)) });
+    case "channel-transition":
+      return contentFingerprint({
+        lineId,
+        moves: canonicalJson(plannedChannelMoves(planLine)),
+        stage,
+      });
+  }
+};
 
 /** The recorded abandonment a fresh run must answer for (ADR-0013 decision
  * 4): a plan's attempt sequence is derived, never looked up — the fresh
@@ -324,7 +373,7 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
         ctx.attempt,
         stage,
         attributionFor(ctx.handle),
-        contentFingerprintFor(stage, ctx.handle.attemptId),
+        stageContentFingerprint(stage, ctx.planLine),
       );
     }
     const outcome: RequestStepOutcome = ledgerRequestStep(
@@ -332,7 +381,7 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
       {
         stepKey: stage,
         attribution: attributionFor(ctx.handle),
-        contentFingerprint: contentFingerprintFor(stage, ctx.handle.attemptId),
+        contentFingerprint: stageContentFingerprint(stage, ctx.planLine),
         ...(preconditions === undefined ? {} : { preconditions }),
       },
       claimViewFor(ctx.claim, ctx.ports.claims, ctx.handle.attemptId),

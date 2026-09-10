@@ -122,7 +122,12 @@ export const scheduleHooks = (
     }
     // Replay (§2.2) first: the ledger projection answers, the effect
     // never re-runs to obtain a proof to compare — a completed hook
-    // replays even when the effects map carries no entry.
+    // replays even when the effects map carries no entry. Replay equals
+    // the artifacts' done-vs-conflict (§2.4, #195): the recorded
+    // completions' content proofs must agree, or the tail contradicts
+    // itself and the disagreement is a recorded conflict — never a silent
+    // pass over whichever completion reads last, and never a replay on a
+    // proof some earlier record denied.
     if (ledger.step(attempt.attemptId, step) === "completed") {
       // Recorded-vs-recorded content reconciliation on replay (§2.2): the
       // completion records must agree on one recorded content — E-02's
@@ -189,8 +194,15 @@ export const scheduleHooks = (
       break;
     }
     // Write-ahead start (ADR-0006 decision 2): the declared guard name,
-    // verbatim, durable before the effect may run.
-    ledger.appendStart(attempt, step, attribution, undefined, hook.guard);
+    // verbatim, durable before the effect may run. A start already
+    // durable for this step and attempt is reused — a crash between the
+    // write-ahead and its effect left the start behind, and appending a
+    // second start would record an execution that never began twice. A
+    // failed step restarts with a fresh start (§2.2).
+    const recorded = ledger.step(attempt.attemptId, step);
+    if (recorded === "none" || recorded === "failed") {
+      ledger.appendStart(attempt, step, attribution, undefined, hook.guard);
+    }
     // The seam (ADR-0007 decision 2): the effect runs; the engine records
     // what it returns. Nothing else is executed or stored.
     const observation = effect({
