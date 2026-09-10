@@ -21,14 +21,30 @@ export interface GitHubCredentials {
 /**
  * The refusal reasons a remote write can carry (contract §2.3). Each is a
  * recorded decision the caller observes: operator intervention for
- * `auth-expired` and `rate-limited`, a recorded conflict decision for
+ * `auth-expired`, `rate-limited`, `permission-denied`, and
+ * `unobservable-remote`; a recorded conflict decision for
  * `already-pushed-different-target` and `release-conflict`.
+ *
+ * `permission-denied` (issue #178) — the credential authenticated and the
+ * provider declined the request's authorization: the fine-grained-token
+ * "resource not accessible" answer, the git path's "Permission to
+ * `<repo>` denied to `<user>`". Distinct from `auth-expired` — rotating a
+ * valid token fixes nothing; the operator grants the scope.
+ *
+ * `unobservable-remote` (issue #176) — the provider answered 404 for a
+ * repo-scoped resource: the repository is private, missing, moved, or the
+ * token lacks read scope, and GitHub answers 404 — not 403 — for
+ * resources invisible to the caller. An observation that never happened
+ * is never a determinate absence (`absent` is claimed only over a
+ * repository the adapter observably reached).
  */
 export type RefusalReason =
   | "already-pushed-different-target"
   | "changelog-unrecorded"
   | "auth-expired"
   | "rate-limited"
+  | "permission-denied"
+  | "unobservable-remote"
   | "release-conflict";
 
 /**
@@ -37,9 +53,14 @@ export type RefusalReason =
  * only. The write-conflict and projection reasons name writes and
  * recorded-state decisions (`verifyRelease`'s `changelog-unrecorded` and
  * `release-conflict` are comparison decisions, not provider refusals) —
- * a listing never carries them.
+ * a listing never carries them. The read set widens with the vocabulary
+ * split (issues #176, #178): a 403 whose credential authenticated is
+ * `permission-denied`, and a repo-scoped listing's 404 is
+ * `unobservable-remote` — the collection exists whenever the repository
+ * is observable, so its 404 is the repository's invisibility.
  */
-export type ReadRefusalReason = "auth-expired" | "rate-limited";
+export type ReadRefusalReason =
+  "auth-expired" | "rate-limited" | "permission-denied" | "unobservable-remote";
 
 /** One ref the sync considered (contract §2.2): pushed, skipped (already
  *  satisfied), or refused. */
@@ -81,7 +102,11 @@ export type VerificationOutcome =
  *  the recorded tag (issue #60; contract §2.2; D28): absence is a
  *  determinate read — never a retryable transport failure and never a
  *  refusal of a write. The caller's action is the publication itself
- *  (the create path is idempotent, §2.4). */
+ *  (the create path is idempotent, §2.4). A release read's 404 alone
+ *  does not carry the verdict (#176): it is discriminated by the
+ *  repository probe first — `absent` is claimed only over a repository
+ *  the adapter observably reached; an unobservable one is the
+ *  `unobservable-remote` refusal. */
 export interface ReleaseAbsent {
   readonly kind: "absent";
 }

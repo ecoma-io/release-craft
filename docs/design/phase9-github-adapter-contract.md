@@ -102,7 +102,20 @@ or callback, consistent with the binding's synchronous discipline.
 tag as `absent` (issue #60): absence is a determinate read, never a
 `transport-failure` to retry and never a refusal of a write. The
 caller's action is the publication itself — `publishRelease`'s create
-path is idempotent (§2.4).
+path is idempotent (§2.4). A release read's 404 alone does not carry
+that verdict (issue #176): the same 404 answers a repository the
+credential cannot observe — a private or missing repository, a moved
+one, a token without read scope (GitHub answers 404, not 403, for
+resources invisible to the caller). The verdict is discriminated
+before it is claimed: the 404 read probes the repository itself
+(`GET /repos/{owner}/{repo}`), and only an observable repository makes
+the absence determinate — over an unobservable one the probe's own
+refusal (`unobservable-remote` on its 404, the credential and
+rate-limit shapes otherwise) stands, and the caller's action is the
+credential/owner/repo review. The probe is the absence claim's
+discriminator alone: `publishRelease` pays no probe — its create path
+never claims absence, and the create's own 404 answers the
+unobservable repository determinately (below).
 
 `reconcile`'s report claims its comparison only over the listings that
 are `listed` (issue #66): each of the two observations — the tag
@@ -132,9 +145,14 @@ today), and a truncated listing is never a passed comparison.
   `absent`).
 - `refused` — the provider declined the observation, with the reason
   and the refusal detail (decision 9's rate-limit reset timestamp on
-  `rate-limited`). A listing's refusal carries only `auth-expired` or
-  `rate-limited` — the operator-intervention classes; the write-conflict
-  and projection reasons (`release-conflict`, `changelog-unrecorded`,
+  `rate-limited`). A listing's refusal carries only the
+  operator-intervention reasons — `auth-expired`, `rate-limited`,
+  `permission-denied`, and `unobservable-remote` (the widening of
+  issues #176/#178: a 403 whose credential authenticated is the
+  permission denial, and a repo-scoped listing's 404 is the repository's
+  invisibility — the collection exists whenever the repository is
+  observable); the write-conflict and projection reasons
+  (`release-conflict`, `changelog-unrecorded`,
   `already-pushed-different-target`) name writes and recorded-state
   decisions, and a listing never carries them.
 - `transport-failure` — the listing never became a usable observation:
@@ -155,30 +173,63 @@ have landed unseen.
 
 Every remote operation returns one of:
 
-| Outcome                                                                                                                                  | Meaning                                                       | Caller action                                                              |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `ok`                                                                                                                                     | Remote state satisfies the write (created or already matched) | Proceed                                                                    |
-| `refused(reason: "already-pushed-different-target" \| "auth-expired" \| "rate-limited" \| "release-conflict" \| "changelog-unrecorded")` | Remote rejected the write with a named reason                 | Operator intervention for auth/rate-limit; conflict is a recorded decision |
-| `transport-failure`                                                                                                                      | Remote unreachable or unexpected response                     | Retry                                                                      |
-| `ambiguous`                                                                                                                              | Cannot determine whether write landed (timeout)               | Verify through a separate read                                             |
+| Outcome                                                                                                                                                                                  | Meaning                                                       | Caller action                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `ok`                                                                                                                                                                                     | Remote state satisfies the write (created or already matched) | Proceed                                                                                            |
+| `refused(reason: "already-pushed-different-target" \| "auth-expired" \| "rate-limited" \| "permission-denied" \| "unobservable-remote" \| "release-conflict" \| "changelog-unrecorded")` | Remote rejected the write with a named reason                 | Operator intervention for auth/rate-limit/permission/unobservable; conflict is a recorded decision |
+| `transport-failure`                                                                                                                                                                      | Remote unreachable or unexpected response                     | Retry                                                                                              |
+| `ambiguous`                                                                                                                                                                              | Cannot determine whether write landed (timeout)               | Verify through a separate read                                                                     |
 
 Refusals and conflicts are recorded decisions — the adapter never swallows
-a failure and never retries silently past a refusal.
+a failure and never retries silently past a refusal. Refused vs
+`transport-failure` is the load-bearing boundary (issues #178): a
+refusal is determinate and non-retryable — retrying it repeats it; the
+transport failure is the one retryable class. The refusal reasons split
+the operator's interventions: `auth-expired` — the credential itself
+was rejected, rotate it; `permission-denied` (issue #178) — the
+credential authenticated and the request is not authorized (the
+fine-grained-token "resource not accessible" answer, the git path's
+"Permission to `<repo>` denied to `<user>`"), grant the scope, rotating
+fixes nothing; `rate-limited` — the primary or the secondary limit,
+wait; `unobservable-remote` (issue #176) — the resource is invisible to
+this credential (a private or missing repository, a token without read
+scope), review the credential and the owner/repo.
 
 The classes were minted for the write units and the observation channel
 reuses them narrowed (issue #66): an observation never returns
-`ambiguous`, and a listing's `refused` carries only `auth-expired` and
-`rate-limited` — the operator-intervention reasons. (`verifyRelease`
+`ambiguous`, and a listing's `refused` carries only the
+operator-intervention reasons (`auth-expired`, `rate-limited`,
+`permission-denied`, `unobservable-remote`). (`verifyRelease`
 additionally refuses over recorded state — `changelog-unrecorded`,
 `release-conflict`; those are comparison decisions, not provider
 refusals, and a listing never carries them.) On the report, a listing's
 `listed` is the read's `ok` — the comparison's rows; `absent` and
 `verified` are the release read's determinate satisfactory outcomes.
+
 The classification itself is one table shared by every unit that reads
-the API transport (rate-limit on 429 or a 403 with the budget spent;
-auth on 401 or any other 403; status 0 and every other non-200 status
-the unit has not pinned a determinate read for — the release read's
-404 is `absent` — → `transport-failure`).
+the API transport (issues #176/#178; the shapes GitHub answers with):
+
+| Response shape                                   | Class                                                                                                                                                                                                                       |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `429`; a 403 with `x-ratelimit-remaining: 0`     | `refused("rate-limited")` — the primary limit; the detail carries `x-ratelimit-reset` (decision 9)                                                                                                                          |
+| a 403 with `Retry-After` and the budget standing | `refused("rate-limited")` — the secondary limit (issue #178); the detail carries `Retry-After`                                                                                                                              |
+| 404 on a repo-scoped listing; the create's 404   | `refused("unobservable-remote")` (issue #176) — a listing's collection and a create's target exist whenever the repository is observable                                                                                    |
+| the release read's 404                           | the repository probe (§2.2): probe `200` → `absent`; otherwise the probe's own class                                                                                                                                        |
+| `401`                                            | `refused("auth-expired")`                                                                                                                                                                                                   |
+| any other 403                                    | `refused("permission-denied")` (issue #178) — the credential authenticated; the detail carries the provider's `message`                                                                                                     |
+| status `0`                                       | reads → `transport-failure`; the post-write window → `ambiguous`                                                                                                                                                            |
+| the create's `422` / `409`                       | `refused("release-conflict")` (issue #178) — a determinate refusal, never the retryable class; `already_exists` (the documented duplicate-create answer, the benign race-loss) and the provider's `message` ride the detail |
+| every other non-200 status (5xx included)        | `transport-failure` — the retryable class                                                                                                                                                                                   |
+
+The git-path half (the sync unit's stderr classification) anchors on
+the same vocabulary, structured: the rate-limit phrases first; GitHub's
+valid-credential push denial ("Permission to `<repo>` denied to
+`<user>`") and the http transport's structured 403 ("The requested URL
+returned error: 403", "HTTP 403") → `permission-denied`; the
+rejected-credential phrases and the structured 401 → `auth-expired`.
+Statuses classify only where git prints them structurally — a bare
+status substring in git's progress lines ("Total 403 (delta 0)") is
+bytes moved, not a status, and classifies nothing (issue #178).
 
 ### 2.4 Idempotency identity
 
@@ -420,3 +471,24 @@ The phase's named scenarios:
     The `listed` outcome carries `listed` (the row count) and
     `pagination` (completeness); a truncated listing is never a passed
     comparison.
+18. **Permission denial** (issue #178) — a 403 with a valid credential
+    (the budget standing, no `Retry-After`) — the fine-grained-token
+    "resource not accessible" answer, or the git path's "Permission to
+    `<repo>` denied to `<user>`" — is `refused("permission-denied")`,
+    never `auth-expired`; the git-path classifier reads the http
+    transport's structured 403 the same way, and never reads a status
+    substring out of a progress line.
+19. **Secondary rate limit** (issue #178) — a 403 with `Retry-After`
+    while the primary budget stands is `refused("rate-limited")` with
+    the `Retry-After` detail, on every door that reads the transport.
+20. **Unobservable remote** (issue #176) — the release read's 404
+    probes the repository: an observable repository makes the absence
+    determinate (`absent`); an unobservable one is
+    `refused("unobservable-remote")`, on `verifyRelease` and on the
+    create path alike; a repo-scoped listing's 404 is
+    `refused("unobservable-remote")` directly.
+21. **Determinate create refusals** (issue #178) — the create's 422
+    (`already_exists`, the documented duplicate-create answer, the
+    benign race-loss) and its 409 are `refused("release-conflict")`
+    with the provider's own words in the detail — never the detail-less
+    retryable class; the idempotent re-run resolves a raced duplicate.

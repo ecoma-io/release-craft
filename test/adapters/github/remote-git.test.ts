@@ -28,6 +28,47 @@ describe("the failure classifier (§2.3 rows 8–9)", () => {
     expect(classifyGitFailure("remote: Invalid username or password")).toBe("auth-expired");
   });
 
+  it("never reads a status substring out of git's progress lines (issue #178)", () => {
+    // The old classifier matched a bare `403`/`401` anywhere in the
+    // stderr — a push's own progress counters ("Total 403 (delta 0)")
+    // wore an authentication fault. Statuses classify only where the
+    // transport prints them structurally.
+    expect(classifyGitFailure("Total 403 (delta 0), reused 401 (delta 0), pack-reused 0")).toBe(
+      "transport-failure",
+    );
+    expect(classifyGitFailure("Total 401 (delta 0), reused 0 (delta 0)")).toBe("transport-failure");
+  });
+
+  it("reads GitHub's valid-credential push denial as permission-denied, never auth-expired (issue #178)", () => {
+    expect(
+      classifyGitFailure("remote: Permission to ecoma-io/release-craft.git denied to johnitvn."),
+    ).toBe("permission-denied");
+    expect(classifyGitFailure("ERROR: Permission to org/repo.git denied to user.")).toBe(
+      "permission-denied",
+    );
+  });
+
+  it("reads the http transport's structured 403 as permission-denied (issue #178)", () => {
+    expect(
+      classifyGitFailure(
+        "fatal: unable to access 'https://github.com/ecoma-io/x.git/': The requested URL returned error: 403",
+      ),
+    ).toBe("permission-denied");
+    expect(
+      classifyGitFailure(
+        "error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403",
+      ),
+    ).toBe("permission-denied");
+  });
+
+  it("reads the http transport's structured 401 as auth-expired", () => {
+    expect(
+      classifyGitFailure(
+        "fatal: unable to access 'https://github.com/ecoma-io/x.git/': The requested URL returned error: 401",
+      ),
+    ).toBe("auth-expired");
+  });
+
   it("reads anything else as transport-failure", () => {
     expect(classifyGitFailure("fatal: the remote end hung up unexpectedly")).toBe(
       "transport-failure",

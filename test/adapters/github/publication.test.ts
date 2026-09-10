@@ -35,6 +35,8 @@ const CHANGELOG_BODY = "# v1.2.3\n\n- the recorded changelog\n";
 const TAG = "v1.2.3";
 const ATTEMPT = "attempt_sha256:publish-a";
 const RELEASE_URL = "https://github.com/ecoma-io/release-craft/releases/tags/v1.2.3";
+const RELEASE_PATH = "/repos/ecoma-io/release-craft/releases/tags/v1.2.3";
+const REPO_PATH = "/repos/ecoma-io/release-craft";
 
 const credentials: GitHubCredentials = {
   owner: "ecoma-io",
@@ -98,6 +100,12 @@ const notFoundResponse = (): GitHubResponse => ({
   status: 404,
   headers: {},
   body: JSON.stringify({ message: "Not Found" }),
+});
+
+const observableRepoResponse = (): GitHubResponse => ({
+  status: 200,
+  headers: {},
+  body: JSON.stringify({ full_name: "ecoma-io/release-craft" }),
 });
 
 const createdResponse = (): GitHubResponse => ({
@@ -315,6 +323,118 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     });
   });
 
+  it("refuses a secondary rate limit — a 403 with Retry-After and budget standing — as rate-limited, never auth-expired (#178)", () => {
+    withPublicationRepo("secondary-rate-limit", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 403,
+        headers: { "Retry-After": "57", "X-RateLimit-Remaining": "4998" },
+        body: "",
+      }));
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "rate-limited",
+        detail: detailContaining("secondary rate limit is engaged; retry after 57 seconds"),
+      });
+    });
+  });
+
+  it("refuses a valid credential's permission denial as permission-denied, never auth-expired (#178)", () => {
+    withPublicationRepo("permission-denied", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 403,
+        headers: { "X-RateLimit-Remaining": "4998" },
+        body: JSON.stringify({ message: "Resource not accessible by personal access token" }),
+      }));
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "permission-denied",
+        detail: detailContaining("Resource not accessible by personal access token"),
+      });
+    });
+  });
+
+  it("refuses the raced create — 422 already_exists — as the recorded conflict, and the idempotent re-run resolves it (#178)", () => {
+    withPublicationRepo("create-raced", (fixture) => {
+      seed(fixture);
+      let raced = false;
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.init?.method === "POST") {
+          raced = true;
+          return {
+            status: 422,
+            headers: {},
+            body: JSON.stringify({
+              message: "Validation Failed",
+              errors: [{ resource: "Release", code: "already_exists", field: "tag_name" }],
+            }),
+          };
+        }
+        return raced ? okResponse(CHANGELOG_BODY) : notFoundResponse();
+      });
+      const first = fixture.adapter(transport).publishRelease(TAG);
+      expect(first).toEqual({
+        kind: "refused",
+        reason: "release-conflict",
+        detail: detailContaining("already exists"),
+      });
+      if (first.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${first.kind}`);
+      }
+      expect(first.detail).toContain("raced another publisher");
+      // The recorded conflict decision's caller action — the idempotent
+      // re-run — resolves the race: the read finds the remote satisfied,
+      // the bodies match, and no second create is ever issued.
+      const second = fixture.adapter(transport).publishRelease(TAG);
+      expect(second).toEqual({ kind: "ok", url: RELEASE_URL });
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(1);
+    });
+  });
+
+  it("refuses any other determinate create refusal with the provider's own words, never the detail-less retryable class (#178)", () => {
+    withPublicationRepo("create-validation", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.init?.method === "POST"
+          ? {
+              status: 422,
+              headers: {},
+              body: JSON.stringify({
+                message: "Validation Failed",
+                errors: [{ resource: "Release", code: "missing_field", field: "tag_name" }],
+              }),
+            }
+          : notFoundResponse(),
+      );
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-conflict",
+        detail: detailContaining("the provider refused the create (HTTP 422: Validation Failed)"),
+      });
+    });
+  });
+
+  it("refuses a create the provider answers 409 with as the conflict it is (#178)", () => {
+    withPublicationRepo("create-conflict-409", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.init?.method === "POST"
+          ? { status: 409, headers: {}, body: JSON.stringify({ message: "Conflict" }) }
+          : notFoundResponse(),
+      );
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-conflict",
+        detail: detailContaining("HTTP 409: Conflict"),
+      });
+    });
+  });
+
   it("refuses an expired credential (row 9)", () => {
     withPublicationRepo("auth", (fixture) => {
       seed(fixture);
@@ -370,12 +490,60 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     });
   });
 
-  it("reports a release that does not exist as absent (row 60 / D28)", () => {
+  it("reports a release that does not exist as absent, over a repository the read observed (row 60 / D28, #176)", () => {
     withPublicationRepo("verify-absent", (fixture) => {
       seed(fixture);
-      const { transport } = fakeTransport(() => notFoundResponse());
+      const { transport, calls } = fakeTransport((call) =>
+        call.path === REPO_PATH ? observableRepoResponse() : notFoundResponse(),
+      );
       const outcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({ kind: "absent" });
+      // The absence verdict is discriminated on the wire: the release
+      // read 404'd, and the repository probe answered before `absent`
+      // was claimed (issue #176).
+      expect(calls.map((call) => call.path)).toEqual([RELEASE_PATH, REPO_PATH]);
+    });
+  });
+
+  it("refuses a 404 the repository probe confirms as unobservable — never a determinate absence (#176)", () => {
+    withPublicationRepo("verify-unobservable", (fixture) => {
+      seed(fixture);
+      const { transport, calls } = fakeTransport(() => notFoundResponse());
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "unobservable-remote",
+        detail: detailContaining("not visible to this credential"),
+      });
+      expect(calls.map((call) => call.path)).toEqual([RELEASE_PATH, REPO_PATH]);
+    });
+  });
+
+  it("classifies the probe's own failures by the one table — an expired credential is auth-expired, not absence (#176)", () => {
+    withPublicationRepo("verify-unobservable-auth", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.path === REPO_PATH ? { status: 401, headers: {}, body: "" } : notFoundResponse(),
+      );
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "auth-expired",
+        detail: expect.any(String) as string,
+      });
+    });
+  });
+
+  it("refuses a create against a repository the credential cannot observe — a determinate non-land, never a retryable loop (#176)", () => {
+    withPublicationRepo("create-unobservable", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => notFoundResponse());
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "unobservable-remote",
+        detail: detailContaining("not visible to this credential"),
+      });
     });
   });
 

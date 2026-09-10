@@ -206,7 +206,13 @@ describe("the assembled GitHub adapter (§2.6; #65)", () => {
       const { transport, calls } = fakeTransport((call) =>
         call.init?.method === "POST"
           ? { status: 201, headers: {}, body: "{}" }
-          : notFoundResponse(),
+          : call.path === "/repos/ecoma-io/release-craft"
+            ? {
+                status: 200,
+                headers: {},
+                body: JSON.stringify({ full_name: "ecoma-io/release-craft" }),
+              }
+            : notFoundResponse(),
       );
       // An unrecorded tag is refused from recorded state alone — no
       // remote read has anything to say about it.
@@ -214,10 +220,15 @@ describe("the assembled GitHub adapter (§2.6; #65)", () => {
       expect(refused).toMatchObject({ kind: "refused", reason: "changelog-unrecorded" });
       expect(calls).toHaveLength(0);
       // Verification of the recorded tag's absent release is a
-      // determinate read through the transport (the D28 `absent`).
+      // determinate read through the transport (the D28 `absent`),
+      // discriminated by the repository probe before it is claimed
+      // (issue #176).
       const verified = fixture.adapter(transport).verifyRelease("v1.2.3");
       expect(verified).toEqual({ kind: "absent" });
-      expect(calls).toHaveLength(1);
+      expect(calls.map((call) => call.path)).toEqual([
+        "/repos/ecoma-io/release-craft/releases/tags/v1.2.3",
+        "/repos/ecoma-io/release-craft",
+      ]);
     });
   });
 
