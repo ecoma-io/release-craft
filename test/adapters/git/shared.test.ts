@@ -1,4 +1,4 @@
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,12 +6,16 @@ import { describe, expect, it } from "vitest";
 import {
   casAppendCommit,
   casCreateRef,
+  claimRegisterRefFor,
   commitRecord,
   firstParentHistory,
   frozenParse,
+  GitClaimStore,
   GitFaultError,
+  hermeticGitEnv,
   readBlob,
   readRef,
+  readRegister,
   refExists,
   writeBlob,
   type GitRun,
@@ -164,6 +168,54 @@ describe("the git binding's shared surface", () => {
       const third = asOid(casAppendCommit(git, ref, '{"n":3}', second));
       expect(firstParentHistory(git, ref)).toStrictEqual([first, second, third]);
     });
+  });
+
+  it("stays hermetic under a leaked GIT_NAMESPACE export — the claim mints at the real register, not a shadow namespace (#180)", () => {
+    process.env.GIT_NAMESPACE = "hostile-probe";
+    try {
+      // The floor pin, the leg that bites on every git: the ambient export
+      // never reaches a spawn. Where git honors the variable — every
+      // release before 2.55 removed it, after it sat Dormant and broken
+      // since 2.45 — an unstripped export rewrites the ref namespace's
+      // root, so the reads resolve inside `refs/namespaces/hostile-probe/`
+      // and the mints land in a shadow namespace; 2.55 ignores the
+      // variable entirely, so on such hosts only the floor's own strip
+      // makes the law (a spawned git's repository must come from the
+      // `cwd` alone) verifiable at all.
+      expect(process.env.GIT_NAMESPACE).toBe("hostile-probe");
+      expect(hermeticGitEnv().GIT_NAMESPACE).toBeUndefined();
+      withRepo((git, repo) => {
+        // A real binding write on the floor's own spawn: the claim mint.
+        // On a git that honors the variable, an unstripped export lands
+        // the record under `refs/namespaces/hostile-probe/...` — and the
+        // store's own reads would resolve the same shadow and stay
+        // consistent with it, which is why the assertions below also read
+        // the repository's physical refs: the real register must exist on
+        // disk, and no namespace shadow may.
+        const store = new GitClaimStore(repo);
+        const outcome = store.acquire(
+          { kind: "stable-version", lineId: "line-namespace", version: "1.2.3" },
+          "attempt_sha256:namespace",
+        );
+        if (outcome.kind !== "claim") {
+          throw new Error(`expected a claim, got a denial by ${String(outcome.holder)}`);
+        }
+        // The record reads back from the real register, through the floor.
+        const ref = claimRegisterRefFor("line-namespace");
+        const register = readRegister(git, ref) ?? [];
+        expect(register).toHaveLength(1);
+        expect(register[0]?.holder).toBe("attempt_sha256:namespace");
+        // The physical truth, env-independent: the real ref file exists,
+        // the shadow namespace holds nothing (an env-carrying reader can be
+        // consistent with its own shadow; the repository on disk cannot).
+        expect(existsSync(join(repo, ".git", ref))).toBe(true);
+        expect(existsSync(join(repo, ".git", "refs", "namespaces"))).toBe(false);
+        // The token verifies through the store's all-register walk.
+        expect(store.verify(outcome.token)).toMatchObject({ kind: "held" });
+      });
+    } finally {
+      delete process.env.GIT_NAMESPACE;
+    }
   });
 
   it("stays hermetic under a leaked hook environment", () => {

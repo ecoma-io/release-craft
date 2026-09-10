@@ -82,6 +82,15 @@ const LEAKED_GIT_CONTEXT: ReadonlySet<string> = new Set([
   "GIT_CEILING_DIRECTORIES",
   "GIT_PREFIX",
   "GIT_INTERNAL_SUPER_PREFIX",
+  // GIT_NAMESPACE is repository context by the same law (#180): where git
+  // honors it — every release before 2.55 removed it, after it sat Dormant
+  // and broken since 2.45 — an export rewrites the root of the ref
+  // namespace, so claim, register, and ledger reads resolve inside
+  // `refs/namespaces/<ns>/` and every mint and append lands in a shadow
+  // namespace no fault reports. The namespace is part of the repository's
+  // identity, and a spawned git's repository must come from the `cwd`
+  // alone.
+  "GIT_NAMESPACE",
   "GIT_CONFIG_PARAMETERS",
   "GIT_CONFIG_COUNT",
   "GIT_CONFIG_GLOBAL",
