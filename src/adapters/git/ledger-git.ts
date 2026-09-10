@@ -9,7 +9,16 @@
  * over unchanged: the plan record is the attempt's first, written once, and
  * lives on the attempt's own stream — the port needs no plan-level anchor,
  * because the reference ledger's plan record is exactly a `tail` member
- * (`tail(attemptId)` includes it; `planFingerprint` reads it there). The
+ * (`tail(attemptId)` includes it; `planFingerprint` reads it there). Every
+ * append is content-aware as well as forward-only (issue #185; contract
+ * §2.2's fifth guarantee, D44): an append whose canonical bytes the
+ * stream's current tip already holds is satisfied already — the door
+ * absorbs it and the stream grows no commit — because within one checkout
+ * concurrent append is the operative model (D42's reach) and a stale
+ * writer's duplicate of the tip is one fact, not two. Identity is the
+ * tip's content, never the stream's history: a byte-identical record
+ * earlier in the stream is a new positional fact (a re-armed start, a
+ * crash window's re-issue) and lands. The
  * externally observed satisfactions (`noteExternal`, E-03) persist on their
  * own per-attempt stream, `refs/release-craft/ledger-external/<attemptId>`, one
  * commit per note, last note per step key winning — the reload path must
@@ -121,7 +130,14 @@ export class GitLedger implements ExecutionLedger {
       ...(contentFingerprint === undefined ? {} : { contentFingerprint }),
     };
     this.append({ kind: "step", record });
-    const stored = this.tail(attempt.attemptId).at(-1);
+    // The stored record is found by its canonical bytes, not assumed at the
+    // tip: an absorbed append (a concurrent writer of the same bytes won the
+    // stream first — D44) leaves the record earlier in the tail than the
+    // tip, and a genuine loss — neither landed nor carried — still refuses.
+    const bytes = canonicalJson({ kind: "step", record });
+    const stored = [...this.tail(attempt.attemptId)]
+      .reverse()
+      .find((item) => canonicalJson(item) === bytes);
     if (stored?.kind !== "step") {
       throw new Error("the ledger lost the step record it just appended");
     }
@@ -130,7 +146,13 @@ export class GitLedger implements ExecutionLedger {
 
   /** The only other write: append, persist, freeze. The record lands as one
    * compare-and-swap commit on its attempt's stream — a pure extension of
-   * the recorded history or nothing at all. A winning append extends the
+   * the recorded history or nothing at all — and the classification is
+   * content-aware (issue #185; D44): bytes the stream's current tip already
+   * holds satisfy the write before any commit is built — the stale writer's
+   * duplicate of a concurrent winner's record. Records differing in any
+   * field are different facts and land, and so does a byte-identical record
+   * the stream carried but moved past: identity is the tip's content, never
+   * a step key and never the stream's history. A winning append extends the
    * walked tail it built on, so the walk's next read of this stream does
    * not re-read what it just wrote. */
   append(record: LedgerRecord): LedgerRecord {
@@ -144,12 +166,30 @@ export class GitLedger implements ExecutionLedger {
     const bytes = canonicalJson(record);
     this.#casAppend(
       ref,
-      () => bytes,
+      () => (this.#carries(attemptId, bytes) ? null : bytes),
       (base, tip) => {
         this.#cacheAppend(ref, base, tip, bytes);
       },
     );
     return deepFreeze(record) as LedgerRecord;
+  }
+
+  /** Whether the stream's current tip already holds exactly these canonical
+   * bytes — the content-aware half of the append's identity (issue #185;
+   * D44). The check is tip-relative, deliberately: the V7 recovery
+   * verticals falsified the history-wide form (a retried hook's re-armed
+   * start, and the crash window's re-issued start, are byte-identical to a
+   * record earlier in the stream and are new positional facts — the record
+   * vocabulary has no position field, ordering is positional by
+   * construction), so a record the stream carried and moved past must
+   * land again. What the tip-relative form absorbs is exactly the stale
+   * writer's duplicate: a concurrent winner that landed the same bytes the
+   * loser is still trying to extend with — the read rides the walked tail,
+   * re-read per compare-and-swap round, so the absorb is re-evaluated
+   * against the moved tip every round. */
+  #carries(attemptId: string, bytes: string): boolean {
+    const last = this.tail(attemptId).at(-1);
+    return last !== undefined && canonicalJson(last) === bytes;
   }
 
   /** All of the attempt's records, append order, reconstructed from the
