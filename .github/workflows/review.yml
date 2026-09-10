@@ -3,10 +3,8 @@ name: Review
 # Dogfood: the organisation's `review` action (ecoma-io/action-agents) reviews
 # this repository's own pull requests — enrollment issue #214, extending the
 # rollout past its original triage-only scope for this repository (docs/
-# dogfood.md step 11) per maintainer order. Starting posture is the documented
-# dry-run ladder: the run artifact is the whole output and no comment is
-# written to any pull request. The flip to live is one line, taken only after
-# the first-run checklist has passed twice.
+# dogfood.md step 11) per maintainer order. Enrolled dry-run first, per the
+# documented ladder; the checklist passed twice and the flip is live.
 #
 # The ref is digest-pinned to the commit the released tag v0.12.0 names — the
 # same bytes triage runs on since #198. The rollout's policy is the released
@@ -56,9 +54,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The action's own needs: the working tree is the review's subject, and
-    # the one write is the marker comment — a surface this workflow holds
-    # closed until the dry-run flip. One grant narrower than any workflow that
-    # carries the SARIF upload.
+    # the one write is the marker comment, upserted in place. One grant
+    # narrower than any workflow that carries the SARIF upload.
     permissions:
       contents: read
       pull-requests: write
@@ -80,7 +77,7 @@ jobs:
           api-url: ${{ secrets.ECOMA_LLM_BASE_URL }}
           api-key: ${{ secrets.ECOMA_LLM_API_KEY }}
           model: review
-          dry-run: "true"
+          dry-run: "false"
 
       # The path is the exact file the run declared via its `artifact-file`
       # output — set on green runs and on the red boundary's record alike, and
