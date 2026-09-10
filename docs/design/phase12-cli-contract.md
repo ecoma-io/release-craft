@@ -403,20 +403,27 @@ mint. Nothing code-shaped ever enters the process, and ADR-0007 decision
 
 `AttemptHandle` is engine-minted and plan-keyed (verified:
 `{ planId, attemptId, actor }`), and the engine's attempt store is
-process-local bookkeeping (phase 11 §2.7) — a `resume`/`resolve`/`abort`
-naming a plan the engine does not carry is a returned refusal that quotes
-the handle back (verified: `AttemptHandle`'s doc). A CLI process is
-one-shot: the engine that ran the walk dies with the process, and no second
-invocation carries its attempt.
+process-local bookkeeping (phase 11 §2.7) — a `resolve`/`abort` naming a
+plan the engine does not carry is a returned refusal that quotes the
+handle back (verified: `AttemptHandle`'s doc), and `resume` shares that
+refusal wherever its durable reconstruction cannot answer. A CLI process
+is one-shot: the engine that ran the walk dies with the process, and no
+second invocation carries its attempt.
 
 **Decided: the CLI maps every door anyway and gates nothing on
 capability.** `resume`, `resolve`, `abort`, and `show attempt` construct
 the handle from `--plan`/`--attempt`/`--actor`, call the door, and render
-whatever comes back — today, from a fresh process, that is the engine's own
-`refused(unknown attempt)`, rendered at exit 10: honest, recorded, and
-scriptable. When the durable attempt lookup lands (phase 11 §4 question 6 —
-its own reviewed change, not a drive-by), the same commands start working
-across invocations with zero grammar change ([§7](#7-the-other-slices)).
+whatever comes back. The durable attempt lookup has landed for `resume`
+(phase 11 §4 question 6's reconstruction — issue #194): a fresh process
+resuming a dead holder's attempt re-assembles the plan from the
+request's own closed input and completes across invocations — the
+promised zero grammar change held (`--line` stays
+accepted-but-not-demanded; a cross-process resume names it, since the
+carried entry that was authoritative for the line is gone). The doors
+without the reconstruction — `resolve`, `abort`, and `show attempt` —
+keep the engine's own `refused(unknown attempt)` at exit 10 from a
+fresh process until their own reviewed change
+([§7](#7-the-other-slices)): honest, recorded, and scriptable.
 
 - The refusal is not the CLI's invention, and the CLI must not preempt it:
   a client-side refusal ("resume is not supported from a CLI") would be the
@@ -673,12 +680,16 @@ already covers the doors; phase 11 §5).
 7. **The cross-process posture, pinned as pass-through, not as a verdict.**
    A run exits; a new process resumes the printed handle; the fixture
    asserts the rendered outcome equals what a fresh engine returns for that
-   handle — today that value is the `refused(unknown attempt)` shape at
-   exit 10 ([§2.7](#27-the-doors-that-need-a-carried-attempt-the-cross-process-posture)).
-   When the durable attempt lookup lands, the equality holds with a
-   different value and the fixture does not move; the slice that lands the
-   lookup updates the fixture's expected value as part of its own
-   obligations.
+   handle. The durable attempt lookup has landed (issue #194): the value
+   moved — a fresh process's resume of a dead holder's attempt now
+   publishes, re-minting the recorded tag — and the equality held with the
+   fixture unmoved
+   ([§2.7](#27-the-doors-that-need-a-carried-attempt-the-cross-process-posture)).
+   The carried-attempt doors without the reconstruction keep the
+   `refused(unknown attempt)` value at exit 10; when their reconstruction
+   lands, the equality holds with a different value again and the fixture
+   does not move — the slice that lands it updates the affected values as
+   part of its own obligations.
 
 ## 7. The other slices
 

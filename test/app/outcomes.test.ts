@@ -602,7 +602,7 @@ describe("the durable abandonment — restart visibility (issue #111; ADR-0013 d
     expect(Object.isFrozen(record.attribution)).toBe(true);
   });
 
-  it("a restarted assembly over the same stores reads the record and refuses — resume and re-run", () => {
+  it("a restarted assembly over the same stores reads the record — resume throws the named violation, re-run refuses", () => {
     const aborted = abortedAssembly();
     // The restart: a NEW engine process over the same durable stores —
     // nothing process-local survives, the stores carry everything.
@@ -612,16 +612,13 @@ describe("the durable abandonment — restart visibility (issue #111; ADR-0013 d
       claims: aborted.stores.claims,
     });
 
-    // The resume refuses first: the fresh process carries no attempt, and
-    // the door says so instead of inventing one (§2.7 — bookkeeping, not
-    // authority).
-    const resumed = restarted.engine.resume(
-      aborted.handle,
-      runRequest(liveWorld(), "main", [beta]),
-    );
-    expect(resumed.kind).toBe("refused");
-    if (resumed.kind !== "refused") throw new Error("expected a refused outcome");
-    expect(resumed.detail).toContain("unknown attempt");
+    // The resume reads the ledger: the durable fallback reconstructs the
+    // attempt from the request's closed input (issue #194), and the tail's
+    // recorded abandonment throws the named violation — terminal from the
+    // ledger alone (ADR-0013 decision 3, E-09), never revived.
+    expect(() =>
+      restarted.engine.resume(aborted.handle, runRequest(liveWorld(), "main", [beta])),
+    ).toThrow(/abandonment attributed to human:maintainer/);
 
     // The fresh run refuses quoting the recorded evidence — a new ordinal
     // never silently re-executes over the human's abort (E-09).

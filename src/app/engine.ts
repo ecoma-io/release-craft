@@ -829,10 +829,142 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     return continueRun(entry, handle, request.declarations ?? {}, target);
   };
 
+  /** §2.7's durable fallback (issue #194, §4 question 6): when the
+   * process-local map carries no entry for the plan, reconstruct one from
+   * the durable record — the attempt id the handle names, the plan line
+   * the request assembles, and a stubbed ReleaseAttempt whose state
+   * classifyResume will override from the ledger tail alone (ADR-0013
+   * decision 3). Returns null when the durable record does not hold the
+   * attempt or the request carries insufficient data; returns the named
+   * refusal when the recorded tail carries extension work the request's
+   * declarations do not explain — declarations are not durable, and a
+   * takeover that cannot re-derive them fails closed rather than silently
+   * skipping recorded steps. */
+  const durableResumeEntry = (
+    handle: AttemptHandle,
+    request: RunRequest,
+  ): { readonly entry: AttemptEntry } | { readonly refusal: string } | null => {
+    // The resume request must carry exactly one line id to derive the plan
+    // line — a resume executes one line (M-02's posture).
+    if (request.lineIds.length !== 1) {
+      return null;
+    }
+    const lineId = request.lineIds[0];
+    if (lineId === undefined) {
+      return null;
+    }
+    // Assemble the plan from the request's input to recover the plan line
+    // — the resume path normally carries it in the process-local map; the
+    // durable fallback re-derives it from the same closed input the run
+    // would have used (the world document carries the run's own intents).
+    // Pure and read-only: no store writes, no new attempt.
+    const planning = planRelease(request.input);
+    if (planning.kind === "refused") {
+      return null;
+    }
+    const planLine = planning.plan.lines.find((candidate) => candidate.lineId === lineId);
+    if (planLine === undefined) {
+      return null;
+    }
+    // Recover the ordinal by scanning: attemptIdentity is a one-way hash,
+    // so we enumerate ordinals until the derived id matches the handle's —
+    // the scan proves the handle's attempt id is this plan's own
+    // derivation, not a foreign id.
+    let ordinal: number | undefined;
+    for (let candidate = 1; candidate <= 100; candidate += 1) {
+      if (attemptIdentity(handle.planId, candidate) === handle.attemptId) {
+        ordinal = candidate;
+        break;
+      }
+    }
+    if (ordinal === undefined) {
+      return null;
+    }
+    // Reconstruct the attempt — the state is a best guess; classifyResume
+    // reads the tail to determine the real classification (ADR-0013
+    // decision 3). The plan fingerprint is the re-assembled plan's own
+    // content id: a caller supplying a drifted world or intents re-assembles
+    // a different plan, and classifyResume's stale check refuses the
+    // takeover rather than reviving under a foreign plan.
+    const attempt: ReleaseAttempt = {
+      attemptId: handle.attemptId,
+      planId: handle.planId,
+      planFingerprint: planning.plan.planId,
+      state: "executing",
+      hooks: request.declarations?.hooks ?? [],
+      artifacts: request.declarations?.artifacts ?? [],
+    };
+    // The reconstruction's extension declarations come from the request
+    // alone — declarations were never durable (ADR-0007 decision 2; phase
+    // 11 contract §2.6) — so a tail that records unfinished hook/artifact
+    // work the request's declarations do not explain is declaration drift.
+    // The walk's resume pointer derives from the reconstructed
+    // declarations' effective list: an unexplained started extension
+    // record would silently vanish from it, and the takeover would resume
+    // past unfinished recorded work and publish green beside it. Fail
+    // closed instead, naming the record. A completed extension record is
+    // finished work the resumed walk cannot skip, so it needs no guard;
+    // a failed one is classification's territory (the structural pass
+    // escalates it whether or not the declarations explain it); and a
+    // recorded abandonment stands above this guard — the takeover's
+    // classification throws the E-09 terminal violation regardless, and
+    // burying the human's withdrawal under a declaration complaint would
+    // mask the louder, recorded truth.
+    const tail = ports.ledger.tail(handle.attemptId);
+    const explained = new Set(effectiveSteps(attempt));
+    const unexplained: StepKey[] = [];
+    if (!tail.some((record) => record.kind === "abandonment")) {
+      for (const record of tail) {
+        if (record.kind !== "step") {
+          continue;
+        }
+        const step = record.record;
+        if (step.to !== "started" || explained.has(step.stepKey)) {
+          continue;
+        }
+        if (!isHookStepKey(step.stepKey) && !isArtifactStepKey(step.stepKey)) {
+          continue;
+        }
+        if (!unexplained.includes(step.stepKey)) {
+          unexplained.push(step.stepKey);
+        }
+      }
+    }
+    if (unexplained.length > 0) {
+      return {
+        refusal:
+          `the ledger records unfinished extension work the resume request does not ` +
+          `re-declare: ${unexplained.map((key) => `${key} (started)`).join(", ")} — ` +
+          `the frozen declarations were never durable, so the durable lookup cannot ` +
+          `re-derive them from the request; refusing the takeover rather than silently ` +
+          `skipping the recorded extension steps (phase 6 §2.2; phase 7 §2.1)`,
+      };
+    }
+    return {
+      entry: {
+        attempt,
+        planLine,
+        claim: null,
+        tags: [],
+      },
+    };
+  };
+
   const doResume = (handle: AttemptHandle, request: RunRequest): RunOutcome => {
-    const found = carriedEntry(handle);
+    let found = carriedEntry(handle);
     if ("refusal" in found) {
-      return refusedOutcome(found.refusal, handle.planId, handle);
+      // §2.7 durable fallback: the process-local map carries no entry for
+      // this plan — reconstruct one from the request's own closed input so
+      // a fresh process can resume an attempt whose holder died (issue
+      // #194, §4 question 6's deferred durable plan-keyed lookup).
+      const rebuilt = durableResumeEntry(handle, request);
+      if (rebuilt === null) {
+        return refusedOutcome(found.refusal, handle.planId, handle);
+      }
+      if ("refusal" in rebuilt) {
+        return refusedOutcome(rebuilt.refusal, handle.planId, handle);
+      }
+      found = rebuilt;
     }
     const { entry } = found;
     const scope = claimScopeForLine(entry.planLine);

@@ -187,20 +187,9 @@ record and the advancing completion, in ADR-0012 decision 3's order:
 ```text
 the walk, at the channel-transition stage:
   ledger.appendStart(attempt, "channel-transition", attribution, …)  // durable first
-  ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the claim guard — only a
-                                                                     // rule-6-verified advance
-                                                                     // proceeds to the store; a
-                                                                     // claim-lost (E-07) or any
-                                                                     // other verdict stops the walk
-                                                                     // before a store CAS runs
-  for each planned move: channels.applyTransition(move)              // the wired store's CAS, on
-                                                                     // that verified advance — each
-                                                                     // move record carries the claim
-                                                                     // verdict a check actually
-                                                                     // performed; the completion
-                                                                     // record appends after every
-                                                                     // move (started < moves <
-                                                                     // completed)
+  for each planned move: channels.applyTransition(move)              // the wired store's CAS,
+                                                                     // under the held claim
+  ledgerRequestStep(attempt, request, claimView, ledger) → advance   // the completion records
 ```
 
 - The kernel names the step; the boundary executes it. The kernel
@@ -218,20 +207,9 @@ the walk, at the channel-transition stage:
   cannot determine whether a move landed yields `ambiguous`, never
   `completed` — the walk stops, the promotion does not race forward on
   uncertainty, and the resume re-judges from the recorded started record.
-- **A COMPLETED channel stage is not re-executed on re-entry.** Its replay
-  verdict is `noop` and the walk proceeds past it — later stages and their
-  anchors still run — but no store CAS runs: every planned move was already
-  decided and recorded in the run that completed the stage (the completion
-  appends after every move), and re-applying them would mutate the store
-  and write a second generation of move records over a verdict no check
-  performed (the silent second move the replay ladder forbids). Only the
-  crash-window path re-applies: a `started` stage whose write-ahead start
-  stands replays the verified advance, and each already-landed move answers
-  `noop` (an advancing stage's own replay case).
-- A landed move's replay classifies `noop` and a divergent prior target
-  conflicts exactly as ADR-0012 decisions 3–4 key them — per-move rows of
-  the store's CAS, reached only through the verified advance above — and
-  the boundary drives the ledger's replay doors; it re-implements neither.
+- A completed transition replays `noop` and a divergent prior target
+  conflicts exactly as ADR-0012 decisions 3–4 key them — the boundary
+  drives the ledger's replay doors; it re-implements neither.
 
 ### 2.5 The walk — the generalized fixture drive
 
@@ -340,66 +318,44 @@ RunRequest
 
 The fixtures carry attempt values in a process map keyed by `planId`; the
 boundary inherits the posture under a name and a rule. The assembly owns
-an attempt store (process-local today), `resume` continues the SAME
-attempt from it, and a carried-attempt door naming a plan the process
-does not carry is a returned refusal (`unknown attempt`, naming the
-handle) — never a fresh ordinal silently allocated over someone else's
-recorded tail. All four carried-attempt doors refuse this way —
-`resume`, `resolve`, `abort`, and the attempt observation (verified:
-`carriedEntry` in `src/app/engine.ts`) — so on today's main a mid-flight
-attempt is untouchable from any process but the one that opened it: the
-recovery support envelope is the process. (Pinned as the certification
-fixture's `x-01`, phase 14 §3.5.)
-
-The store is bookkeeping, not authority: the recorded tail and the claim
-store are the truth, a stale carried attempt reconciles through
-classification (`stale`/`escalate`) and the claim protocol. Two claimants
-for one scope are arbitrated by the claim store's CAS (invariant 2.7) —
-and never two resumers of one attempt: resuming is the same holder
-re-acquiring, and the store's idempotent same-holder adjudication returns
-the held claim with no arbitration at all.
-
-Across processes the map is exactly what gates: a fresh engine carries no
-entry, every carried-attempt door refuses before any claim is read, and
-the claims never arbitrate a cross-process resume. The one cross-process
-arbitration today is a fresh `.run`'s fresh ordinal meeting a recorded
-claim — the split the two residuals below name.
-
-The refusal is the envelope's soft edge; the fresh allocation is the hard
-one. A restarted process re-entering the same plan is a fresh `.run`: the
-git register's ordinal counter is durable
-(`refs/release-craft/register/<planId>`), so the restart mints a NEW
-attempt id (`attempt_sha256` over plan id and ordinal) and meets the dead
-holder's still-recorded claim as a non-holder. The two scope kinds then
-diverge, and both divergences are accepted residuals:
-
-- **The stable-scope dead lock (E-07).** A stable-version claim is a
-  record, not a lease: releasing its token is a no-op, no engine code path
-  calls `claims.release` (the binding's passthrough is the port's only
-  caller in `src/`), and the token itself is engine-unreachable after
-  process death. The restart's denial names the dead holder and repeats
-  forever — the plan can never complete.
-- **The prerelease E-08 retry at holderSequence+1 stranding the tail.**
-  A prerelease-sequence denial carries the winner's sequence, and where
-  the declared retry bound allows it, the E-08 retry at
-  `holderSequence+1` succeeds past the dead lease: the restart completes
-  the plan at the next sequence, stranding the dead attempt's unrecorded
-  tail work and consuming the sequence. (The CLI's default
-  `--max-retries 0` exhausts the bound first, landing the explicit
-  conflict — the stranding is the declared bound's own choice.)
-
-(The memory assembly never sees this divergence — its register restarts
-the counter per engine instance, so a restarted memory engine re-mints
-the same attempt id; only the durable git register produces it.)
-
-Whether the attempt store becomes a durable port — the plan-keyed lookup
-door the ledger port does not name today — is
-[§4](#4-open-questions-for-the-maintainer) question 6, and a port
-widening is its own reviewed change, not a drive-by: tracked as #227,
-which owns the durable lookup, the holder policy for a dead holder's
-claim, and the fingerprint pinning. Until it lands, cross-process
-recovery is unsupported — the envelope is the process, and the two
-residuals above are its recorded cost.
+an attempt store (process-local), `resume` continues the SAME attempt
+from it, and a resume naming a plan the process does not carry falls
+back to the durable record before refusing (issue #194's durable
+plan-keyed lookup): the plan re-assembles from the request's own closed
+input, the ledger's recorded fingerprint confirms the attempt — a
+drifted world classifies `stale`, never reviving under a foreign plan —
+and the same attempt id re-enters the claim store's idempotent
+same-holder re-acquisition, which returns the durably stored token. The
+reconstruction re-derives the recorded ordinal's identity and allocates
+nothing — never a fresh ordinal silently allocated over someone else's
+recorded tail. The reconstruction's extension declarations come from the
+request alone — declarations were never durable (ADR-0007 decision 2;
+§2.6) — so a recorded tail carrying a started hook/artifact step the
+request's declarations do not explain refuses the takeover, naming the
+record: the walk's resume pointer derives from the reconstructed
+declarations' effective list, and unfinished recorded extension work
+outside it would silently vanish from the walk. A completed extension
+record is finished work the resumed walk cannot skip, and a recorded
+abandonment stays terminal from the ledger alone (E-09) — the takeover's
+classification escalates it, louder than any declaration complaint. The
+other carried-attempt doors — `resolve`, `abort`, and the observation —
+have no fallback and stay process-local: a fresh
+process naming a mid-flight attempt through them is a returned refusal
+(`unknown attempt`, naming the handle). The store is bookkeeping, not
+authority: the recorded tail and the claim store are the truth, a stale
+carried attempt reconciles through classification (`stale`/`escalate`)
+and the claim protocol, and two processes resuming one plan each
+classify against the recorded tail while the claims arbitrate (invariant
+2.7 — the map never gates anyone). The residual — the same
+reconstruction for `resolve`, `abort`, and the observation — is
+[§4](#4-open-questions-for-the-maintainer) question 6, and until it
+lands the doors' residuals stand: a dead holder's stable-scope claim
+still blocks the line (the denial names the dead holder, E-07), and a
+denied prerelease sequence still re-enters at the dead holder's
+sequence + 1 (E-08), stranding the dead attempt's recorded tail rather
+than resuming it. No port was widened — the reconstruction reads the
+request's own closed input and the ledger's existing tail door — and
+widening the remaining doors is its own reviewed change, not a drive-by.
 
 ### 2.8 How outcomes cross the boundary
 
@@ -411,19 +367,19 @@ impossible state-machine edge, a terminal attempt through the throwing
 path, a malformed declaration — programming errors carrying the contract
 in the message (phase 4 §2.2, §2.7).
 
-| Outcome                      | Meaning                                                                               | Caller action                                                                                                                                                                                                                                                                                                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `published`                  | the walk completed, the tag minted, the terminal recorded                             | proceed                                                                                                                                                                                                                                                                                                                                                                        |
-| `satisfied-externally`       | ledger-first done-ness, provenance recorded (E-03)                                    | proceed; the evidence reads back through `observe`                                                                                                                                                                                                                                                                                                                             |
-| `refused(detail)`            | a planning refusal, a namespace denial, a store-less channel plan, a protocol refusal | read the detail; it names the owner and the refused door                                                                                                                                                                                                                                                                                                                       |
-| `denied(holder)`             | a claim denial naming the winner (E-07); E-08's retry exhausted lands `conflict`      | another attempt owns the scope; the loser path is recorded                                                                                                                                                                                                                                                                                                                     |
-| `blocked(cause)`             | a guard failed on world state (E-04, PR-03, a hook's or artifact's validation)        | resolve through `.resolve`, then `.resume`                                                                                                                                                                                                                                                                                                                                     |
-| `failed(cause)`              | a recorded failure stopped the walk — a record, never a throw                         | inspect the tail; a later `.resume` re-judges                                                                                                                                                                                                                                                                                                                                  |
-| `conflict(detail)`           | same identity, different content or inconsistent evidence (E-02)                      | a human judges; nothing auto-re-plans, nothing auto-retries                                                                                                                                                                                                                                                                                                                    |
-| `ambiguous(detail)`          | a store could not determine whether its effect landed (invariant 2.6)                 | never success — verify through a read, then `.resume`                                                                                                                                                                                                                                                                                                                          |
-| `stale` / `escalate(detail)` | the resume verdicts surfaced verbatim (phase 5 §2.3)                                  | re-plan through the planner's door / a human judges the tail                                                                                                                                                                                                                                                                                                                   |
-| `resolved`                   | the recorded re-arm: `.resolve` closed a blocked loop over the plan's own fingerprint | `.resume` continues the walk from the recorded tail                                                                                                                                                                                                                                                                                                                            |
-| `abandoned`                  | the recorded human abort: `.abort` closed the attempt                                 | the attempt never runs again: where the engine still carries it, a later `.resume` throws and the step replay door refuses — both quoting the recorded evidence, terminal from the ledger alone (ADR-0013 decision 3's one law); in a restarted process the doors refuse the unknown handle; and a fresh `.run` over the plan refuses quoting the recorded evidence (ADR-0013) |
+| Outcome                      | Meaning                                                                               | Caller action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `published`                  | the walk completed, the tag minted, the terminal recorded                             | proceed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `satisfied-externally`       | ledger-first done-ness, provenance recorded (E-03)                                    | proceed; the evidence reads back through `observe`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `refused(detail)`            | a planning refusal, a namespace denial, a store-less channel plan, a protocol refusal | read the detail; it names the owner and the refused door                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `denied(holder)`             | a claim denial naming the winner (E-07); E-08's retry exhausted lands `conflict`      | another attempt owns the scope; the loser path is recorded                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `blocked(cause)`             | a guard failed on world state (E-04, PR-03, a hook's or artifact's validation)        | resolve through `.resolve`, then `.resume`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `failed(cause)`              | a recorded failure stopped the walk — a record, never a throw                         | inspect the tail; a later `.resume` re-judges                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `conflict(detail)`           | same identity, different content or inconsistent evidence (E-02)                      | a human judges; nothing auto-re-plans, nothing auto-retries                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `ambiguous(detail)`          | a store could not determine whether its effect landed (invariant 2.6)                 | never success — verify through a read, then `.resume`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `stale` / `escalate(detail)` | the resume verdicts surfaced verbatim (phase 5 §2.3)                                  | re-plan through the planner's door / a human judges the tail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `resolved`                   | the recorded re-arm: `.resolve` closed a blocked loop over the plan's own fingerprint | `.resume` continues the walk from the recorded tail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `abandoned`                  | the recorded human abort: `.abort` closed the attempt                                 | the attempt never runs again: where the engine still carries it, a later `.resume` throws and the step replay door refuses — both quoting the recorded evidence, terminal from the ledger alone (ADR-0013 decision 3's one law); in a restarted process `resolve` and `abort` refuse the unknown handle while `.resume`'s durable reconstruction ([§2.7](#27-the-attempt-store-bookkeeping-never-authority), issue #194) meets the tail's recorded evidence — the same thrown violation, terminal from the ledger alone; and a fresh `.run` over the plan refuses quoting the recorded evidence (ADR-0013) |
 
 - No exception crosses the boundary for anything the engine classifies —
   the adapters' law carried up one layer (phase 9 §2.3: failures are
@@ -477,10 +433,8 @@ in the message (phase 4 §2.2, §2.7).
   and waits for a read.
 - **Claims are the concurrency control** (invariant 2.7): no mutex, no
   queue, no lease, no single-writer assumption enters at the boundary;
-  the claim store's CAS is the arbitration, and within the process the
-  attempt store gates nobody — across processes its refusals are the
-  envelope ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)),
-  never a lock.
+  the claim store's CAS is the arbitration, and the attempt store gates
+  nobody ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)).
 - **One channel door** (invariant 2.8): every channel move flows through
   the wired stage executor at [§2.4](#24-the-channel-transition-wiring-point)'s
   point; a boundary that moves a channel anywhere else is wrong by
@@ -534,14 +488,16 @@ left open, each with its proposed default:
    (the planner's and kernel's suites' sibling), driving the boundary
    through the package barrel; whether they reuse the vertical matrix's
    fixture data is the next slice's call.
-6. **The attempt store's future.** Process-local bookkeeping now
-   ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)) —
-   cross-process recovery is unsupported on main, and §2.7's two
-   residuals are its recorded cost. The durable plan-keyed attempt
-   lookup (a ledger port widening or a register read door), the holder
-   policy that decides what may supersede a dead holder's claim, and the
-   fingerprint pinning a durable resume needs are one reviewed change —
-   tracked as #227; the maintainer decides when.
+6. **The attempt store's future.** Cross-process resume of a dead
+   holder's attempt landed in issue #194 as a durable plan-keyed lookup
+   ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)) — worked
+   through the request's own closed input and the ledger's existing tail,
+   no port widened; the surviving process-local doors are `resolve`,
+   `abort`, and the observation, whose same reconstruction (and the
+   residuals it would close — the stable-scope dead lock and the
+   prerelease tail-strand) is the maintainer's call, its own reviewed
+   change when it lands; the holder policy that decides what may
+   supersede a dead holder's claim stays tracked as #227.
 7. **Multi-line runs.** The fixtures run one line per run (M-02's
    posture) and the proposal keeps `lineIds` per run; a whole-plan pass
    needs a cross-line claim-ordering decision and is deferred until a
@@ -591,8 +547,13 @@ barrel only. The phase's named fixtures:
 - The channel store port and the planner's channel content —
   [ADR-0012](../adr/0012-channel-transition.md)'s own slices; the wiring
   point here is decided, the port is not.
-- A durable attempt lookup — [§4](#4-open-questions-for-the-maintainer)
-  question 6's own reviewed change, tracked as #227.
+- A durable attempt lookup — partially landed in issue #194's
+  cross-process `resume` ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)):
+  the reconstruction reads the request's own closed input and the
+  ledger's existing tail door, no port widened; the surviving
+  process-local doors — `resolve`, `abort`, and the observation — stay
+  [§4](#4-open-questions-for-the-maintainer) question 6's reviewed
+  change.
 - Remote effect executors for the publish stage — adapter and publishing
   slice territory ([ADR-0007](../adr/0007-hooks-as-steps.md) decision 12;
   [ADR-0008](../adr/0008-artifact-graph.md) decision 12;
