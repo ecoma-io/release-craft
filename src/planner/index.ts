@@ -39,5 +39,6 @@ export { planPropagation } from "./propagate.js";
 export { canonicalJson, planFingerprint, inputsFingerprint } from "./identity.js";
 export { plan } from "./assemble.js";
 
+export { InvalidManifestError, parseManifest } from "./config.js";
 // The frozen contract vocabulary — every planner type, wholesale (§4 A3).
 export type * from "./types.js";

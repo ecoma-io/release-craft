@@ -63,6 +63,49 @@ Repeated execution against an identical `PlanningInput` is deterministic and
 produces an identical plan fingerprint (invariant 2; proven by running the
 golden matrix twice).
 
+### 2.1.a The manifest configuration surface
+
+`PlanningInput` has one committed authoring surface: a closed configuration
+document (JSON first) parsed into the planner's own vocabulary by
+`parseManifest` (`src/planner/config.ts`), a thin boundary layer — config is
+input, never a second semantic model. The document declares the declared half
+of the input boundary: `policy`, `lines`, and — optionally — `components`,
+`channels`, and `bootstrap`; the parsed value composes with the observed half
+(§2.2, §2.13) into the single `PlanningInput` argument. Every parsed value is
+the planner's own vocabulary key for key (`policy.digest`, `lines[].feedRef`,
+`channels[].target.line`), so unknown keys are a pure closed-set check and are
+refused loudly at every level — document, policy, line, component entry,
+channel, target, bootstrap, withhold rule, stream policy, version band — never
+silently dropped (the defect class #191 records for action inputs).
+
+The door's refusals name every violation in one round-trip
+(`InvalidManifestError`, the input seam's violation shape under a distinct
+name): missing mandatory sections (`policy`, `lines`), malformed values, and
+dangling references — a `tagFormats` key naming an undeclared line, a
+`publishes` binding or dependency edge naming an undeclared component, a
+channel target naming an undeclared line. Components use the packages-map
+pattern: an optional `defaults` block plus per-name entries, each field
+resolved entry-first-then-defaults (an entry's `dependencies: []` is declared
+absence, clearing inherited edges); `defaults` is the reserved inheritance
+key, so a component by that name is not expressible in the map grammar.
+
+Manifest versions ride as projections only (invariant 6): the document never
+becomes computation truth — birth targets come from the recorded bootstrap,
+bumps from history and policy. The determinism pin (§2.14) holds with
+config-sourced inputs: two fresh parses of one document plan to deep-equal
+outcomes.
+
+**Migration note (release-please, REPLACE per baseline §17).** Release-craft
+adopts the concepts, not the two-file format: `release-please-config.json` +
+`.release-please-manifest.json` map onto one closed document — the packages
+map becomes the `components` map (defaults + entries), the primary branch
+becomes a declared line, the tag separator/template becomes
+`policy.tagFormats` entries, and prerelease posture becomes the policy's
+ladder/seed/dampening knobs. Changelog coordinates and extra-files
+declarations have no manifest keys: their release-craft home is the
+artifact-declaration surface of the execution layer, not the planner's input
+boundary, and this contract does not claim them shipped.
+
 ### 2.2 Normalized repository observations
 
 A `CommitObservation` is `{ sha, parents, message, committedAt, containingRefs }`;

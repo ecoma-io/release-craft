@@ -192,6 +192,59 @@ export interface PlanningInput {
 }
 
 // ---------------------------------------------------------------------------
+// §2.1.a — the manifest configuration document (issue #204): the closed,
+// authored configuration surface parsed into the planner's own vocabulary.
+// ---------------------------------------------------------------------------
+
+/** The manifest's policy block — the declared half of `PolicyInput`, keyed by
+ * the same field names (config reuses the planner's vocabulary; it is input,
+ * never a second semantic model). Every field is required: a manifest that
+ * omits one is refused with the named field, never silently absorbed into a
+ * default. */
+export interface ManifestPolicy {
+  readonly digest: string;
+  readonly bumpMappingId: string;
+  readonly prereleaseLadder: readonly string[];
+  readonly prereleaseSeed: "0" | "1";
+  readonly pre10Dampening: boolean;
+  readonly selfReferenceNamespace: string;
+  /** Declared per-line tag-format overrides, keyed by line id (fork 11).
+   * Each key must name a line declared in the same document — a format for
+   * an undeclared line is a dangling reference this door refuses. */
+  readonly tagFormats: Readonly<Record<string, string>>;
+}
+
+/** One dependency edge declared in the manifest — the same grammar as the
+ * planner's `ComponentDependency` (`^x.y.z`, `~x.y.z`, exact `x.y.z`). */
+export interface ManifestDependency {
+  readonly name: string;
+  readonly range: string;
+}
+
+/** One declared component entry (release-please's `packages` map pattern,
+ * baseline §5.2): per-field overrides over the document's
+ * `components.defaults`. `manifestVersion` rides as a projection (invariant
+ * 6) — carried for drift surface, never consumed in range or bump
+ * computation. */
+export interface ManifestComponent {
+  readonly paths: readonly string[];
+  readonly manifestVersion: string;
+  readonly dependencies: readonly ManifestDependency[];
+}
+
+/** The manifest's declared half, after parsing — exactly the `PlanningInput`
+ * fields the document may author, in the planner's own vocabulary. A caller
+ * composes it with the observed half (`repository`, `history`) into a full
+ * `PlanningInput`: `{ ...manifestInput(document), repository, history }`. */
+export interface ManifestInput {
+  readonly policy: PolicyInput;
+  readonly lines: readonly LineConfig[];
+  readonly components?: readonly ComponentMeta[];
+  readonly channels?: readonly ChannelObservation[];
+  readonly bootstrap?: BootstrapDecision;
+}
+
+// ---------------------------------------------------------------------------
 // §2.2 — the evaluated range, supplied per line by the caller in PR-2
 // ---------------------------------------------------------------------------
 
@@ -305,6 +358,13 @@ export type AttributionOutcome =
  * `PlanningInput` values are caller contract violations, not planning
  * outcomes: this throws. */
 export type NormalizeInput = (raw: PlanningInput) => PlanningInput;
+
+/** `config.ts` — parses the manifest configuration document (issue #204):
+ * the closed, authored configuration surface, validated loudly (unknown
+ * keys, dangling component/line references, and malformed values are
+ * refusals with named details, never absorbed into defaults) and projected
+ * into the planner's own vocabulary as a `ManifestInput`. */
+export type ParseManifest = (document: unknown) => ManifestInput;
 
 /** `extract.ts` — maps commit observations to candidate changes (§2.3) with
  * the self-reference rule applied before classification (§2.12). */
