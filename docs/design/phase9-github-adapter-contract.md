@@ -247,7 +247,13 @@ RefRead`, the recorded refs' read-only enumeration — `claims()`
   for a lightweight one). Pure `for-each-ref` reads: no write, no `HEAD`
   resolution, no working-tree state (the mint door's discipline, read
   side). The adapter's transport-level git (`ls-remote`, `push`) runs
-  against exactly this repository — structural, not conventional.
+  against exactly this repository — structural, not conventional —
+  through its own transport runner (`remote-git.ts`), which carries no
+  substrate probe, deliberately: `ls-remote` and `push` perform no
+  recorded-history walks and no recorded-content reads — the operations
+  the guard exists for — and git fails loudly, in its own transport
+  vocabulary, on a shape it cannot transport (phase 8 §2.7 guards the
+  binding's doors, not the adapter's transport).
 - **Rejected — a remote-operation door on the binding** (`ls-remote` /
   `push` behind `GitBinding`): it would move network I/O and
   credentials into the binding, rewriting ADR-0009 decision 7 ("no API

@@ -337,7 +337,14 @@ Opening itself spawns nothing — the CLI builds bindings on paths a run
 may never touch, and a fixture bootstraps `git init` through a fresh
 runner — so the guard rides the first command instead, and re-arms until
 it has seen a repository, so a substrate that comes to exist under a
-bootstrap runner is guarded from its first real command on:
+bootstrap runner is guarded from its first real command on. The clean
+pass then holds for the runner's lifetime, and that is a declared
+precondition of the runner, not a live proof: the probe reads repository
+metadata once, so a substrate that changes underneath a running runner
+afterwards — a concurrent `--depth 1` fetch in the same checkout, a
+grafts file planted mid-process, the `.git` directory swapped — proceeds
+unguarded. The caller owns the checkout's shape for the binding's
+runtime, the same declared posture as D42's preconditions:
 
 - **Shallow repositories refuse (D45).** In a truncated clone
   (`fetch-depth: 1`, the common CI posture) `rev-list --first-parent`
@@ -364,11 +371,14 @@ bootstrap runner is guarded from its first real command on:
   path for a future consumer (D48).
 
 Only the object-format probe's own failure is swallowed, and only
-because it doubles as the repository detector — a first command on a path
-that is no repository finds nothing to guard, and the command behind the
-probe faults on exactly that condition if it needs one. Every other
-probe failure — a corrupt repository, a missing binary — propagates as
-the fault it is: an unopenable substrate is an open fault.
+because it doubles as the repository detector: a first command on a path
+that is no repository finds nothing to guard, and a substrate too broken
+to answer even that probe surfaces no probe fault at all — what surfaces
+is the caller's own command's fault, under the caller's argv, naming the
+condition it hit. The shallow and grafts probes run only on a repository
+the format probe has already read, so their own failures — a corrupt
+repository, a missing binary — propagate as the fault they are: an
+unopenable substrate is an open fault.
 
 ## 3. Laws
 
