@@ -15,19 +15,20 @@ Provenance and update discipline:
   or a recorded run, cited per row. Prose is never evidence.
 - The document is **living**: every PR that lands or changes a capability updates its rows
   in the same PR. A dogfood cell moves only on a recorded run. The GAP rows are the
-  campaign's backlog — each carries its tracking issue.
+  campaign's backlog — each carries either its tracking issue or the named open
+  decision that must land before the work can be filed.
 
 ## How to read
 
 Parity classes:
 
-| Class            | Meaning                                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `PARITY`         | Same observable outcome as release-please, evidence cited.                                                         |
-| `RC-STRONGER`    | Release-craft strictly subsumes the capability; difference classified `RC-STRONGER`.                               |
-| `PARTIAL`        | Overlap plus a named, classified difference — often a known bug or a pending decision.                             |
-| `GAP`            | Release-craft cannot do this today. The row's issue is the backlog.                                                |
-| `NOT-APPLICABLE` | Outside the engine's product boundary per the baseline's classification table. Documented, never silently dropped. |
+| Class            | Meaning                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `PARITY`         | Same observable outcome as release-please, evidence cited.                                                                       |
+| `RC-STRONGER`    | Release-craft strictly subsumes the capability; difference classified `RC-STRONGER`.                                             |
+| `PARTIAL`        | Overlap plus a named, classified difference — often a known bug or a pending decision.                                           |
+| `GAP`            | Release-craft cannot do this today. The row's issue — or, where a decision gates the work, that named decision — is the backlog. |
+| `NOT-APPLICABLE` | Outside the engine's product boundary per the baseline's classification table. Documented, never silently dropped.               |
 
 Divergence classifications attached in the Differences column: `EQUIVALENT`,
 `RC-STRONGER`, `POLICY DIFFERENCE`, `UNSUPPORTED`, `RELEASE-PLEASE QUIRK`, `BUG`,
@@ -181,8 +182,9 @@ package/component · dependency propagation · final outcome.
 
 ## GAP → issue tracking
 
-The GAP rows are the campaign backlog. One issue per subsystem, each filed through the
-feature-request template:
+The GAP rows are the campaign backlog: one issue per subsystem, each filed through the
+feature-request template. Three further GAP rows (A5, D6, I3) wait on open decisions
+D1, D3 and D5 — their engineering issues are filed once those decisions land:
 
 | Issue                                       | Subsystem                                                     | Rows                      |
 | ------------------------------------------- | ------------------------------------------------------------- | ------------------------- |
@@ -210,8 +212,10 @@ cross-process resume), [#195] (J1, constant stage fingerprints),
 | `GAP`            | 16   |
 | `NOT-APPLICABLE` | 2    |
 
-55 capability rows. The GAP rows map to seven tracking issues above; the decision rows
-(D1–D7) are visible, named, and none is hidden inside a partial row.
+55 capability rows. Thirteen GAP rows map to the seven tracking issues above; three
+more (A5, D6, I3) hang on open decisions D1, D3 and D5 until those decisions turn
+them into filed work. The decision rows (D1–D7) are visible, named, and none is
+hidden inside a partial row.
 
 [issue #200]: https://github.com/ecoma-io/release-craft/issues/200
 [self-dogfood PR #141]: https://github.com/ecoma-io/release-craft/pull/141
