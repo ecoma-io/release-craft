@@ -60,6 +60,7 @@ export * from "@ecoma-io/release-craft/execution";
 // barrel's, wholesale (one declaration, no drift), and its isolation is
 // enforced by test/app/surface.test.ts.
 export * from "@ecoma-io/release-craft/app";
+export * from "@ecoma-io/release-craft/adapters/node-workspace";
 
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;

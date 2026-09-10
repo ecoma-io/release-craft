@@ -27,6 +27,7 @@
       "@ecoma-io/release-craft/app": ["./src/app/index.ts"],
       "@ecoma-io/release-craft/adapters/git": ["./src/adapters/git/index.ts"],
       "@ecoma-io/release-craft/adapters/github": ["./src/adapters/github/index.ts"],
+      "@ecoma-io/release-craft/adapters/node-workspace": ["./src/adapters/node-workspace/index.ts"],
       "@ecoma-io/release-craft/__internal__/*": ["./src/*"]
     }
   },

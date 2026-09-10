@@ -43,6 +43,7 @@ projects:
   cli: "src/cli"
   adapters-git: "src/adapters/git"
   adapters-github: "src/adapters/github"
+  adapters-node-workspace: "src/adapters/node-workspace"
   gate-scripts: "scripts"
 vcs:
   provider: other
