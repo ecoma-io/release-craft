@@ -304,7 +304,12 @@ function renderVersion(
       lines.push("");
     }
   }
-  return lines.join("\n").replace(/\n+$/, "\n");
+  // Trailing blanks (the separators above) collapse to the single terminator
+  // newline — trimmed linearly over the constructed lines, never through a
+  // regex: caller text may repeat `\n`, and a backtracking `\n+$` on it is
+  // the polynomial scan CodeQL refuses.
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return `${lines.join("\n")}\n`;
 }
 
 /** The version's rendered sections, in order: the breaking section first,
