@@ -179,7 +179,12 @@ describe("the abandonment record — git ledger (ADR-0013 decisions 1–3)", () 
  *   record is NOT terminal in the resume door — the value is §2.7
  *   bookkeeping, never authority, and the tail outranks it in BOTH
  *   directions;
- * - (c) both doors agree on the clean, completed, and abandoned shapes.
+ * - (c) both doors agree on the clean, completed, and abandoned shapes;
+ * - (d) when a TERMINAL value rides a tail that carries an abandonment,
+ *   the replay door's refusal quotes the recorded evidence, not the
+ *   process-local wall's string — the tail read precedes the wall, so
+ *   the two refusal shapes' order is observable and pinned, not
+ *   decoration.
  */
 
 const noClaims: ClaimView = { held: null, verify: () => false };
@@ -258,6 +263,39 @@ describe("the one terminality law — both doors answer from the tail (#122)", (
       detail:
         "terminal attempt — recorded refusal (the record-path replay door, phase 5 contract §2.8)",
     });
+  });
+
+  it("(d) a TERMINAL value over an abandonment tail: the tail's refusal wins — precedence, not decoration", () => {
+    // The two refusal shapes differ ONLY in their detail (see (a)): the
+    // tail quotes the recorded actor and reason, the wall names the
+    // process-local value. Both existing refusal pins ((a) and (b'))
+    // drive open/executing or empty-tail shapes, where either check's
+    // position yields the same detail — the wall-vs-tail ORDER was
+    // unobserved. This shape makes it observable: the value claims
+    // `published` (as terminal as the wall demands) while the tail
+    // carries the abandonment, so whichever check runs FIRST names the
+    // refusal. ADR-0013 decision 3's one law reads the tail first — the
+    // refusal must quote the recorded evidence, never the wall's string.
+    const done: ReleaseAttempt = { ...executing, state: "published" };
+    const ledger = new MemoryLedger();
+    ledger.append(abandonment());
+    const outcome = ledgerRequestStep(done, stepRequestFor(done, "plan"), noClaims, ledger);
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") return;
+    expect(outcome.detail).toContain("human:maintainer");
+    expect(outcome.detail).toContain("the release was withdrawn");
+    expect(outcome.detail).toContain("terminal from the ledger alone");
+    expect(outcome.detail).not.toBe(
+      "terminal attempt — recorded refusal (the record-path replay door, phase 5 contract §2.8)",
+    );
+
+    // The resume door's mirror: the same abandonment tail throws the
+    // same recorded evidence regardless of the value driving it — the
+    // `published` value moves the verdict exactly as much as the
+    // `executing` one does (not at all). Identical tails, identical
+    // answers (§2.3) — the value is never authority.
+    expect(classificationOf(ledger, done)).toBe(classificationOf(ledger, executing));
+    expect(classificationOf(ledger, done)).toContain("the release was withdrawn");
   });
 
   it("(c) both doors agree across the clean, completed, and abandoned shapes", () => {
