@@ -1,7 +1,7 @@
 name: Bug report
 description: Something behaves differently from its documented contract.
 title: "bug: "
-labels: ["bug", "needs triage"]
+labels: ["needs triage"]
 body:
   - type: markdown
     attributes:
