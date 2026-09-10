@@ -95,6 +95,38 @@ surface arrives with the consumer that needs it.
    where it serves every caller — the engine's discipline is its
    complement, not its substitute.
 
+6. **Classified losses.** A refused compare-and-swap is classified at
+   the primitive, not propagated raw: the loser outcome (`null`) is
+   decided by re-reading the ref — a ref that moved inside the race
+   window is a concurrent winner's fact, never a fault, whatever the
+   failure's spelling. The one window the re-read cannot discriminate —
+   the winner still holding the ref's `.lock`, the ref not yet at its
+   tip, where a benign loser's failure reads byte-identically to a
+   stuck one — resolves only for the positively identified lock-
+   contention shape (git's byte-exact EEXIST spelling, `cannot lock ref
+'<ref>': Unable to create '<path>.lock': File exists.`, the first
+   line alone: the advisory after it varies by git version and
+   `core.lockfilePid` state, and the shape is verified in git's source
+   at v2.34.0 and v2.55.0 and first-hand on 2.55.0 under the runner's
+   pinned C locale) and only with bounded patience: at most three whole
+   compare-and-swaps, each riding git's own `core.filesRefLockTimeout`
+   (100ms by default) — a released lock lands, a ref moved under the
+   retries classifies as the loss, a lock that never frees exhausts the
+   budget and fails closed. Everything else faults loudly: the
+   classification's residual is that contention outlasting the budget
+   (a suspended winner, indistinguishable from a stale lock) is a
+   declared fault, and no shape short of the byte-exact spelling — a
+   permission denial, the old-value refusals, a foreign lock path — is
+   ever downgraded to a silent loss (issue #183; D52). The bound lives
+   in the primitive, not in a plain `null` mapping, because the acquire
+   and channel loops above it are unbounded: a stale lock fed to them
+   as a loss would spin forever. On a modern git the window is narrow —
+   the 100ms internal lock retry absorbs a live winner's critical
+   section (verified first-hand: a 200-round two-process contention
+   loop yields ref-moved refusals only) — and on gits without the
+   setting the bounded retry is what absorbs it: version-neutral by
+   construction.
+
 The reference mapping (the implementation PR may refine it, never the
 guarantees): each scope anchors to exactly one ref whose history is the
 append sequence — every append one commit holding one new blob in

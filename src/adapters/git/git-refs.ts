@@ -62,6 +62,42 @@ export function casCreateRef(git: GitRun, ref: string, target: string): void {
 }
 
 /**
+ * The bounded patience the contended-ref-lock window gets (#183; D52): when
+ * `update-ref` dies on a held ref lock and the re-read cannot yet
+ * discriminate, the whole compare-and-swap re-spawns at most this many
+ * times before the fault fails closed. Every spawn carries git's own lock
+ * retry (`core.filesRefLockTimeout`, 100ms by default — documented from
+ * v2.29.0 through v2.55.0), so the budget is a fraction of a second of
+ * lock-wait — far past any live winner's critical section (a lock-hold
+ * git's own retry already absorbs, verified first-hand: a 50ms hold loses
+ * no race on git 2.55.0) — and never an unbounded wait on a stale lock,
+ * which is why the window is bounded here rather than mapped to a plain
+ * loss: the acquire and channel loops above `casAppendCommit` are
+ * unbounded, and a stale lock fed to them as a loss would spin forever.
+ */
+const MAX_LOCK_ATTEMPTS = 3;
+
+/**
+ * Whether a failed `update-ref` died on the ref's own lock file: the
+ * byte-exact first line git's files backend prints when the lock's
+ * exclusive create finds the file already there — `cannot lock ref
+ * '<ref>': Unable to create '<path>.lock': File exists.` (the EEXIST
+ * branch of `unable_to_lock_message`, `strerror(EEXIST)` under the
+ * runner's pinned C locale; verified in git's source at v2.34.0 and
+ * v2.55.0 and first-hand on this machine's git). The advisory text that
+ * follows the first line varies across git versions and `core.lockfilePid`
+ * states, so the shape keys on the first line alone. Everything else — a
+ * permission denial (`…lock': Permission denied`, no trailing period), the
+ * old-value refusals (`is at … but expected …`, `reference already
+ * exists`), a foreign lock file's path — does not match and fails closed.
+ */
+const isRefLockContention = (ref: string, stderr: string): boolean => {
+  const marker = `cannot lock ref '${ref}': Unable to create '`;
+  const start = stderr.indexOf(marker);
+  return start >= 0 && /^[^'\n]+\.lock': File exists\.\n/.test(stderr.slice(start + marker.length));
+};
+
+/**
  * Appends one commit holding `content` as the scope's record: the blob is
  * written first (content in, oid out), wrapped in a one-entry tree, committed
  * with the fixed identity and clock, and the ref is moved only if its current
@@ -69,7 +105,13 @@ export function casCreateRef(git: GitRun, ref: string, target: string): void {
  * history, the forward-only guarantee made physical (contract §2.2). Returns
  * the new tip; returns null without moving anything when the ref's current
  * value is not `base` — the loser side, decided here so callers never map a
- * race to an exception.
+ * race to an exception. A refused `update-ref` is classified here too
+ * (#183; D52): the re-read decides the loss (a ref that moved is the loser
+ * outcome, whatever the failure's spelling); the one window the re-read
+ * cannot yet discriminate — the winner still holding the ref lock — is
+ * positively identified by the lock-contention stderr shape and retried
+ * with bounded patience; every other shape faults loudly, so a real
+ * substrate failure is never downgraded to a silent loss.
  */
 export function casAppendCommit(
   git: GitRun,
@@ -91,11 +133,48 @@ export function casAppendCommit(
   try {
     git(["update-ref", ref, commit, base ?? ZERO_OID]);
   } catch (error) {
-    // The read-check above passed but the ref lock refused: a concurrent
-    // writer moved the ref inside the race window — the loser outcome, not
-    // a fault. A genuine fault (corrupt repository) still propagates.
-    if (error instanceof GitFaultError && readRef(git, ref) !== current) {
-      return null;
+    if (error instanceof GitFaultError) {
+      // The read-check above passed but the ref lock refused. The re-read
+      // decides first, whatever the failure's spelling: a ref that moved
+      // inside the race window is the loser outcome — a concurrent
+      // winner's fact, never a fault.
+      if (readRef(git, ref) !== current) {
+        return null;
+      }
+      // The window the re-read cannot discriminate (#183): the winner still
+      // holds the ref lock and has not yet moved the ref, so a benign
+      // loser's failure reads byte-identically to a stuck one. The shape
+      // decides — only the byte-exact lock-contention spelling retries,
+      // with bounded patience: each retry re-runs the whole
+      // compare-and-swap, so a released lock lands (the retry's own
+      // old-value check re-verifies `base` in git), a ref that moved under
+      // the retries classifies as the loss, and a lock that never frees
+      // exhausts the budget and fails closed. Every other spelling — a
+      // permission denial, a corrupt repository, the ref vanished —
+      // propagates immediately, still a fault.
+      if (isRefLockContention(ref, error.stderr)) {
+        let last = error;
+        for (let attempt = 1; attempt < MAX_LOCK_ATTEMPTS; attempt++) {
+          try {
+            git(["update-ref", ref, commit, base ?? ZERO_OID]);
+            return commit;
+          } catch (retry) {
+            if (retry instanceof GitFaultError) {
+              if (readRef(git, ref) !== current) {
+                return null;
+              }
+              if (isRefLockContention(ref, retry.stderr)) {
+                last = retry;
+              } else {
+                throw retry;
+              }
+            } else {
+              throw retry;
+            }
+          }
+        }
+        throw last;
+      }
     }
     throw error;
   }

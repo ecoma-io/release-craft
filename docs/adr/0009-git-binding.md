@@ -95,6 +95,18 @@ info/grafts`; grafted parentage rewrites the walk and no variable
    quiet verification's exit-1-empty-stderr shape (D39's absence shape)
    raises the door's own `GitFaultError` naming the target, the
    declared-lie fault phase 13 §2.8 pins, never a returned refusal class.
+   Amendment (issue #183; D52): the physical CAS classifies its loser
+   instead of propagating the refusal raw. The re-read decides the loss
+   first — a ref that moved inside the race window is the loser outcome,
+   whatever the failure's spelling — and the one window the re-read
+   cannot yet discriminate (the winner still holding the ref's lock, the
+   ref not yet moved) resolves only for git's positively identified
+   lock-contention shape and only with bounded patience inside the
+   primitive; every other spelling faults loudly. A plain loss-mapping
+   was rejected because the claim and channel loops above the primitive
+   are unbounded and a stale lock fed to them as a loss would spin
+   forever — the fail-closed residual (contention outlasting the budget
+   is a declared fault) is the law's other half.
 3. **The mapping is invisible through the port.** Engine code cannot tell
    `MemoryLedger` from the git-backed one; the provider-isolation gate
    keeps it that way (the engine runs green with the binding absent, as it
