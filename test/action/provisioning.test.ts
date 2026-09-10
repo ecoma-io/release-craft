@@ -26,6 +26,8 @@ import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { hermeticGitEnv } from "../../src/adapters/git/index.js";
+
 import { describe, expect, it } from "vitest";
 
 const REPO_ROOT = join(import.meta.dirname, "..", "..");
@@ -47,15 +49,21 @@ function withMaterialization(fn: (dir: string) => void): void {
   }
 }
 /**
- * The environment the fixture's installs run under. pnpm detects "AI agent"
- * ambient variables (CLAUDECODE, AGENT, …) and switches its reporter to
- * NDJSON — the lifecycle failure then reads as a JSON event, not the
- * `[ELIFECYCLE]` line the composite's contract (and this fixture) is written
- * against. The runner's step executes under plain CI env; the fixture matches
- * that floor by dropping the agent markers instead of inheriting them (#154).
+ * The environment the fixture's installs run under. The ambient composition
+ * (the moon-spawned worker, not the test author's shell) leaks git context —
+ * GIT_DIR among it. With GIT_DIR exported, the prepare script's `lefthook
+ * install` finds a repository anyway, its git probe succeeds, and the
+ * unflagged install exits 0: the materialization shape stops reproducing the
+ * defect, with or without any other ambient variable (#154 — the same leak
+ * that let the dogfood closure observe the ambient checkout's commits). The
+ * installs therefore run on the binding's hermetic floor, the same one the
+ * world fixture's closure runs on. The agent markers are stripped on top only
+ * to pin the reporter's shape: pnpm detects them and flips to NDJSON output —
+ * cosmetic (they never moved the exit code), but the fixture reads the
+ * reporter's lines as its fault-shape evidence.
  */
 const INSTALL_ENV: NodeJS.ProcessEnv = Object.fromEntries(
-  Object.entries(process.env).filter(
+  Object.entries(hermeticGitEnv()).filter(
     ([key]) => key !== "CLAUDECODE" && key !== "CLAUDE_CODE" && key !== "AGENT",
   ),
 );
@@ -104,6 +112,20 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
           witnessed,
           "the unflagged install failed without pnpm's ELIFECYCLE marker — the cause is not a lifecycle script",
         ).toMatch(/\[ELIFECYCLE\]/);
+      });
+      // The positive control, deterministic by construction: the SAME tree
+      // under the SAME install, but with the ambient leak the composition
+      // carries — GIT_DIR pointed at a repository — flipped to exit 0. The
+      // hermetic floor above is what carries the first leg's assertion, not
+      // the tree's shape alone; this leg reproduces the composition fault on
+      // demand so the mechanism can never silently regress (#154).
+      withMaterialization((leaked) => {
+        const leakedRun = spawnSync("pnpm", ["install", "--frozen-lockfile"], {
+          cwd: leaked,
+          encoding: "utf8",
+          env: { ...INSTALL_ENV, GIT_DIR: join(REPO_ROOT, ".git") },
+        });
+        expect(leakedRun.status, `the leak control failed to exit:\n${leakedRun.stderr}`).toBe(0);
       });
       withMaterialization((materialized) => {
         // The composite's run line: the provisioning's product installs
