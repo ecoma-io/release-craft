@@ -7,7 +7,10 @@
  * Deterministic replay (issue #203): the content producer is a pure
  * function. Re-running it must yield identical bytes. The scheduler's
  * replay path answers from the ledger's stored record and never re-runs
- * the producer.
+ * the producer; a tail whose completion records disagree on a mutation's
+ * content fingerprint is refused, never silently replayed (§2.4's
+ * conflict, fingerprint-carried). The mutations drive in the anchor-
+ * interleaved effective order (§2.1), not declaration order.
  *
  * Crash reconciliation (issue #203): a step `started` but not
  * `completed` is a crash between write-ahead and effect. The scheduler
@@ -21,7 +24,9 @@
  * invents them.
  */
 import { block, InvalidExecutionTransitionError } from "./attempt.js";
-import { updaterStepKey } from "./step-keys.js";
+import { effectiveSteps } from "./hooks.js";
+import { contentFingerprint } from "./identity.js";
+import { isUpdaterStepKey } from "./step-keys.js";
 import {
   type Attribution,
   type ClaimView,
@@ -48,18 +53,28 @@ const stepRecord = (appended: LedgerRecord): TransitionRecord => {
   return appended.record;
 };
 
-/** Extracts the updater mutation steps from the declared mutations in
- * declaration order, each paired with its ledger key (issue #203's
- * `updater:<id>` space). The scheduler iterates these; `effectiveSteps`
- * (hooks module) places the same keys in the attempt's full step list
- * so the resume classification sees them. */
+/** Extracts the updater mutation steps from the attempt's effective step
+ * list — the anchor-interleaved execution order (§2.1, hooks module), not
+ * declaration order — each paired with its ledger key (issue #203's
+ * `updater:<id>` space). A recorded updater key no declared mutation
+ * answers is the kernel-level violation hooks and artifacts throw for;
+ * the scheduler never drives a key nothing declared. */
 export const effectiveUpdaterSteps = (
   attempt: ReleaseAttempt,
-): readonly { readonly stepKey: UpdaterStepKey; readonly mutation: DeclaredMutation }[] =>
-  (attempt.mutations ?? []).map((mutation) => ({
-    stepKey: updaterStepKey(mutation.id),
-    mutation,
-  }));
+): readonly { readonly stepKey: UpdaterStepKey; readonly mutation: DeclaredMutation }[] => {
+  const declared = new Map((attempt.mutations ?? []).map((mutation) => [mutation.id, mutation]));
+  return effectiveSteps(attempt)
+    .filter(isUpdaterStepKey)
+    .map((stepKey) => {
+      const mutation = declared.get(stepKey.slice("updater:".length));
+      if (mutation === undefined) {
+        throw new InvalidExecutionTransitionError(
+          `no declared mutation answers the recorded key ${stepKey} (contract §2.1)`,
+        );
+      }
+      return { stepKey, mutation };
+    });
+};
 
 /** The declared postconditions this mutation cannot prove (ADR-0007
  * decision 5, shared by the fresh and crash-reconcile paths): an
@@ -100,6 +115,29 @@ export const scheduleMutations = (
   }
   const outcomes: MutationOutcome[] = [];
   for (const { stepKey, mutation } of effectiveUpdaterSteps(attempt)) {
+    // Recorded-vs-recorded reconciliation (§2.4's digest-conflict,
+    // carried by the completions' content fingerprints): a second
+    // completion for this key whose recorded fingerprint differs from
+    // the first is a conflict — refused, never a silent replay of
+    // whichever record reads last. A completion with no fingerprint
+    // participates as its own distinct value: recorded proof this layer
+    // cannot compare is refused, fail-closed.
+    const completions = ledger
+      .tail(attempt.attemptId)
+      .flatMap((appended) => (appended.kind === "step" ? [appended.record] : []))
+      .filter((record) => record.stepKey === stepKey && record.to === "completed");
+    const fingerprints = new Set(
+      completions.map((record) => record.contentFingerprint ?? "\u0000no-fingerprint"),
+    );
+    if (fingerprints.size > 1) {
+      outcomes.push({
+        kind: "refused",
+        stepKey,
+        mutationId: mutation.id,
+        detail: `fingerprint-conflict: the completion records disagree on "${mutation.id}"'s content (contract §2.2)`,
+      });
+      break;
+    }
     // Replay (§2.2) first: the ledger projection answers, the producer
     // never re-runs — a completed mutation replays even when the intents
     // map carries no entry.
@@ -184,8 +222,9 @@ export const scheduleMutations = (
         }
         // Resume: the filesystem already holds the correct bytes. The
         // effect is durable-in-place; record completion, never re-write.
-        // The completion carries the caller's declared digest — the
-        // recorded proof downstream verification reads (issue #203).
+        // The completion carries the content fingerprint derived from
+        // the bytes on disk — the same derivation a fresh completion
+        // runs, never the caller's declared digest (issue #203).
         const appended = ledger.append({
           kind: "step",
           record: {
@@ -195,9 +234,7 @@ export const scheduleMutations = (
             guards: [{ guard: mutation.guard, passed: true }],
             attribution,
             to: "completed",
-            ...(intent.expectedDigest.length === 0
-              ? {}
-              : { contentFingerprint: intent.expectedDigest }),
+            contentFingerprint: contentFingerprint({ [intent.path]: current }),
           },
         });
         outcomes.push({
@@ -317,10 +354,10 @@ export const scheduleMutations = (
       return { attempt: blocked, outcomes };
     }
 
-    // The completion record: guards passed, content fingerprint from the
-    // caller's declared digest when the postcondition names it (or the
-    // digest is non-empty — the proof is free and always true of a
-    // deterministic producer's output).
+    // The completion record: guards passed, and the content fingerprint
+    // derived from the bytes the write left on disk — the recorded proof
+    // is what the updater itself derived, never the caller's declared
+    // digest (issue #203: a declared digest is attestation, not evidence).
     const appended = ledger.append({
       kind: "step",
       record: {
@@ -330,9 +367,7 @@ export const scheduleMutations = (
         guards: [{ guard: mutation.guard, passed: true }],
         attribution,
         to: "completed",
-        ...(intent.expectedDigest.length === 0
-          ? {}
-          : { contentFingerprint: intent.expectedDigest }),
+        contentFingerprint: contentFingerprint({ [intent.path]: written }),
       },
     });
     outcomes.push({

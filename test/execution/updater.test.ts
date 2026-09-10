@@ -5,6 +5,7 @@ import {
   MemoryLedger,
   block,
   classifyResume,
+  contentFingerprint,
   effectiveSteps,
   hookStepKey,
   openAttempt,
@@ -177,15 +178,19 @@ describe("scheduleMutations", () => {
     const outcome = completedOutcome(result.outcomes);
     expect(outcome.mutationId).toBe("mut-1");
     expect(fs.content["CHANGELOG.md"]).toBe("# v1.0.0\n");
-    // Completion record carries the content fingerprint from the intent
-    // (the helper derives it from the content's length).
-    expect(outcome.record.contentFingerprint).toBe("digest:9");
+    // The completion record's fingerprint is the canonical derivation
+    // over the produced bytes — never the caller's declared digest.
+    expect(outcome.record.contentFingerprint).toBe(
+      contentFingerprint({ "CHANGELOG.md": "# v1.0.0\n" }),
+    );
   });
 
-  it("records the content fingerprint on the completion record when expectedDigest is present (issue #203)", () => {
+  it("never records a caller's bogus expectedDigest — the fingerprint is derived from the produced bytes (issue #203)", () => {
     const attempt = executing([mutationDecl("mut-1", "commit", "after")]);
     const ledger = new MemoryLedger();
     const fs = trackingFs();
+    // A caller-declared digest that has nothing to do with the produced
+    // bytes must not land as recorded evidence.
     const intents = new Map([
       ["mut-1", intentFor("mut-1", "release.json", '{"version":"1.0.0"}', "sha256:abcdef")],
     ]);
@@ -200,7 +205,29 @@ describe("scheduleMutations", () => {
     );
 
     const outcome = completedOutcome(result.outcomes);
-    expect(outcome.record.contentFingerprint).toBe("sha256:abcdef");
+    expect(outcome.record.contentFingerprint).toBe(
+      contentFingerprint({ "release.json": '{"version":"1.0.0"}' }),
+    );
+    expect(outcome.record.contentFingerprint).not.toBe("sha256:abcdef");
+  });
+
+  it("records the derived fingerprint even when the caller declares no expectedDigest (issue #203)", () => {
+    const attempt = executing([mutationDecl("mut-1", "commit", "after")]);
+    const ledger = new MemoryLedger();
+    const fs = trackingFs();
+    const intents = new Map([["mut-1", intentFor("mut-1", "pkg.json", "{}", "")]]);
+
+    const result = scheduleMutations(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      intents,
+      fs,
+    );
+
+    const outcome = completedOutcome(result.outcomes);
+    expect(outcome.record.contentFingerprint).toBe(contentFingerprint({ "pkg.json": "{}" }));
   });
 });
 
@@ -263,6 +290,62 @@ describe("deterministic replay", () => {
     );
     expect(soleOutcome(second.outcomes).kind).toBe("completed");
     expect(fs.writes).toEqual(["pkg.json"]); // still just the one write
+  });
+});
+
+describe("recorded-vs-recorded reconciliation", () => {
+  it("refuses a tail whose completion records disagree — never a silent replay of whichever record reads last (issue #203)", () => {
+    const attempt = executing([mutationDecl("mut-1", "commit", "after")]);
+    const ledger = new MemoryLedger();
+    const fs = trackingFs();
+    const stepKey = updaterStepKey("mut-1");
+    const intents = new Map([["mut-1", intentFor("mut-1", "pkg.json", "{}")]]);
+
+    // First pass: a completed mutation with its derived fingerprint.
+    const first = scheduleMutations(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      intents,
+      fs,
+    );
+    expect(soleOutcome(first.outcomes).kind).toBe("completed");
+    const writesAfterFirst = fs.writes.length;
+
+    // A second completion for the same step, recorded with DIFFERENT
+    // content — as if a diverged run completed over the same key. The
+    // tail now carries two disagreeing recorded proofs.
+    ledger.appendStart(attempt, stepKey, actor(attempt), undefined, "release-line");
+    ledger.append({
+      kind: "step",
+      record: {
+        attemptId: attempt.attemptId,
+        stepKey,
+        from: "started",
+        to: "completed",
+        guards: [{ guard: "release-line", passed: true }],
+        attribution: actor(attempt),
+        contentFingerprint: contentFingerprint({ "pkg.json": '{"version":"2.0.0"}' }),
+      },
+    });
+
+    // Replay: the disagreement is refused, never silently answered.
+    const second = scheduleMutations(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      intents,
+      fs,
+    );
+    expect(second.outcomes).toHaveLength(1);
+    const outcome = refusedOutcome(second.outcomes);
+    expect(outcome.mutationId).toBe("mut-1");
+    expect(outcome.detail).toContain("fingerprint-conflict");
+    // No silent replay, no new write; the attempt stays for the engine to block.
+    expect(fs.writes).toHaveLength(writesAfterFirst);
+    expect(second.attempt.state).toBe("executing");
   });
 });
 
@@ -345,12 +428,14 @@ describe("crash reconciliation", () => {
     expect(result.attempt.state).toBe("blocked");
   });
 
-  it("carries the content fingerprint on a crash-reconciled completion too (issue #203)", () => {
+  it("derives the content fingerprint on a crash-reconciled completion from the resumed bytes (issue #203)", () => {
     const attempt = executing([mutationDecl("mut-1", "commit", "after")]);
     const ledger = new MemoryLedger();
     const fs = trackingFs({ "pkg.json": "{}" });
     recordStartOnly(ledger, attempt, "mut-1");
 
+    // A bogus declared digest must not land on a resumed completion
+    // either — the recorded proof is derived from the bytes on disk.
     const intents = new Map([["mut-1", intentFor("mut-1", "pkg.json", "{}", "sha256:resumed")]]);
     const result = scheduleMutations(
       attempt,
@@ -361,11 +446,9 @@ describe("crash reconciliation", () => {
       fs,
     );
 
-    // The resumed completion records the caller's declared digest — the
-    // recorded proof downstream verification reads, identical to a fresh
-    // completion's.
     const outcome = completedOutcome(result.outcomes);
-    expect(outcome.record.contentFingerprint).toBe("sha256:resumed");
+    expect(outcome.record.contentFingerprint).toBe(contentFingerprint({ "pkg.json": "{}" }));
+    expect(outcome.record.contentFingerprint).not.toBe("sha256:resumed");
   });
 
   it("fails a crash-reconciled completion whose declared postconditions are unmet (issue #203)", () => {
@@ -455,6 +538,43 @@ describe("ordered execution", () => {
     expect(() =>
       scheduleMutations(attempt, actor(attempt), ledger, heldClaim(attempt), intents, fs),
     ).toThrow(/no intent injected for the declared mutation "mut-2"/);
+  });
+
+  it("drives out-of-declaration-order anchors in effective order — one path, the later writer wins (issue #203)", () => {
+    // Declared in REVERSE effective order: the tag:after mutation first,
+    // the plan:before mutation second. Effective order is anchor-driven:
+    // plan:before runs before tag:after.
+    const mutations = [
+      mutationDecl("mut-tag", "tag", "after"),
+      mutationDecl("mut-plan", "plan", "before"),
+    ];
+    const attempt = executing(mutations);
+    const ledger = new MemoryLedger();
+    const fs = trackingFs();
+    const intents = new Map([
+      ["mut-tag", intentFor("mut-tag", "version.txt", "tag-wins")],
+      ["mut-plan", intentFor("mut-plan", "version.txt", "plan-first")],
+    ]);
+
+    const result = scheduleMutations(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      intents,
+      fs,
+    );
+
+    // Effective order: mut-plan first, mut-tag second — the later
+    // writer's bytes win on the shared path.
+    const completedIds = result.outcomes
+      .filter(
+        (outcome): outcome is Extract<MutationOutcome, { readonly kind: "completed" }> =>
+          outcome.kind === "completed",
+      )
+      .map((outcome) => outcome.mutationId);
+    expect(completedIds).toEqual(["mut-plan", "mut-tag"]);
+    expect(fs.content["version.txt"]).toBe("tag-wins");
   });
 });
 
