@@ -7,6 +7,8 @@
  * subset).
  */
 import { describe, expect, it } from "vitest";
+import { symlinkSync } from "node:fs";
+import { join } from "node:path";
 
 import { resolveWorkspaceGlob } from "@ecoma-io/release-craft/__internal__/adapters/node-workspace/node-glob.js";
 import { WorkspaceDetectionError } from "@ecoma-io/release-craft/__internal__/adapters/node-workspace/types.js";
@@ -113,6 +115,38 @@ describe("resolveWorkspaceGlob — directory semantics", () => {
   it("matches nothing for a pattern with no hits (empty but legal)", () => {
     withTempWorkspace("no-hits", (ws) => {
       expect(resolveIn(ws, "apps/*")).toEqual([]);
+    });
+  });
+});
+
+describe("resolveWorkspaceGlob — symlink posture", () => {
+  it("excludes a differently-named symlink into node_modules by resolution", () => {
+    withTempWorkspace("symlink-nm", (ws) => {
+      ws.write("node_modules/hoisted/package.json", PKG("hoisted"));
+      ws.write("packages/app/package.json", PKG("app"));
+      symlinkSync(join(ws.root, "node_modules"), join(ws.root, "vendor"));
+      expect(resolveIn(ws, "**")).toEqual([`${ws.root}/packages/app/package.json`]);
+    });
+  });
+
+  it("a symlink cycle resolves each real member once — no phantom paths", () => {
+    withTempWorkspace("symlink-cycle", (ws) => {
+      ws.write("packages/a/package.json", PKG("a"));
+      symlinkSync(join(ws.root, "packages"), join(ws.root, "packages", "loop"));
+      const matches = resolveIn(ws, "packages/**");
+      expect(matches).toEqual([`${ws.root}/packages/a/package.json`]);
+    });
+  });
+
+  it("still detects a directory reached through a symlink (pnpm-style member)", () => {
+    withTempWorkspace("symlink-member", (ws) => {
+      ws.write("packages/real/package.json", PKG("real"));
+      ws.write("external/foo/package.json", PKG("foo"));
+      symlinkSync(join(ws.root, "external", "foo"), join(ws.root, "packages", "foo"));
+      expect(resolveIn(ws, "packages/*")).toEqual([
+        `${ws.root}/packages/foo/package.json`,
+        `${ws.root}/packages/real/package.json`,
+      ]);
     });
   });
 });

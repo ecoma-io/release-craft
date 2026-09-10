@@ -6,6 +6,7 @@
  * silently guessing, matching §2.1's loud-refusal rule.
  */
 import { describe, expect, it } from "vitest";
+import { symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -283,6 +284,108 @@ describe("detectNodeWorkspace — D16 grammar refusal", () => {
       const refusal = error as WorkspaceDetectionError;
       expect(refusal.field).toBe("dependencies.lib");
       expect(refusal.message).toContain(range);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D16 grammar: non-canonical SemVer strings refuse AT DETECTION, naming the
+// declaring manifest file and field — the kernel's strict grammar
+// (core/domain/version.ts, decision-log D16) is the authority, so
+// leading-zero cores, leading-zero numeric prerelease identifiers, empty
+// prerelease identifiers and out-of-bound cores never drift downstream to
+// planPropagation's bare range error.
+// ---------------------------------------------------------------------------
+
+describe("detectNodeWorkspace — D16 grammar: non-canonical SemVer", () => {
+  it.each([
+    ["^01.2.3"], // leading-zero core
+    ["1.2.3-01"], // leading-zero numeric prerelease identifier
+    ["~1.2.3-rc."], // empty prerelease identifier
+    ["^9007199254740993.0.0"], // core beyond the safe-integer bound
+  ])("refuses %s naming the declaring file and field", (range) => {
+    withTempWorkspace("refuse-noncanonical", (ws) => {
+      addPnpmEvidence(ws);
+      addPackage(ws, "packages/lib", "lib", "1.0.0");
+      addPackage(ws, "packages/app", "app", "1.0.0", {
+        dependencies: { lib: range },
+      });
+      const error = capture(() => detectNodeWorkspace(ws.root));
+      expect(error).toBeInstanceOf(WorkspaceDetectionError);
+      const refusal = error as WorkspaceDetectionError;
+      expect(refusal.file).toBe(`${ws.root}/packages/app/package.json`);
+      expect(refusal.field).toBe("dependencies.lib");
+      expect(refusal.message).toContain(range);
+    });
+  });
+
+  it.each([["^1.2.3"], ["~0.4.1"], ["1.2.3-rc.1"], ["1.2.3+build.7"]])(
+    "accepts the canonical range %s",
+    (range) => {
+      withTempWorkspace("accept-canonical", (ws) => {
+        addPnpmEvidence(ws);
+        addPackage(ws, "packages/lib", "lib", "1.0.0");
+        addPackage(ws, "packages/app", "app", "1.0.0", {
+          dependencies: { lib: range },
+        });
+        const detected = expectDetected(detectNodeWorkspace(ws.root));
+        const app = detected.members.find((m) => m.name === "app");
+        expect(app?.edges).toEqual([
+          {
+            target: "lib",
+            range,
+            kind: "dependencies",
+            declaredIn: { file: `${ws.root}/packages/app/package.json` },
+          },
+        ]);
+      });
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Symlink posture: the resolved path, not the entry name, decides what the
+// walker enters — a hoisted tree behind a differently-named alias, a cycle
+// enumerating phantom member paths, and a legitimate symlinked member.
+// ---------------------------------------------------------------------------
+
+describe("detectNodeWorkspace — symlink posture", () => {
+  it("does not ingest a differently-named symlink into node_modules", () => {
+    withTempWorkspace("symlink-nm", (ws) => {
+      ws.write("pnpm-workspace.yaml", "packages:\n  - **\n");
+      addPackage(ws, "node_modules/hoisted", "hoisted", "1.0.0");
+      addPackage(ws, "packages/app", "app", "1.0.0");
+      // `vendor` is an alias into node_modules: the entry name cannot reveal
+      // it, so the exclusion must judge the resolved path.
+      symlinkSync(join(ws.root, "node_modules"), join(ws.root, "packages", "vendor"));
+      const detected = expectDetected(detectNodeWorkspace(ws.root));
+      expect(detected.members.map((m) => m.name)).toEqual(["app"]);
+    });
+  });
+
+  it("a symlink cycle yields each real member once — no phantom duplicate refusal", () => {
+    withTempWorkspace("symlink-cycle", (ws) => {
+      ws.write("pnpm-workspace.yaml", "packages:\n  - packages/**\n");
+      addPackage(ws, "packages/a", "a", "1.0.0");
+      // `packages/loop` points back at `packages`: following it enumerates
+      // packages/loop/loop/…/a/package.json until the kernel gives up.
+      symlinkSync(join(ws.root, "packages"), join(ws.root, "packages", "loop"));
+      const detected = expectDetected(detectNodeWorkspace(ws.root));
+      expect(detected.members).toHaveLength(1);
+      expect(detected.members[0]?.name).toBe("a");
+      expect(detected.members[0]?.manifestPath).toBe("packages/a/package.json");
+    });
+  });
+
+  it("detects a legitimately symlinked workspace member (pnpm-style layout)", () => {
+    withTempWorkspace("symlink-member", (ws) => {
+      addPnpmEvidence(ws);
+      addPackage(ws, "packages/real", "real", "1.0.0");
+      addPackage(ws, "external/foo", "foo", "1.0.0");
+      symlinkSync(join(ws.root, "external", "foo"), join(ws.root, "packages", "foo"));
+      const detected = expectDetected(detectNodeWorkspace(ws.root));
+      expect(detected.members.map((m) => m.name)).toEqual(["foo", "real"]);
+      expect(detected.members.find((m) => m.name === "foo")?.dir).toBe("packages/foo");
     });
   });
 });
