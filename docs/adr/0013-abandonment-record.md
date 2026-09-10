@@ -2,7 +2,7 @@
 id: 0013-abandonment-record
 status: proposed
 created: 2026-09-09
-updated: 2026-09-09
+updated: 2026-09-10
 ---
 
 # ADR-0013: The abandonment record — the human abort as durable ledger evidence
@@ -75,6 +75,35 @@ boundary never invents vocabulary — a new fact enters as a new record kind
    reason. This is pinned both ways: the same tail without the record
    classifies normally, so the record — not the tail's shape — moves the
    verdict.
+
+   Decision 3 generalizes into #122's **one classification law**, which
+   this ADR adopts as an amendment: _the terminality question both
+   classification doors answer — "is this attempt over?" — is a function
+   of the recorded tail, applied identically at every door._ The tail
+   outranks the process-local attempt value in BOTH directions:
+
+   - a recorded abandonment is terminal even over an open-looking value
+     (decision 3's original direction), and
+   - an attempt value claiming terminal over a tail with no terminal
+     record is NOT terminal — the value is §2.7 bookkeeping, never
+     authority, so the resume door classifies from the tail's own
+     evidence instead of throwing on the state alone.
+
+   Concretely, the two doors — `classifyResume` (phase 5 §2.3) and
+   `ledgerRequestStep` (phase 5 §2.8) — call the ONE shared classifier
+   (`readTailTerminality`), which reads the tail once, checks for an
+   abandonment record, and hands the SAME tail array on for the rest of
+   the classification (one live read per door call, no snapshot taken
+   across calls; PR #140's walk-tail-once-per-tip discipline). The
+   `ledgerRequestStep` door keeps its process-local `isTerminalAttempt`
+   gate as the boundary's defense wall — the throwing kernel's terminal
+   guard (§2.2 there) must never cross the record path, and the walk
+   cannot catch an `InvalidExecutionTransitionError` — but the gate is
+   defense, not classification: its refusal carries its own detail,
+   distinguishable from the tail-driven refusal. A future direct kernel
+   consumer is protected by the same one law: classification over the
+   tail is where terminality lives, and the process-local value alone
+   never decides it.
 
 4. **A fresh run over an abandoned plan refuses, quoting the record.** The
    attempt sequence of a plan is _derived_, never looked up: attempt
@@ -149,8 +178,14 @@ boundary never invents vocabulary — a new fact enters as a new record kind
 - `LedgerRecord` gains `abandonment`; both bindings persist and reload it
   with no implementation change (the shape-driven default branches).
 - `classifyResume`'s check order is now: abandonment first, then the
-  terminal-state guard, then the rest of the classification — pinned over
-  both bindings, including byte-exact reload and double-run determinism.
+  rest of the classification — pinned over both bindings, including
+  byte-exact reload and double-run determinism. The tail is read ONCE per
+  classification through the shared `readTailTerminality` classifier
+  (the same call `ledgerRequestStep` makes), folding the abandonment
+  read, the structural pass, and the blocked-attempt resolution into one
+  live read (PR #140's discipline); no snapshot is cached across doors.
+  The process-local terminal-state guard no longer stands in
+  `classifyResume` — the tail's own evidence answers, per the one law.
 - The boundary's `.abort` gains exactly one append; the boundary's fresh
   `.run` gains a pre-walk refusal that reads the ledger only — after the
   register's ordinal allocation, whose cost decision 4 states precisely.
@@ -176,12 +211,16 @@ boundary never invents vocabulary — a new fact enters as a new record kind
     the fresh ordinal, where the scan never reads. `append` being public
     is the ledger's own standing fact (recorded state a human must
     judge); the scan does not widen it.
-  - **No snapshot across the classification's reads.** `classifyResume`
-    reads the tail for the abandonment, then again for the structural
-    pass; an abort appending in between yields a verdict computed over a
-    tail that now carries the record. This is the classification's
-    existing no-snapshot posture, unchanged here — the first
-    re-classification of the resumed walk fails closed on the record.
+  - **No snapshot across the classification's reads.** As amended by
+    #122's one law, `classifyResume` reads the tail ONCE through the
+    shared `readTailTerminality` classifier and threads that same array
+    through the structural pass and the blocked-attempt resolution — the
+    original two-read window (abandonment check, then structural pass)
+    is folded into one live read per call. An abort appending between two
+    door calls yields two verdicts over their own tails, never one
+    verdict over a cached tail; nothing is cached across doors. The first
+    re-classification of the resumed walk still fails closed on the
+    record.
   - **The scan is O(N) full tail reads per fresh run**, N the plan's
     ordinal count — on the git binding, a walk of the attempt's ref per
     ordinal. The permanent cost of declining the plan-keyed index;

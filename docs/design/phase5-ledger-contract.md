@@ -120,6 +120,18 @@ phase 4 contract §2.7's record-path promise. The kernel's throwing path
 (§2.2 there) remains the programming-error door; this one is the durable
 replay door Phase 6+ consumes.
 
+The terminality question the door answers is #122's ONE law: both
+classification doors (`classifyResume` and `ledgerRequestStep`) read the
+tail through the same shared classifier (`readTailTerminality`), and the
+tail outranks the process-local attempt value in BOTH directions — a
+recorded abandonment refuses with the recorded evidence quoted verbatim
+(ADR-0013 decision 3), and an attempt value claiming terminal over a tail
+with no terminal record is NOT terminal from the classification's
+perspective. The replay door's process-local gate remains as the
+boundary's defense wall (the throwing kernel's terminal guard must never
+cross the record path), not as a classification: its refusal is
+distinguishable from the tail-driven refusal by its own detail.
+
 ## 3. The no-silent-failure law (carried)
 
 Nothing in the ledger silently re-plans, silently retries, silently

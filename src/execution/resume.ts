@@ -48,41 +48,71 @@ const firstUncompleted = (attempt: ReleaseAttempt, ledger: ExecutionLedger): Ste
   return null;
 };
 
+/** The ONE terminality classifier (#122): reads the tail once and answers
+ * "is this attempt over?" from the recorded evidence alone — ADR-0013
+ * decision 3's law, now applied at every classification door. A tail
+ * carrying an abandonment is terminal from the ledger alone; the
+ * process-local attempt value is §2.7 bookkeeping, never authority, so the
+ * tail outranks it in BOTH directions — a terminal claim the tail cannot
+ * confirm classifies as an open attempt, and a recorded abandonment the
+ * value denies classifies as terminal. The read is a live read per call:
+ * no snapshot is taken and nothing is cached across doors — the
+ * identical-tails law (§2.3) classifies from the tail's own append-order
+ * contents, and an abort appending between two calls yields two verdicts
+ * over their own tails, never one verdict over a cached tail. The returned
+ * tail is the SAME array the verdict was computed over, so the caller
+ * threads one read through its whole classification (walk-tail-once-per-
+ * tip, PR #140's discipline). */
+export const readTailTerminality = (
+  attempt: ReleaseAttempt,
+  ledger: ExecutionLedger,
+): {
+  readonly tail: readonly LedgerRecord[];
+  readonly abandonment?: LedgerRecord & { readonly kind: "abandonment" };
+} => {
+  const tail = ledger.tail(attempt.attemptId);
+  const abandonment = tail.find(
+    (record): record is LedgerRecord & { readonly kind: "abandonment" } =>
+      record.kind === "abandonment",
+  );
+  return abandonment === undefined ? { tail } : { tail, abandonment };
+};
+
 /** Classifies a resume (§2.3, E-01, E-02, E-05) — the pure ledger-side
  * classification, distinct from attempt.ts's `resume` state-machine door.
  * The order is the contract's: a recorded abandonment is terminal from the
  * ledger alone (ADR-0013 decision 3 — the human abort's durable record
- * outranks whatever a process-local attempt value claims, E-09), then a
- * terminal attempt is a thrown protocol violation (types.ts §2.2: terminal
- * is terminal); the recorded plan fingerprint is §2.2's equality-proof half
- * and resume refuses without it; a mismatch with the attempt's carried
- * fingerprint is `stale` (E-05 — refuse, record, re-plan through the
- * planner's door, never continue); a completed step with no preceding
- * `started` for the same stepKey is structurally corrupt; a failed stage is
- * classifyCrash's territory (§2.4); a `blocked` attempt re-arms only over a
- * recorded resolution (§2.7's resolveBlocked door, E-04). Otherwise the
- * verdict continues at the first stage not completed, or completes: every
- * stage completed means the attempt is done, and its terminal outcome
- * follows the recorded steps — `satisfied-externally` when the ledger's
- * external view recorded an observed satisfaction for any of the attempt's
- * stages (E-03's ledger-first done-ness), `published` otherwise. */
+ * outranks whatever a process-local attempt value claims, E-09), and the
+ * read is the ONE classifier's (`readTailTerminality` — the same call
+ * `ledgerRequestStep` makes, same question, same answer, #122's one law).
+ * The tail read once threads through the whole classification: the
+ * structural pass and the blocked-attempt resolution walk the same array —
+ * one live read per call, no snapshot taken across calls (an abort
+ * appending between two calls yields two verdicts over their own tails).
+ * The process-local attempt value is bookkeeping, never authority: no
+ * terminal-state gate stands here — a terminal claim the tail cannot
+ * confirm classifies by the tail's own evidence (ADR-0013 decision 3's
+ * both-directions law; the state machine's own terminal guard lives at
+ * attempt.ts's throwing doors and the kernel's `requestStep`). The
+ * recorded plan fingerprint is §2.2's equality-proof half and resume
+ * refuses without it; a mismatch with the attempt's carried fingerprint is
+ * `stale` (E-05 — refuse, record, re-plan through the planner's door, never
+ * continue); a completed step with no preceding `started` for the same
+ * stepKey is structurally corrupt; a failed stage is classifyCrash's
+ * territory (§2.4); a `blocked` attempt re-arms only over a recorded
+ * resolution (§2.7's resolveBlocked door, E-04). Otherwise the verdict
+ * continues at the first stage not completed, or completes: every stage
+ * completed means the attempt is done, and its terminal outcome follows
+ * the recorded steps — `satisfied-externally` when the ledger's external
+ * view recorded an observed satisfaction for any of the attempt's stages
+ * (E-03's ledger-first done-ness), `published` otherwise. */
 export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger): ResumeOutcome => {
-  const abandonment = ledger
-    .tail(attempt.attemptId)
-    .find(
-      (record): record is LedgerRecord & { readonly kind: "abandonment" } =>
-        record.kind === "abandonment",
-    );
+  const { tail, abandonment } = readTailTerminality(attempt, ledger);
   if (abandonment !== undefined) {
     throw new InvalidExecutionTransitionError(
       `the recorded tail carries an abandonment attributed to ${abandonment.attribution.actor} ` +
         `("${abandonment.reason}") — the human abort is terminal from the ledger alone; no ` +
         `later classification revives it (E-09; ADR-0013 decision 3)`,
-    );
-  }
-  if (isTerminalAttempt(attempt.state)) {
-    throw new InvalidExecutionTransitionError(
-      `classifyResume on a terminal attempt (${attempt.state}) — terminal is terminal; classification is for open attempts`,
     );
   }
   const recorded = ledger.planFingerprint(attempt.attemptId);
@@ -103,7 +133,6 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
   // demands a preceding `started` for the same stepKey, and a failed stage
   // hands the tail to crash classification (§2.4).
   const started = new Set<StepKey>();
-  const tail = ledger.tail(attempt.attemptId);
   for (const [at, record] of tail.entries()) {
     if (record.kind !== "step") {
       continue;
@@ -157,8 +186,7 @@ export const classifyResume = (attempt: ReleaseAttempt, ledger: ExecutionLedger)
     // The re-arm proof is the record's content, not its bare presence:
     // append is a public write, so a mis-typed resolution must fail
     // closed here, exactly as resolveBlocked refuses it at the door.
-    const resolution = ledger
-      .tail(attempt.attemptId)
+    const resolution = tail
       .filter(
         (record): record is LedgerRecord & { readonly kind: "resolution" } =>
           record.kind === "resolution",
@@ -261,14 +289,36 @@ export const classifyCrash = (
  * classification surface, yields a recorded `refused` — phase 4 §2.7's
  * record-path promise. The kernel's own `requestStep` still throws on a
  * terminal attempt (§2.2's programming-error door); this is its durable
- * twin Phase 6+ consumes. A non-terminal attempt delegates to the kernel's
- * classification over the ledger's step view, unmodified. */
+ * twin Phase 6+ consumes.
+ *
+ * The terminality check is the ONE classifier's (`readTailTerminality` —
+ * the same call `classifyResume` makes, same question, same answer, #122's
+ * one law): the recorded tail outranks the process-local attempt value in
+ * BOTH directions — an abandonment the tail records refuses even when a
+ * stale value claims open, and the refusal quotes the recorded actor and
+ * reason (ADR-0013 decision 3). The process-local `isTerminalAttempt`
+ * gate remains as the door's own refusal for a state the tail has not
+ * answered for — a programming-error guard that keeps the kernel's
+ * throwing path unreachable from here (no exception crosses the record
+ * path). A non-terminal attempt delegates to the kernel's classification
+ * over the ledger's step view, unmodified. */
 export const ledgerRequestStep = (
   attempt: ReleaseAttempt,
   request: StepRequest,
   claims: ClaimView,
   ledger: ExecutionLedger,
 ): RequestStepOutcome => {
+  const { abandonment } = readTailTerminality(attempt, ledger);
+  if (abandonment !== undefined) {
+    return {
+      kind: "refused",
+      stepKey: request.stepKey,
+      detail:
+        `the recorded tail carries an abandonment attributed to ${abandonment.attribution.actor} ` +
+        `("${abandonment.reason}") — terminal from the ledger alone (the record-path replay ` +
+        `door, phase 5 contract §2.8; ADR-0013 decision 3)`,
+    };
+  }
   if (isTerminalAttempt(attempt.state)) {
     return {
       kind: "refused",
