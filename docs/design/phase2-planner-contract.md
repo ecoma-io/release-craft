@@ -121,7 +121,12 @@ Line identity is the stable configured id (invariant 7).
 
 The commit-type → `Bump` mapping is policy data (never in `Change` or the
 kernel). Default policy: `feat` → minor, `fix`/`perf`/`refactor` → patch,
-breaking (`!` or `BREAKING CHANGE:` footer, any type) → major;
+breaking (the header `!` or a breaking footer in the trailer block —
+`BREAKING CHANGE:` or the `BREAKING-CHANGE:` alias, the value inline or
+wrapped onto an indented continuation line, leaving the token line bare;
+any type) → major; the footer is looked for in the trailer block only —
+the message's last paragraph, the geometry §2.12 fixes for markers — never
+in the subject or an earlier body paragraph.
 `chore`/`docs`/`ci`/`test` without a breaking marker are not
 release-triggering (S-01, PL-06 — recorded in the no-op cause detail, never
 silently dropped). The breaking marker dominates filtering (PL-05). The
