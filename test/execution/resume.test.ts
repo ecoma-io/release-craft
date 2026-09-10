@@ -261,11 +261,15 @@ describe("classifyResume (§2.3): classification over the recorded tail, never r
     expect(outcome.detail).toContain("only an unattributed-state block");
   });
 
-  it("throws on a terminal attempt — terminal is terminal (§2.2)", () => {
+  it("processes a terminal process-local value over an incomplete tail — the tail, not the value, is the terminality authority (§2.7)", () => {
+    // A stale value claiming `published` over a tail with only three of
+    // nine stages completed: ADR-0013 decision 3's both-directions law —
+    // the value is §2.7 bookkeeping, never authority, so classification
+    // proceeds by the tail's own evidence (here: no recorded fingerprint
+    // → escalate) and never throws on the state alone.
     const { attempt, ledger } = crashedBefore(3);
-    expect(() => classifyResume({ ...attempt, state: "published" }, ledger)).toThrow(
-      InvalidExecutionTransitionError,
-    );
+    const verdict = classifyResume({ ...attempt, state: "published" }, ledger);
+    expect(verdict).toStrictEqual({ kind: "resume", from: "validate" });
   });
 });
 
