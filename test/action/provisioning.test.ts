@@ -46,11 +46,25 @@ function withMaterialization(fn: (dir: string) => void): void {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+/**
+ * The environment the fixture's installs run under. pnpm detects "AI agent"
+ * ambient variables (CLAUDECODE, AGENT, …) and switches its reporter to
+ * NDJSON — the lifecycle failure then reads as a JSON event, not the
+ * `[ELIFECYCLE]` line the composite's contract (and this fixture) is written
+ * against. The runner's step executes under plain CI env; the fixture matches
+ * that floor by dropping the agent markers instead of inheriting them (#154).
+ */
+const INSTALL_ENV: NodeJS.ProcessEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    ([key]) => key !== "CLAUDECODE" && key !== "CLAUDE_CODE" && key !== "AGENT",
+  ),
+);
 
 const install = (dir: string, extraArgs: readonly string[]) =>
   spawnSync("pnpm", ["install", "--frozen-lockfile", ...extraArgs], {
     cwd: dir,
     encoding: "utf8",
+    env: INSTALL_ENV,
   });
 
 describe("fixture 1 — the provisioning installs in the non-git materialization", () => {
