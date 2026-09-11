@@ -714,6 +714,34 @@ a second dogfood run as a determinism proof (a re-run over unchanged
 recorded state lands the recorded replay — `x-04`'s class — which the
 fixture already pins; the dogfood need not repeat it, though it may).
 
+**The two legs the self-dogfood has never driven, recorded as open
+workstreams so nothing sits in a silent gap** (scheduled by issue #187;
+the standard above is satisfied without them — a certification's four
+classes are judged on the run the dispatch drives, and neither leg is
+demanded by the wording — which is precisely why they must be named):
+
+- **The crash-resume leg.** No dogfood has killed the run mid-walk and
+  rerun it over the recorded remains on the real repository. The
+  terminality/resume law (one classification law: both classification
+  doors answer from the recorded tail through the shared classifier, and
+  the tail outranks the process-local attempt value in both directions —
+  ADR-0013 decision 3) is pinned by adversarial suites over constructed
+  tails, never re-proven on real substrate. The leg is: kill the invoke
+  mid-walk, rerun the dispatch over the partial ledger, and judge the
+  resumed run's four classes — including the recorded-replay row the
+  not-demand list above already distinguishes from a determinism proof
+  (a rerun over _partial_ recorded state is not a rerun over unchanged
+  recorded state; `x-04`'s class pins the latter only).
+- **The failure-path leg.** The single dispatch is a happy-path posture
+  (`intents: release`, `max-retries: 0`, an empty tag runway): no
+  stop-band kind has been driven end-to-end through the real Action — a
+  lifecycle-hook failure, a contended claim, a refused step (the
+  scheduling issue's `hook:sign` example) — so the
+  conclusion table's failure rows and their nonzero exit codes are proven
+  on the driven-runner fixture and unproven on the hosted one. The leg
+  is: one dispatch whose declared world faults the run on purpose, judged
+  against the same four classes on their failure-band rows.
+
 ## 8. What the fixture never does
 
 The never-does inventory, each row with its enforcement:
