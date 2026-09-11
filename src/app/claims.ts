@@ -93,6 +93,9 @@ export const claimViewFor = (
  * One acquisition with E-08's bounded retry driven (§2.5 step 3): the
  * derived scope is acquired before any mutation; a denial that is the
  * namespace door's refusal surfaces as `refused` (holder absent, §2.3); a
+ * `superseded` refusal is the takeover fence — final at acquisition,
+ * rendered `denied` naming the taker, never re-entered into the race
+ * (§2.5 step 3's recorded-takeover law; ADR-0011 decision 9); a
  * denied `prerelease-sequence` scope re-acquires at the winner's
  * `sequence + 1` through the kernel's `retrySequence` under the declared
  * `maxRetries` — never a new retry invented at the boundary — and an
@@ -122,6 +125,14 @@ export const acquireClaim = (
           )} — the declared naming derives no tag for it, holder absent ` +
           `(ClaimDenied { refusal: "namespace" }, phase 11 contract §2.3)`,
       };
+    }
+    if (settled.refusal === "superseded") {
+      // The takeover fence (phase 4 §2.4 item 6; ADR-0011 decision 9): the
+      // attempt's recorded lease was passed by a takeover. A policy refusal
+      // is final at acquisition — no `holderSequence`, so no retry base and
+      // no re-entering the race the taker won; the boundary renders the
+      // taker in E-07's winner-naming row.
+      return { kind: "denied", holder: settled.holder ?? null };
     }
     if (demand.kind !== "prerelease-sequence") {
       // E-08's retry is the prerelease-sequence clause alone: every other

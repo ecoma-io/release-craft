@@ -581,6 +581,155 @@ describe("the per-line claim register (ADR-0011)", () => {
     });
   });
 
+  describe("the recorded takeover (ADR-0011 decision 9; issue #227)", () => {
+    const supersessionJson = (superseded: ClaimRecord, supersededBy: ClaimRecord): string =>
+      canonicalJson({
+        kind: "supersession",
+        superseded: {
+          kind: "claim",
+          scope: superseded.scope,
+          token: superseded.token,
+          holder: superseded.holder,
+        },
+        supersededBy: {
+          kind: "claim",
+          scope: supersededBy.scope,
+          token: supersededBy.token,
+          holder: supersededBy.holder,
+        },
+      });
+
+    it("a takeover lands the claim and its supersession in one commit — the envelope carries both", () => {
+      withTempRepo("register-takeover-lands", (repo, git) => {
+        const store = new GitClaimStore(repo);
+        const holderClaim = asClaim(store.acquire(prerelease(1), "attempt_holder"));
+        // No takeover yet: the envelope carries no supersessions member at
+        // all — the canonical form without one is byte-identical to the
+        // pre-#227 register.
+        expect(registerBlob(git, "line-main")).toBe(
+          envelope([{ scope: prerelease(1), token: holderClaim.token, holder: "attempt_holder" }]),
+        );
+        const takerClaim = asClaim(store.acquire(prerelease(2), "attempt_taker"));
+        const holderRecord = {
+          scope: prerelease(1),
+          token: holderClaim.token,
+          holder: "attempt_holder",
+        };
+        const takerRecord = {
+          scope: prerelease(2),
+          token: takerClaim.token,
+          holder: "attempt_taker",
+        };
+        expect(registerBlob(git, "line-main")).toBe(
+          `{"claims":[${recordJson(holderRecord)},${recordJson(takerRecord)}],"supersessions":[${supersessionJson(holderRecord, takerRecord)}]}`,
+        );
+        // One mutation, one commit: the ref holds exactly two commits — the
+        // claim and its supersession never landed as two compare-and-sets.
+        const count = git(["rev-list", "--count", claimRegisterRefFor("line-main")]).trim();
+        expect(Number.parseInt(count, 10)).toBe(2);
+        // The fence verdict: the passed token verifies superseded naming the
+        // taker; the taker's own stays held.
+        expect(store.verify(holderClaim.token)).toEqual({
+          kind: "superseded",
+          supersededBy: takerClaim,
+        });
+        expect(store.verify(takerClaim.token)).toEqual({ kind: "held", claim: takerClaim });
+      });
+    });
+
+    it("the superseded holder's re-acquisition denies with the refusal marker, no retry base, the taker named", () => {
+      withTempRepo("register-takeover-reacquire", (repo) => {
+        const store = new GitClaimStore(repo);
+        asClaim(store.acquire(prerelease(1), "attempt_holder"));
+        asClaim(store.acquire(prerelease(2), "attempt_taker"));
+        expect(store.acquire(prerelease(1), "attempt_holder")).toEqual({
+          kind: "denied",
+          holder: "attempt_taker",
+          scope: prerelease(1),
+          refusal: "superseded",
+        });
+      });
+    });
+
+    it("the superseded record stands: a third claim on the exact scope is still denied by it (E-07)", () => {
+      withTempRepo("register-takeover-record-stands", (repo) => {
+        const store = new GitClaimStore(repo);
+        asClaim(store.acquire(prerelease(1), "attempt_holder"));
+        asClaim(store.acquire(prerelease(2), "attempt_taker"));
+        expect(store.acquire(prerelease(1), "attempt_stranger")).toEqual({
+          kind: "denied",
+          holder: "attempt_holder",
+          scope: prerelease(1),
+          holderSequence: 1,
+        });
+      });
+    });
+
+    it("the fence survives release: a released passed lease still verifies superseded", () => {
+      withTempRepo("register-takeover-survives-release", (repo, git) => {
+        const store = new GitClaimStore(repo);
+        const holderClaim = asClaim(store.acquire(prerelease(1), "attempt_holder"));
+        const takerClaim = asClaim(store.acquire(prerelease(2), "attempt_taker"));
+        store.release(holderClaim.token);
+        // The claims set lost the released lease; the supersession member
+        // stands — the evidence survives the release.
+        expect(store.verify(holderClaim.token)).toEqual({
+          kind: "superseded",
+          supersededBy: takerClaim,
+        });
+        expect(registerBlob(git, "line-main")).toContain('"supersessions":[');
+      });
+    });
+
+    it("a later takeover re-lands the record naming the latest taker", () => {
+      withTempRepo("register-takeover-relands", (repo) => {
+        const store = new GitClaimStore(repo);
+        const first = asClaim(store.acquire(prerelease(1), "attempt_first"));
+        const second = asClaim(store.acquire(prerelease(2), "attempt_second"));
+        const third = asClaim(store.acquire(prerelease(3), "attempt_third"));
+        expect(store.verify(first.token)).toEqual({ kind: "superseded", supersededBy: third });
+        expect(store.verify(second.token)).toEqual({ kind: "superseded", supersededBy: third });
+      });
+    });
+
+    it("a corrupt supersessions member refuses loudly — unsorted, duplicated, malformed", () => {
+      withTempRepo("register-corrupt-supersessions", (repo, git) => {
+        const land = (content: string): void => {
+          const blob = git(["hash-object", "-w", "--stdin"], content).trim();
+          const tree = git(["mktree"], `100644 blob ${blob}\trecord\n`).trim();
+          const commit = git(["commit-tree", tree, "-m", "release-craft: append"]).trim();
+          git(["update-ref", claimRegisterRefFor("line-main"), commit]);
+        };
+        const claim = (sequence: number, token: string): string =>
+          recordJson({ scope: prerelease(sequence), token, holder: "attempt_x" });
+        const passed = (sequence: number, token: string, taker: string): string =>
+          supersessionJson(
+            { scope: prerelease(sequence), token, holder: "attempt_x" },
+            { scope: prerelease(9), token: "d".repeat(64), holder: taker },
+          );
+        const claimsPart = `${claim(1, "b".repeat(64))},${claim(2, "c".repeat(64))}`;
+        const store = new GitClaimStore(repo);
+        // The writer sorts before every land; an unsorted or duplicated
+        // supersessions set is corrupted recorded state, with the same
+        // voice as a foreign layout (ADR-0011 decision 5's law at the
+        // fence).
+        land(
+          `{"claims":[${claimsPart}],"supersessions":[${passed(2, "c".repeat(64), "taker")},${passed(1, "b".repeat(64), "taker")}]}`,
+        );
+        expect(() => store.verify("any-token")).toThrow(TypeError);
+        land(
+          `{"claims":[${claimsPart}],"supersessions":[${passed(1, "b".repeat(64), "taker")},${passed(1, "b".repeat(64), "taker")}]}`,
+        );
+        expect(() => store.verify("any-token")).toThrow(TypeError);
+        // A malformed element and a non-array member refuse the same way.
+        land(`{"claims":[${claimsPart}],"supersessions":[42]}`);
+        expect(() => store.verify("any-token")).toThrow(TypeError);
+        land(`{"claims":[${claimsPart}],"supersessions":"gone"}`);
+        expect(() => store.verify("any-token")).toThrow(TypeError);
+      });
+    });
+  });
+
   describe("the denial parity (#69)", () => {
     it("the exclusion-path denial carries no holderSequence", () => {
       withTempRepo("register-exclusion-denial", (repo) => {

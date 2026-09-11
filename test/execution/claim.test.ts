@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { type Claim, type ClaimDenied, MemoryClaimStore, retrySequence } from "../../src/index.js";
+import {
+  type Claim,
+  type ClaimDenied,
+  MemoryClaimStore,
+  retrySequence,
+  supersededLeases,
+} from "../../src/index.js";
 
 const stableVersion = (version: string, lineId = "line-main") =>
   ({ kind: "stable-version", lineId, version }) as const;
@@ -140,5 +146,149 @@ describe("the bounded sequence retry (E-08)", () => {
   it("never invents a sequence a denial does not carry", () => {
     const decision = retrySequence(denial(undefined), 0, { maxRetries: 5 });
     expect(decision.kind).toBe("conflict");
+  });
+});
+
+describe("the takeover fence (§2.4 item 6; ADR-0011 decision 9)", () => {
+  it("supersededLeases passes only another holder's strictly-smaller same-stream lease", () => {
+    const mine = {
+      kind: "claim",
+      scope: prerelease(1),
+      token: "claim:1",
+      holder: "attempt_sha256:a",
+    } as const satisfies Claim;
+    const otherLower = {
+      kind: "claim",
+      scope: prerelease(2),
+      token: "claim:2",
+      holder: "attempt_sha256:b",
+    } as const satisfies Claim;
+    // Same stream, strictly smaller, another holder: both passed.
+    expect(supersededLeases(prerelease(3), [mine, otherLower], "attempt_sha256:c")).toEqual([
+      mine,
+      otherLower,
+    ]);
+    // Sequence 2 past a strictly-smaller seq 1 is still a takeover; the
+    // same recorded sequence is the same-scope denial path's business.
+    expect(supersededLeases(prerelease(2), [mine, otherLower], "attempt_sha256:c")).toEqual([mine]);
+    // A holder never takes over its own lease.
+    expect(supersededLeases(prerelease(3), [mine, otherLower], "attempt_sha256:b")).toEqual([mine]);
+    // Other streams, targets, and lines never pass.
+    const otherStream = {
+      kind: "claim",
+      scope: {
+        kind: "prerelease-sequence",
+        lineId: "line-main",
+        target: "1.3.0-rc",
+        streamId: "beta",
+        sequence: 1,
+      },
+      token: "claim:3",
+      holder: "attempt_sha256:b",
+    } as const satisfies Claim;
+    expect(supersededLeases(prerelease(3), [otherStream], "attempt_sha256:c")).toEqual([]);
+    // A stable-version record is not a lease; a stable request passes nothing.
+    const stable = {
+      kind: "claim",
+      scope: stableVersion("1.2.0"),
+      token: "claim:4",
+      holder: "attempt_sha256:b",
+    } as const satisfies Claim;
+    expect(supersededLeases(prerelease(3), [stable], "attempt_sha256:c")).toEqual([]);
+    expect(supersededLeases(stableVersion("1.3.0"), [stable], "attempt_sha256:c")).toEqual([]);
+  });
+
+  it("an acquisition past a standing lease records the supersession, and the passed token verifies superseded naming the taker", () => {
+    const store = new MemoryClaimStore();
+    const holderClaim = asClaim(store.acquire(prerelease(1), "attempt_sha256:holder"));
+    const takerClaim = asClaim(store.acquire(prerelease(2), "attempt_sha256:taker"));
+    // The fence verdict names the taker — never held.
+    expect(store.verify(holderClaim.token)).toEqual({
+      kind: "superseded",
+      supersededBy: takerClaim,
+    });
+    // The taker's own claim verifies held.
+    expect(store.verify(takerClaim.token)).toEqual({ kind: "held", claim: takerClaim });
+  });
+
+  it("the superseded holder's re-acquisition denies with the refusal marker, no retry base, the taker named", () => {
+    const store = new MemoryClaimStore();
+    asClaim(store.acquire(prerelease(1), "attempt_sha256:holder"));
+    asClaim(store.acquire(prerelease(2), "attempt_sha256:taker"));
+    const reAcquired = store.acquire(prerelease(1), "attempt_sha256:holder");
+    expect(reAcquired).toEqual({
+      kind: "denied",
+      holder: "attempt_sha256:taker",
+      scope: prerelease(1),
+      refusal: "superseded",
+    });
+    expect(asDenied(reAcquired).holderSequence).toBeUndefined();
+  });
+
+  it("the superseded record stands: a third claim on the exact scope is still denied by it (E-07)", () => {
+    const store = new MemoryClaimStore();
+    asClaim(store.acquire(prerelease(1), "attempt_sha256:holder"));
+    asClaim(store.acquire(prerelease(2), "attempt_sha256:taker"));
+    const third = store.acquire(prerelease(1), "attempt_sha256:stranger");
+    expect(third).toEqual({
+      kind: "denied",
+      holder: "attempt_sha256:holder",
+      scope: prerelease(1),
+      holderSequence: 1,
+    });
+  });
+
+  it("the fence survives release: a released passed lease still verifies superseded", () => {
+    const store = new MemoryClaimStore();
+    const holderClaim = asClaim(store.acquire(prerelease(1), "attempt_sha256:holder"));
+    const takerClaim = asClaim(store.acquire(prerelease(2), "attempt_sha256:taker"));
+    store.release(holderClaim.token);
+    expect(store.verify(holderClaim.token)).toEqual({
+      kind: "superseded",
+      supersededBy: takerClaim,
+    });
+  });
+
+  it("a later takeover re-lands the record naming the latest taker", () => {
+    const store = new MemoryClaimStore();
+    const first = asClaim(store.acquire(prerelease(1), "attempt_sha256:first"));
+    const second = asClaim(store.acquire(prerelease(2), "attempt_sha256:second"));
+    const third = asClaim(store.acquire(prerelease(3), "attempt_sha256:third"));
+    expect(store.verify(first.token)).toEqual({ kind: "superseded", supersededBy: third });
+    expect(store.verify(second.token)).toEqual({ kind: "superseded", supersededBy: third });
+  });
+
+  it("a stable-version record takes no takeover arm — the denial law is unchanged", () => {
+    const store = new MemoryClaimStore();
+    const stable = asClaim(store.acquire(stableVersion("1.2.0"), "attempt_sha256:holder"));
+    const stableAgain = asClaim(store.acquire(stableVersion("1.3.0"), "attempt_sha256:taker"));
+    expect(store.verify(stable.token)).toEqual({ kind: "held", claim: stable });
+    expect(store.verify(stableAgain.token)).toEqual({ kind: "held", claim: stableAgain });
+  });
+
+  it("seeds recorded supersessions with the explicit initial state", () => {
+    const superseded: Claim = {
+      kind: "claim",
+      scope: prerelease(1),
+      token: "claim:1",
+      holder: "attempt_sha256:holder",
+    };
+    const supersededBy: Claim = {
+      kind: "claim",
+      scope: prerelease(2),
+      token: "claim:2",
+      holder: "attempt_sha256:taker",
+    };
+    const store = new MemoryClaimStore({
+      claims: [superseded, supersededBy],
+      supersessions: [{ superseded, supersededBy }],
+    });
+    expect(store.verify(superseded.token)).toEqual({ kind: "superseded", supersededBy });
+    expect(store.acquire(prerelease(1), "attempt_sha256:holder")).toEqual({
+      kind: "denied",
+      holder: "attempt_sha256:taker",
+      scope: prerelease(1),
+      refusal: "superseded",
+    });
   });
 });

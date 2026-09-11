@@ -9,12 +9,18 @@
  * canonicalizes the supplied target to the recorded commit's oid, and
  * creates the tag ref if and only if it is absent — the same-target
  * re-mint is idempotent success, a different target a conflict, the
- * existing ref always the winner. Refusals and conflicts are returned
+ * existing ref always the winner. The takeover fence closes the door's
+ * own window (phase 4 §2.4 item 6; ADR-0011 decision 9): a record whose
+ * lease a recorded supersession has passed no longer admits the mint,
+ * whatever the attempt's earlier verify returned — the refusal names the
+ * taker. Refusals and conflicts are returned
  * values, never exceptions; nothing a door refused left state behind.
  */
 
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
+
 import type { GitTagNaming, TagMintInput, TagMintResult } from "./binding-types.js";
-import { allClaimRecords, type ClaimRecord } from "./claim-store-git.js";
+import { allRegisterRecords, type ClaimRecord } from "./claim-store-git.js";
 import { readRef } from "./git-refs.js";
 import { GitFaultError, type GitRun } from "./git-run.js";
 
@@ -47,14 +53,42 @@ export function GitTagDoor(git: GitRun, naming: GitTagNaming): TagMint {
     // Fail closed: a mint is admitted only under a claim the calling
     // attempt holds, walked from the claim registers — the door's
     // held-claim lookup is one of ADR-0011 decision 3's named exceptions
-    // to the read narrowing (same filter, register source).
-    const held = allClaimRecords(git).filter((record) => record.holder === input.attemptId);
+    // to the read narrowing (same filter, register source). The fence
+    // consults the same walk's supersession records (decision 9): a record
+    // whose lease a takeover has passed no longer admits the mint — the
+    // post-verify, pre-mint freeze window closes here, whatever the
+    // attempt's earlier verify returned.
+    const walk = allRegisterRecords(git);
+    const passedBy = new Map(
+      walk.supersessions.map((entry) => [
+        canonicalJson(entry.superseded.scope),
+        entry.supersededBy.holder,
+      ]),
+    );
+    const isHeldBy = (record: ClaimRecord): boolean => record.holder === input.attemptId;
+    const held = walk.claims.filter(
+      (record) => isHeldBy(record) && !passedBy.has(canonicalJson(record.scope)),
+    );
+    const taken = walk.claims.filter(
+      (record) => isHeldBy(record) && passedBy.has(canonicalJson(record.scope)),
+    );
+    const takeoverDetail = (taker: string): string =>
+      `attempt ${input.attemptId}'s claim deriving tag ${input.tag} was superseded by attempt ${taker} — the recorded takeover refuses the mint`;
     if (held.length === 0) {
+      const takeover = taken[0];
+      if (takeover === undefined) {
+        return {
+          kind: "refused",
+          reason: "unclaimed",
+          tag: input.tag,
+          detail: `attempt ${input.attemptId} holds no claim deriving tag ${input.tag} under the binding's declared tag naming`,
+        };
+      }
       return {
         kind: "refused",
         reason: "unclaimed",
         tag: input.tag,
-        detail: `attempt ${input.attemptId} holds no claim deriving tag ${input.tag} under the binding's declared tag naming`,
+        detail: takeoverDetail(passedBy.get(canonicalJson(takeover.scope)) ?? "unknown"),
       };
     }
     // The naming policy derives each held claim's tag name; an in-namespace
@@ -72,6 +106,15 @@ export function GitTagDoor(git: GitRun, naming: GitTagNaming): TagMint {
       }
     }
     if (match === undefined) {
+      const takeover = taken.find((record) => naming.tagFor(record.scope) === input.tag);
+      if (takeover !== undefined) {
+        return {
+          kind: "refused",
+          reason: "unclaimed",
+          tag: input.tag,
+          detail: takeoverDetail(passedBy.get(canonicalJson(takeover.scope)) ?? "unknown"),
+        };
+      }
       return {
         kind: "refused",
         reason: "unclaimed",

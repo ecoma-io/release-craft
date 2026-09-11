@@ -10,7 +10,13 @@
  * the only sequence this door produces comes from a denial's recorded
  * holder state.
  */
-import type { ClaimDenied, SequenceRetryDecision, SequenceRetryPolicy } from "./types.js";
+import type {
+  Claim,
+  ClaimDenied,
+  ClaimScope,
+  SequenceRetryDecision,
+  SequenceRetryPolicy,
+} from "./types.js";
 
 /**
  * The retry decision (§2.4.5): retry at the winner's `sequence + 1` while
@@ -37,4 +43,32 @@ export const retrySequence = (
     };
   }
   return { kind: "retry", sequence: denial.holderSequence + 1 };
+};
+
+/**
+ * The takeover fence's pure clause (§2.4 item 6; ADR-0011 decision 9): the
+ * held claims a `prerelease-sequence` acquisition PASSES — another holder's
+ * strictly-smaller lease on the same `(lineId, target, streamId)`. The same
+ * stream keeps the passed lease inside the family the takeover supersedes;
+ * other streams, targets and lines are different allocations a landing
+ * never touches; a stable-version claim is a record, not a lease, and no
+ * takeover arm applies to it; and a holder never takes over its own lease.
+ * The caller records one supersession per passed lease in the same atomic
+ * mutation that accepts the new claim.
+ */
+export const supersededLeases = (
+  requested: ClaimScope,
+  held: readonly Claim[],
+  attemptId: string,
+): readonly Claim[] => {
+  if (requested.kind !== "prerelease-sequence") return [];
+  return held.filter(
+    (claim) =>
+      claim.holder !== attemptId &&
+      claim.scope.kind === "prerelease-sequence" &&
+      claim.scope.lineId === requested.lineId &&
+      claim.scope.target === requested.target &&
+      claim.scope.streamId === requested.streamId &&
+      claim.scope.sequence < requested.sequence,
+  );
 };

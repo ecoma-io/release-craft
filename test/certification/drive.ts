@@ -26,8 +26,9 @@
  *   and writer (only the generator writes; the suites only compare).
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -54,13 +55,14 @@ import {
   channelRefFor,
   GitChannelStore,
   GitClaimStore,
+  GitFaultError,
   GitLedger,
   hermeticGitEnv,
   openGitBinding,
   openGitRun,
   type GitRun,
 } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
-import { withTempRepo } from "../adapters/git/temp-repo.js";
+import { createTempRepo, withTempRepo } from "../adapters/git/temp-repo.js";
 import {
   beta,
   freshAssembly,
@@ -138,6 +140,41 @@ export const runBin = (args: readonly string[], options: { input?: string } = {}
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+};
+
+/** One live child-process invocation of the built bin: the same constructed
+ * envelope as `runBin` (the fresh `HOME`, removed when the child exits),
+ * but the child is `spawn`ed and driven, not awaited synchronously — the
+ * live-style cells' half (`x-05`): the suite signals the child mid-walk
+ * (`SIGSTOP`/`SIGCONT`) and reads its rendered outcome when it exits. */
+export interface SpawnedBin {
+  readonly child: ChildProcess;
+  readonly done: Promise<CliResult>;
+}
+
+export const spawnBin = (args: readonly string[], input: string): SpawnedBin => {
+  const home = mkdtempSync(join(tmpdir(), "release-craft-home-"));
+  const child = spawn(process.execPath, [CLI_BIN, ...args], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: runBinEnv(home),
+  });
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+  child.stdin.end(input);
+  const done = new Promise<CliResult>((resolve, reject) => {
+    child.on("error", reject);
+    child.on("exit", () => {
+      rmSync(home, { recursive: true, force: true });
+      resolve({
+        status: child.exitCode ?? -1,
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr: Buffer.concat(stderr).toString("utf8"),
+      });
+    });
+  });
+  return { child, done };
 };
 
 // ---------------------------------------------------------------------------
@@ -261,20 +298,41 @@ export function withSeededRepo(
   fn: (repo: string, git: GitRun, heads: Readonly<Record<string, string>>) => void,
 ): void {
   withTempRepo(name, (repo, git) => {
-    const heads = seedLineHeads(git);
-    const channels = new GitChannelStore(repo);
-    for (const channel of standingChannelStates()) {
-      const outcome = channels.applyTransition({
-        channelId: channel.id,
-        from: null,
-        to: { line: channel.target.line, version: channel.target.version },
-      });
-      if (outcome.kind !== "applied") {
-        throw new Error(`fixture broken: seeding channel ${channel.id} got ${outcome.kind}`);
-      }
-    }
-    fn(repo, git, heads);
+    fn(repo, git, seedRepo(repo, git));
   });
+}
+
+/** The seeding shared by both wrappers: the line heads and the five
+ * standing channels. */
+const seedRepo = (repo: string, git: GitRun): Readonly<Record<string, string>> => {
+  const heads = seedLineHeads(git);
+  const channels = new GitChannelStore(repo);
+  for (const channel of standingChannelStates()) {
+    const outcome = channels.applyTransition({
+      channelId: channel.id,
+      from: null,
+      to: { line: channel.target.line, version: channel.target.version },
+    });
+    if (outcome.kind !== "applied") {
+      throw new Error(`fixture broken: seeding channel ${channel.id} got ${outcome.kind}`);
+    }
+  }
+  return heads;
+};
+
+/** The async-seeded wrapper — the live-style cells' seat (`x-05`): the body
+ * awaits between the freeze and the resume, so the repository must outlive
+ * synchronous returns. Same seeding, same cleanup discipline. */
+export async function withSeededRepoAsync(
+  _name: string,
+  fn: (repo: string, git: GitRun, heads: Readonly<Record<string, string>>) => Promise<void>,
+): Promise<void> {
+  const temp = createTempRepo();
+  try {
+    await fn(temp.repo, temp.git, seedRepo(temp.repo, temp.git));
+  } finally {
+    temp.cleanup();
+  }
 }
 
 /** Pre-creates `.lock` files beside the named channels' refs — the
@@ -403,6 +461,83 @@ export const rawLedgerPlanId = (repo: string, attemptId: string): string => {
     throw new Error(`fixture broken: no recorded plan fingerprint for ${attemptId}`);
   }
   return plan.planFingerprint;
+};
+
+// ---------------------------------------------------------------------------
+// The fixture-side raw claim-register readers (ADR-0011, the x-05 cell) —
+// the same discipline as the ledger readers above
+// ---------------------------------------------------------------------------
+
+/** The claim register envelope's fixture-side shape: the canonical claim
+ * element and the whole envelope, spelled HERE so a serialization change
+ * in the adapter breaks the reader loudly instead of moving write and read
+ * together behind green pins. */
+export interface RawClaimRecord {
+  readonly kind: string;
+  readonly scope: {
+    readonly kind: string;
+    readonly lineId: string;
+    readonly target: string;
+    readonly streamId: string;
+    readonly sequence: number;
+  };
+  readonly token: string;
+  readonly holder: string;
+}
+
+export interface RawClaimRegister {
+  readonly claims: readonly RawClaimRecord[];
+  readonly supersessions?:
+    | readonly {
+        readonly kind: string;
+        readonly superseded: RawClaimRecord;
+        readonly supersededBy: RawClaimRecord;
+      }[]
+    | undefined;
+}
+
+/** The line's register ref, spelled by the fixture: the sha256 over the
+ * lineId's UTF-8 bytes under the claims namespace. */
+const rawClaimRegisterRefFor = (lineId: string): string =>
+  `refs/release-craft/claims/${createHash("sha256").update(lineId, "utf8").digest("hex")}`;
+
+/** The line's claim register as the repository stores it — the whole-set
+ * envelope's raw `record` blob at the ref's tip commit, read with the
+ * fixture's own git spellings (ref read, blob read), never the product
+ * `GitClaimStore`. An absent register reads as null — exactly the
+ * adapter's `readRef` discrimination (#95): exit 1 with empty stderr is
+ * absence, every other fault propagates. */
+export const rawClaimRegisterBytes = (repo: string, lineId: string): string | null => {
+  const git = openGitRun(repo);
+  const ref = rawClaimRegisterRefFor(lineId);
+  let tip: string;
+  try {
+    tip = git(["rev-parse", "--verify", "--quiet", ref]).trim();
+  } catch (error) {
+    if (error instanceof GitFaultError && error.status === 1 && error.stderr === "") {
+      return null;
+    }
+    throw error;
+  }
+  if (tip.length === 0) {
+    return null;
+  }
+  return git(["show", `${tip}:record`]);
+};
+
+/** The register's envelope parsed fixture-side, or null when absent. */
+export const rawClaimRegister = (repo: string, lineId: string): RawClaimRegister | null => {
+  const bytes = rawClaimRegisterBytes(repo, lineId);
+  return bytes === null ? null : (JSON.parse(bytes) as RawClaimRegister);
+};
+
+/** The substrate commits behind the line's register ref — the CAS append
+ * history's length is the fence's own durability evidence (one commit per
+ * accepted whole-set write). */
+export const rawClaimRegisterCommitCount = (repo: string, lineId: string): number => {
+  const git = openGitRun(repo);
+  const ref = rawClaimRegisterRefFor(lineId);
+  return Number.parseInt(git(["rev-list", "--count", ref]).trim(), 10);
 };
 
 /** The attempt-ledger refs' commit chains, exactly as git reports them —

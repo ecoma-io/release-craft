@@ -641,7 +641,9 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
 
   /** A stage stop's row (§2.8): a suspended attempt is `blocked`; otherwise
    * the stopping drive's outcome rides verbatim — `satisfied-externally`,
-   * `conflict`, `failed` (the claim-lost loser path), `blocked` (the guard
+   * `conflict`, `failed` (the claim-lost loser path — or `denied` naming
+   * the taker when the loss was a recorded takeover, the fence of §2.5
+   * step 3), `blocked` (the guard
    * that failed on world state suspends the attempt here), or `refused`. */
   const stopOutcome = (
     ctx: WalkContext,
@@ -679,8 +681,22 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
         return { kind: "satisfied-externally", ...base };
       case "conflict":
         return { kind: "conflict", detail: outcome.detail, ...base };
-      case "claim-lost":
+      case "claim-lost": {
+        // The loser path (E-07), classified here because the kernel's
+        // boolean guard cannot name a winner: the boundary re-verifies the
+        // attempt's token against the store — a superseded verification is
+        // the takeover fence (phase 4 §2.4 item 6; ADR-0011 decision 9),
+        // rendered `denied` naming the taker; the re-read is sound because
+        // supersession records are forward-only durable. Any other loss
+        // stays the recorded failure it was.
+        if (ctx.claim !== null) {
+          const verdict = ports.claims.verify(ctx.claim.token);
+          if (verdict.kind === "superseded") {
+            return { kind: "denied", holder: verdict.supersededBy.holder, ...base };
+          }
+        }
         return { kind: "failed", cause: outcome.detail, ...base };
+      }
       case "blocked":
         // The guard failed on world state: suspend the attempt — the cause
         // recorded verbatim, nothing consumed — so the §2.7 resolution loop

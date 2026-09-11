@@ -1,10 +1,11 @@
 /**
- * The certification fixture's A-cross-process posture cells (phase 14
- * contract §3.5, `x-01` … `x-04`). The assembly's subject is the seam
- * between two processes over one repository: what a fresh process answers
- * from the durable record alone, and how its answer relates to what a
- * fresh ENGINE answers — the pass-through equality (phase 12 §6.7's pin,
- * cell-ized), never a verdict of its own.
+ * The certification fixture's A-cross-process cells (phase 14 contract
+ * §3.5, `x-01` … `x-05`). The assembly's subject is the seam between two
+ * processes over one repository: what a fresh process answers from the
+ * durable record alone, how its answer relates to what a fresh ENGINE
+ * answers — the pass-through equality (phase 12 §6.7's pin, cell-ized),
+ * never a verdict of its own — and, live, what a takeover across two
+ * running processes fences with (`x-05`).
  */
 
 import { describe, expect, it } from "vitest";
@@ -23,10 +24,14 @@ import {
   gitDoc,
   gitRunArgs,
   ledgerAttemptIds,
+  rawClaimRegister,
+  rawClaimRegisterCommitCount,
   rawLedgerPlanId,
   runBin,
   seededHead,
+  spawnBin,
   withSeededRepo,
+  withSeededRepoAsync,
 } from "./drive.js";
 
 /** The child's rendered outcome. */
@@ -277,6 +282,108 @@ describe("the certification fixture · A-cross-process", () => {
         expect(outcome.drives).toStrictEqual([]);
         // The recorded state is unchanged: still exactly one minted tag.
         expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0-beta.1"]);
+      });
+    },
+  );
+
+  it(
+    "x-05 · I1 · the live takeover fence (#227, phase 4 §2.4 item 6) — a second process acquires past a suspended holder's standing lease, the register records the supersession naming both holders, and the resumed holder's walk answers denied at exit 11 naming the taker",
+    { timeout: 45_000 },
+    async () => {
+      await withSeededRepoAsync("cert-x-05", async (repo, git, heads) => {
+        // The holder process: the plain beta walk, spawned live. The freeze
+        // below takes it mid-walk — a real second process holding a real
+        // lease on an unfinished attempt, the takeover window itself.
+        const holder = spawnBin(gitRunArgs(repo, "main"), docBytes(gitBetaDocument(heads)));
+
+        // Poll the register with the raw fixture spellings until the
+        // holder's claim lands, then freeze the walk on SIGSTOP. The bound
+        // is an iteration count, not a clock — the fixture reads no clock
+        // (the isolation probe).
+        let register: Awaited<ReturnType<typeof rawClaimRegister>> = null;
+        for (let poll = 0; poll < 3000; poll += 1) {
+          register = rawClaimRegister(repo, "main");
+          if (register !== null && register.claims.length > 0) {
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        if (register === null || register.claims.length !== 1) {
+          throw new Error(
+            `fixture broken: the holder's claim never landed in the register (last read: ${JSON.stringify(register)})`,
+          );
+        }
+        const holderClaim = register.claims[0];
+        if (holderClaim === undefined) {
+          throw new Error("fixture broken: the holder's claim record is missing");
+        }
+        if (!holder.child.kill("SIGSTOP")) {
+          throw new Error(
+            "the holder process finished before the freeze — the leg's live window was missed",
+          );
+        }
+
+        // The taker process: the same world with the stream's beta.1
+        // recorded in its history, so the plan sequences PAST the frozen
+        // lease (5.0.0-beta.2, sequence 2) — the acquisition supersedes,
+        // and the taker's own walk completes.
+        const taker = runBin(gitRunArgs(repo, "main"), {
+          input: docBytes(
+            gitDoc("main", [beta], heads, [
+              { name: "5.0.0-beta.1", commit: seededHead(heads, "main") },
+            ]),
+          ),
+        });
+        expect(taker.status).toBe(0);
+        expect(taker.stderr).toBe("");
+        const takerOutcome = rendered(taker);
+        expect(takerOutcome.kind).toBe("published");
+        if (takerOutcome.kind !== "published") {
+          throw new Error("expected a published outcome");
+        }
+        expect(takerOutcome.tag).toBe("5.0.0-beta.2");
+
+        // The durable record, read with the raw spellings — never the
+        // product reader: both claims stand, the supersession names both
+        // holders, and one CAS append carries it over the holder's claim.
+        const after = rawClaimRegister(repo, "main");
+        if (after === null) {
+          throw new Error("fixture broken: the register vanished");
+        }
+        expect(after.claims).toHaveLength(2);
+        const takerClaim = after.claims.find((claim) => claim.scope.sequence === 2);
+        if (takerClaim === undefined) {
+          throw new Error("fixture broken: the taker's claim record is missing");
+        }
+        expect(after.claims).toContainEqual(holderClaim);
+        expect(after.supersessions).toStrictEqual([
+          { kind: "supersession", superseded: holderClaim, supersededBy: takerClaim },
+        ]);
+        expect(rawClaimRegisterCommitCount(repo, "main")).toBe(2);
+
+        // The resume: the frozen walk continues, its next guard re-read
+        // meets the recorded fence, and the refusal is loud — `denied`,
+        // exit 11, naming the taker from the durable record.
+        holder.child.kill("SIGCONT");
+        const holderResult = await holder.done;
+        expect(holderResult.status).toBe(11);
+        expect(holderResult.stderr).toBe("");
+        const holderOutcome = rendered(holderResult);
+        expect(holderOutcome.kind).toBe("denied");
+        if (holderOutcome.kind !== "denied") {
+          throw new Error("expected a denied outcome");
+        }
+        expect(holderOutcome.holder).toBe(takerClaim.holder);
+        expect(holderOutcome.handle?.attemptId).toBe(holderClaim.holder);
+        // The resumed walk stops with the kernel's own claim-lost outcome
+        // at the first stage it reaches (the freeze lands within the
+        // claim's wake — prepare here) — the boundary's classification is
+        // what turns it into the denied fence refusal.
+        expect(holderOutcome.drives.at(-1)?.outcome.kind).toBe("claim-lost");
+
+        // The end state: exactly the taker's tag minted — the superseded
+        // holder never reaches its mint.
+        expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0-beta.2"]);
       });
     },
   );
