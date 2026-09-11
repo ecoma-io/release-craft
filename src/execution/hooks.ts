@@ -22,6 +22,7 @@ import {
   type ArtifactStep,
   type Attribution,
   type ClaimView,
+  type DeclaredMutation,
   type ExecutionLedger,
   type HookEffect,
   type HookOutcome,
@@ -33,11 +34,11 @@ import {
   type StepKey,
   type TransitionRecord,
 } from "./types.js";
-import { artifactStepKey, hookStepKey, isHookStepKey } from "./step-keys.js";
+import { artifactStepKey, hookStepKey, isHookStepKey, updaterStepKey } from "./step-keys.js";
 
 /** The attempt's effective step list (§2.1; ADR-0007 decision 3 and
  * ADR-0008 decision 3): the canonical stages with each declared extension
- * step — hook or artifact — inserted at its anchor, before or after the
+ * step — hook, artifact, or updater mutation — inserted at its anchor, before or after the
  * anchored stage. Ties inside one declaration list break in declaration
  * order; because hooks and artifact steps are two declaration lists, the
  * cross-kind tie is the named rule (amended into §2.1 and the ADR): at
@@ -48,6 +49,7 @@ import { artifactStepKey, hookStepKey, isHookStepKey } from "./step-keys.js";
 export const effectiveSteps = (attempt: ReleaseAttempt): readonly StepKey[] => {
   const hooks = attempt.hooks ?? [];
   const artifacts = attempt.artifacts ?? [];
+  const mutations = attempt.mutations ?? [];
   const anchoredHooks = (stage: StageKey, position: "before" | "after"): readonly HookStep[] =>
     hooks.filter((hook) => hook.anchor.stage === stage && hook.anchor.position === position);
   const anchoredArtifacts = (
@@ -57,6 +59,13 @@ export const effectiveSteps = (attempt: ReleaseAttempt): readonly StepKey[] => {
     artifacts.filter(
       (artifact) => artifact.anchor.stage === stage && artifact.anchor.position === position,
     );
+  const anchoredMutations = (
+    stage: StageKey,
+    position: "before" | "after",
+  ): readonly DeclaredMutation[] =>
+    mutations.filter(
+      (mutation) => mutation.anchor.stage === stage && mutation.anchor.position === position,
+    );
   const steps: StepKey[] = [];
   for (const stage of CANONICAL_STAGES) {
     for (const hook of anchoredHooks(stage, "before")) {
@@ -65,12 +74,18 @@ export const effectiveSteps = (attempt: ReleaseAttempt): readonly StepKey[] => {
     for (const artifact of anchoredArtifacts(stage, "before")) {
       steps.push(artifactStepKey(artifact.id));
     }
+    for (const mutation of anchoredMutations(stage, "before")) {
+      steps.push(updaterStepKey(mutation.id));
+    }
     steps.push(stage);
     for (const hook of anchoredHooks(stage, "after")) {
       steps.push(hookStepKey(hook.id));
     }
     for (const artifact of anchoredArtifacts(stage, "after")) {
       steps.push(artifactStepKey(artifact.id));
+    }
+    for (const mutation of anchoredMutations(stage, "after")) {
+      steps.push(updaterStepKey(mutation.id));
     }
   }
   return steps;

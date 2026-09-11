@@ -24,6 +24,7 @@ import {
   type ArtifactStep,
   type AttemptState,
   type Attribution,
+  type DeclaredMutation,
   type HookAnchorPosition,
   type HookStep,
   type PostconditionKind,
@@ -400,18 +401,74 @@ const validateArtifacts = (artifacts: readonly ArtifactStep[]): readonly Artifac
   );
 };
 
+/** The declared updater mutations' protocol validation (issue #203):
+ * ids non-empty and unique (the ledger key is `updater:<id>`), anchors
+ * on the canonical stages, positions before/after, guard names
+ * non-empty, postcondition kinds from the closed pair. Returns the list
+ * frozen to the attempt's depth — the attempt value never mutates, so
+ * neither may its declarations. */
+const validateMutations = (mutations: readonly DeclaredMutation[]): readonly DeclaredMutation[] => {
+  const seen = new Set<string>();
+  for (const mutation of mutations) {
+    if (mutation.id.length === 0) {
+      throw new InvalidExecutionTransitionError(
+        "a mutation id must be a non-empty recorded value — the ledger key is updater:<id>",
+      );
+    }
+    if (seen.has(mutation.id)) {
+      throw new InvalidExecutionTransitionError(
+        `duplicate mutation id "${mutation.id}" — updater ledger keys are unique per attempt (issue #203)`,
+      );
+    }
+    seen.add(mutation.id);
+    if (!CANONICAL_STAGES.includes(mutation.anchor.stage)) {
+      throw new InvalidExecutionTransitionError(
+        `mutation "${mutation.id}" anchors at "${mutation.anchor.stage}", which is not one of the canonical stages (issue #203)`,
+      );
+    }
+    if (!ANCHOR_POSITIONS.includes(mutation.anchor.position)) {
+      throw new InvalidExecutionTransitionError(
+        `mutation "${mutation.id}" anchors "${mutation.anchor.position}"; the positions are before and after (issue #203)`,
+      );
+    }
+    if (mutation.guard.length === 0) {
+      throw new InvalidExecutionTransitionError(
+        `mutation "${mutation.id}" declares a blank guard name (issue #203)`,
+      );
+    }
+    for (const postcondition of mutation.postconditions) {
+      if (!POSTCONDITION_KINDS.includes(postcondition)) {
+        throw new InvalidExecutionTransitionError(
+          `mutation "${mutation.id}" declares the unknown postcondition "${postcondition}" (issue #203)`,
+        );
+      }
+    }
+  }
+  return Object.freeze(
+    mutations.map((mutation) =>
+      Object.freeze({
+        ...mutation,
+        anchor: Object.freeze({ ...mutation.anchor }),
+        postconditions: Object.freeze([...mutation.postconditions]),
+      }),
+    ),
+  );
+};
+
 /** Opens an attempt (§2.1): allocates the ordinal from the register,
  * derives the content-anchored id, and returns the frozen `planned` value.
  * The plan's fingerprint is carried, never recomputed (invariant 3's
- * execution mirror). The declared hooks and artifact steps ride the
- * attempt as execution-side data — excluded from `attemptIdentity` and
- * the plan fingerprint (phase 6 and phase 7 contracts §2.1; ADR-0007 and
- * ADR-0008 decision 3). */
+ * execution mirror). The declared hooks, artifact steps, and updater
+ * mutation steps ride the attempt as execution-side data — excluded from
+ * `attemptIdentity` and the plan fingerprint (phase 6, phase 7, and the
+ * updater layer's contracts §2.1; ADR-0007, ADR-0008 decision 3, and
+ * issue #203's key space). */
 export const openAttempt = (
   register: { nextOrdinal(planId: string): number },
   plan: { readonly planId: string; readonly planFingerprint: string },
   hooks?: readonly HookStep[],
   artifacts?: readonly ArtifactStep[],
+  mutations?: readonly DeclaredMutation[],
 ): ReleaseAttempt => {
   const ordinal = register.nextOrdinal(plan.planId);
   return Object.freeze({
@@ -421,5 +478,6 @@ export const openAttempt = (
     state: "planned",
     ...(hooks === undefined ? {} : { hooks: validateHooks(hooks) }),
     ...(artifacts === undefined ? {} : { artifacts: validateArtifacts(artifacts) }),
+    ...(mutations === undefined ? {} : { mutations: validateMutations(mutations) }),
   } satisfies ReleaseAttempt);
 };

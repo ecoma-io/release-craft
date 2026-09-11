@@ -28,4 +28,5 @@ export * from "./revalidation.js";
 export * from "./step-keys.js";
 export * from "./step.js";
 export * from "./transition.js";
+export * from "./updater.js";
 export * from "./types.js";

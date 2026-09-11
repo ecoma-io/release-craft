@@ -53,6 +53,11 @@ export interface ReleaseAttempt {
    * publish gate — never part of `attemptIdentity` and never part of the
    * plan fingerprint. Frozen with the attempt. */
   readonly artifacts?: readonly ArtifactStep[];
+  /** The declared updater mutation steps (issue #203): execution-side
+   * data read by the scheduler and the resume classification — never part
+   * of `attemptIdentity` and never part of the plan fingerprint. Frozen
+   * with the attempt. */
+  readonly mutations?: readonly DeclaredMutation[];
 }
 
 // ---------------------------------------------------------------------------
@@ -229,11 +234,14 @@ export type HookStepKey = `hook:${string}`;
  * ADR-0008 decision 3): `artifact:<id>`, unique per attempt, the ledger
  * key of the generation record. */
 export type ArtifactStepKey = `artifact:${string}`;
+/** An updater step's ledger key space (issue #203): `updater:<id>`,
+ * unique per attempt, the ledger key of the mutation record. */
+export type UpdaterStepKey = `updater:${string}`;
 
-/** A step key — a canonical stage, a hook step, or an artifact step
- * (ADR-0007 decision 3 and ADR-0008 decision 3's named extensions: the
- * closed three). */
-export type StepKey = StageKey | HookStepKey | ArtifactStepKey;
+/** A step key — a canonical stage, a hook step, an artifact step, or an
+ * updater step (ADR-0007 decision 3, ADR-0008 decision 3, issue #203:
+ * the closed four). */
+export type StepKey = StageKey | HookStepKey | ArtifactStepKey | UpdaterStepKey;
 
 /** A step's state (§2.6) — E-02's ledger fields verbatim ("npm —
  * completed; GitHub Release — started; channels — pending"). */
@@ -504,6 +512,69 @@ export type ArtifactOutcome =
 export interface ArtifactsRun {
   readonly attempt: ReleaseAttempt;
   readonly outcomes: readonly ArtifactOutcome[];
+}
+// ---------------------------------------------------------------------------
+// §2.5d — updater steps (issue #203; the updater layer)
+// ---------------------------------------------------------------------------
+
+/** A declared updater mutation step (issue #203): pure data — the engine
+ * never stores or invents the mutation intent (ADR-0007 decision 2
+ * analogue). The `guard` name is recorded verbatim; the postconditions
+ * name the recorded proofs the completion must carry before the mutation
+ * counts as done. */
+export interface DeclaredMutation {
+  readonly id: string;
+  readonly anchor: { readonly stage: StageKey; readonly position: "before" | "after" };
+  readonly guard: string;
+  readonly postconditions: readonly PostconditionKind[];
+}
+
+/** A file mutation's content — a pure function that deterministically
+ * produces the bytes. Identical inputs always yield identical output. */
+export interface MutationIntent {
+  readonly path: string;
+  readonly produce: () => string;
+  readonly expectedDigest: string;
+}
+
+/** The injectable filesystem seam (issue #203): reads and writes file
+ * content. The adapter may choose atomic write (temp + rename) or direct
+ * write; the updater never assumes the mechanism. */
+export interface UpdaterFs {
+  read(path: string): string | undefined;
+  write(path: string, content: string): void;
+}
+
+/** One mutation step's recorded outcome (§2.2 analogue): `completed`
+ * carries the completion record; `refused` is the kernel's recorded
+ * precondition refusal — no record; `failed` is the §2.5 escalation. */
+export type MutationOutcome =
+  | {
+      readonly kind: "completed";
+      readonly stepKey: UpdaterStepKey;
+      readonly mutationId: string;
+      readonly record: TransitionRecord;
+    }
+  | {
+      readonly kind: "refused";
+      readonly stepKey: UpdaterStepKey;
+      readonly mutationId: string;
+      readonly detail: string;
+    }
+  | {
+      readonly kind: "failed";
+      readonly stepKey: UpdaterStepKey;
+      readonly mutationId: string;
+      readonly detail: string;
+      readonly record: TransitionRecord;
+    };
+
+/** `scheduleMutations`' result: the successor attempt (blocked after a
+ * §2.5 escalation, otherwise the input) and the outcomes recorded so
+ * far — the walk stops at the first refusal or escalation. */
+export interface MutationsRun {
+  readonly attempt: ReleaseAttempt;
+  readonly outcomes: readonly MutationOutcome[];
 }
 
 // ---------------------------------------------------------------------------

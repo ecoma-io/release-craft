@@ -26,14 +26,17 @@ import type {
   Claim,
   ClaimStore,
   ChannelStore,
+  DeclaredMutation,
   ExecutionLedger,
   HookEffect,
   HookStep,
   LedgerRecord,
   LedgerStepState,
+  MutationIntent,
   ReleaseAttempt,
   RequestStepOutcome,
   StepKey,
+  UpdaterFs,
 } from "@ecoma-io/release-craft/execution";
 import type {
   OperatorIntent,
@@ -145,6 +148,9 @@ export interface RunDeclarations {
   readonly hooks?: readonly HookStep[];
   /** The declared artifact steps, frozen with the attempt at `openAttempt`. */
   readonly artifacts?: readonly ArtifactStep[];
+  /** The declared updater mutation steps, frozen with the attempt at
+   * `openAttempt`. */
+  readonly mutations?: readonly DeclaredMutation[];
   /** The hook effects, keyed by hook id — demanded by every uncompleted
    * declared hook the walk reaches. */
   readonly hookEffects?: ReadonlyMap<string, HookEffect>;
@@ -152,6 +158,12 @@ export interface RunDeclarations {
    * uncompleted declared artifact step the walk reaches; a git assembly
    * falls back per id to the binding's own producer. */
   readonly producers?: ReadonlyMap<string, ArtifactProducer>;
+  /** The updater mutation intents, keyed by mutation id — demanded by
+   * every uncompleted declared updater mutation the walk reaches. */
+  readonly mutationIntents?: ReadonlyMap<string, MutationIntent>;
+  /** The injectable filesystem seam the updater layer writes through —
+   * demanded when declared mutations are present. */
+  readonly updaterFs?: UpdaterFs;
 }
 
 /** One executed run's request (§2.6). Everything ambient enters here as

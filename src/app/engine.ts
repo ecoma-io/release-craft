@@ -47,10 +47,13 @@ import {
   type ExecutionLedger,
   type HookAnchorPosition,
   type LedgerRecord,
+  type MutationOutcome,
   type ReleaseAttempt,
   type RequestStepOutcome,
   type StageKey,
   type StepKey,
+  isUpdaterStepKey,
+  scheduleMutations,
 } from "@ecoma-io/release-craft/execution";
 import {
   canonicalJson,
@@ -240,6 +243,12 @@ const anchorStageOf = (attempt: ReleaseAttempt, key: StepKey): StageKey => {
       return artifact.anchor.stage;
     }
   }
+  if (isUpdaterStepKey(key)) {
+    const mutation = (attempt.mutations ?? []).find((declared) => `updater:${declared.id}` === key);
+    if (mutation !== undefined) {
+      return mutation.anchor.stage;
+    }
+  }
   throw new Error(
     `the classification named step ${key}, which is neither a canonical stage nor a ` +
       `declared extension step — the walk cannot enter there (phase 11 contract §2.5)`,
@@ -316,6 +325,42 @@ const runBoundary = (ctx: WalkContext, stage: StageKey, position: HookAnchorPosi
     );
     ctx.attempt = run.attempt;
   }
+  if (ctx.attempt.state !== "executing") {
+    return;
+  }
+  const mutationsHere = (ctx.attempt.mutations ?? []).filter(
+    (mutation) => mutation.anchor.stage === stage && mutation.anchor.position === position,
+  );
+  if (mutationsHere.length > 0) {
+    const updaterFs = ctx.declarations.updaterFs;
+    if (updaterFs === undefined) {
+      throw new Error(
+        "no filesystem seam injected for the declared updater mutations — the engine never invents the updater's seam (ADR-0007 decision 2)",
+      );
+    }
+    const run = scheduleMutations(
+      ctx.attempt,
+      attributionFor(ctx.handle),
+      ctx.ports.ledger,
+      claimViewFor(ctx.claim, ctx.ports.claims, ctx.handle.attemptId),
+      ctx.declarations.mutationIntents ?? new Map(),
+      updaterFs,
+    );
+    ctx.attempt = run.attempt;
+    // A refused mutation is a §2.5 escalation, not a pass: the attempt
+    // blocks with the refusal as the recorded cause, and the walk's own
+    // executing-state checks stop it — the half-mutated tree is never
+    // published beside the refusal.
+    if (ctx.attempt.state === "executing") {
+      const refused = run.outcomes.find(
+        (outcome): outcome is Extract<MutationOutcome, { readonly kind: "refused" }> =>
+          outcome.kind === "refused",
+      );
+      if (refused !== undefined) {
+        ctx.attempt = block(ctx.attempt, `refused:updater:${refused.mutationId}:${refused.detail}`);
+      }
+    }
+  }
 };
 
 /**
@@ -338,7 +383,9 @@ const runBoundary = (ctx: WalkContext, stage: StageKey, position: HookAnchorPosi
  */
 const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
   const entry =
-    isHookStepKey(from) || isArtifactStepKey(from) ? anchorStageOf(ctx.attempt, from) : from;
+    isHookStepKey(from) || isArtifactStepKey(from) || isUpdaterStepKey(from)
+      ? anchorStageOf(ctx.attempt, from)
+      : from;
   const startIndex = CANONICAL_STAGES.indexOf(entry);
   if (startIndex < 0) {
     throw new Error(
@@ -777,6 +824,7 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
           { planId, planFingerprint: planId },
           request.declarations?.hooks,
           request.declarations?.artifacts,
+          request.declarations?.mutations,
         ),
       );
       entry = { attempt: opened, planLine, claim: null, tags: [] };
