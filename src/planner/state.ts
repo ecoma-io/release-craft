@@ -59,7 +59,9 @@ export const rebuildLineState: RebuildLineState = (history) => {
     // still rebuilds key (1.2.0, rc) at 3. A non-composing suffix (a lone
     // identifier, or a non-numeric tail — e.g. `2.0.0-alpha`) contributes no
     // key either, yet the version
-    // still counts for the pointer. KNOWN PHASE-2 LIMIT (reported): such
+    // still counts for the pointer. KNOWN PHASE-2 LIMIT (recorded in
+    // docs/design/phase2-planner-contract.md §2.13, the tag-history
+    // projection section — issue #197): such
     // admissible tags surface nowhere else — the frozen LineState carries no
     // foreign field — so their streamlessness is silent at this layer;
     // surfacing them needs a LineState shape revision and is deliberately
