@@ -110,6 +110,19 @@ describe("the origin-identity parser (§2.9; #177)", () => {
     expect(identity("https://")).toBeNull();
   });
 
+  it("refuses npm's git+* schemes — they are not git's grammar", () => {
+    // The scheme set is exactly the "GIT URLS" section's transports plus
+    // `file:`; a `git+ssh` URL is one git itself cannot transport, so it
+    // reads unknown and refuses loudly (fail-closed, like every shape the
+    // grammar cannot vouch for) — never parsed by guessing past the
+    // scheme.
+    expect(identity("git+ssh://git@github.com/ecoma-io/release-craft.git")).toBeNull();
+    expect(identity("git+https://github.com/ecoma-io/release-craft.git")).toBeNull();
+    expect(
+      originIdentityFault("git+ssh://git@github.com/ecoma-io/release-craft.git", credentials),
+    ).toContain("does not name a github.com repository");
+  });
+
   it("names the wrong repository as the fault — the owner half first", () => {
     const fault = originIdentityFault(
       "https://github.com/fork-owner/release-craft.git",

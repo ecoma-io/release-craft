@@ -259,6 +259,27 @@ describe("the assembled GitHub adapter (§2.6; #65)", () => {
     });
   });
 
+  it("claims no exit status in the agreement's fault — the read itself succeeded (#177)", () => {
+    withAdapterRepo((fixture) => {
+      seedTag(fixture);
+      fixture.git(["remote", "add", "origin", "https://github.com/fork-owner/release-craft.git"]);
+      let fault: GitFaultError | undefined;
+      try {
+        fixture.adapter(fakeTransport(() => notFoundResponse()).transport);
+      } catch (error) {
+        fault = error as GitFaultError;
+      }
+      // The invocation succeeded (exit 0); the fault is the agreement's,
+      // so no exit status is claimed — the message names both identities
+      // and never dresses the refusal up as a failed read.
+      expect(fault).toBeInstanceOf(GitFaultError);
+      expect(fault?.status).toBeNull();
+      expect(fault?.message).toContain("fork-owner/release-craft");
+      expect(fault?.message).toContain("github.com/ecoma-io/release-craft");
+      expect(fault?.message).not.toContain("exit 0");
+    });
+  });
+
   it("refuses to open when the origin names no github.com repository — a local path (#177)", () => {
     withAdapterRepo((fixture) => {
       seedTag(fixture);

@@ -64,7 +64,10 @@ const assertOriginAgreement = (binding: GitBinding, credentials: GitHubCredentia
   }
   const fault = originIdentityFault(origin.stdout, credentials);
   if (fault !== null) {
-    throw new GitFaultError(["remote", "get-url", "origin"], origin.code, fault);
+    // The read succeeded — the fault is the agreement's, not the
+    // invocation's — so no exit status is claimed (the `null` the fault
+    // class itself uses when git could not be spawned).
+    throw new GitFaultError(["remote", "get-url", "origin"], null, fault);
   }
 };
 

@@ -43,15 +43,15 @@ export interface RemoteIdentity {
   readonly repo: string;
 }
 
-/** The URL schemes git's remote grammar carries — the transports the
- *  "GIT URLS" section lists, plus `file:` (a local repository, which
- *  names no GitHub repository and refuses below). */
+/** The URL schemes git's remote grammar carries — exactly the transports
+ *  the "GIT URLS" section lists, plus `file:` (a local repository, which
+ *  names no GitHub repository and refuses below). npm's `git+*`
+ *  conventions are not git's grammar: a URL carrying them is one git
+ *  itself cannot transport, so it reads unknown here and refuses — the
+ *  grammar is git's, and the set stays exactly his. */
 const KNOWN_SCHEMES: ReadonlySet<string> = new Set([
   "ssh",
   "git",
-  "git+ssh",
-  "git+http",
-  "git+https",
   "http",
   "https",
   "ftp",
