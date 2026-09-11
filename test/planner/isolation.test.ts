@@ -27,7 +27,8 @@ import type {
  *     fingerprints' SHA-256. Hashing is pure computation — identical bytes
  *     hash to identical digests — so the frozen exception strengthens
  *     determinism instead of threatening it. No fs, no path, no process,
- *     no clock, no randomness, no dynamic import. The subject is the
+ *     no clock, no randomness, no locale read, no dynamic import. The
+ *     subject is the
  *     layer, not a module list: the scan walks src/planner by glob, so a
  *     new planner file inherits the gate without this suite naming it.
  *
@@ -138,9 +139,26 @@ function importViolations(file: string, text: string): Violation[] {
 /**
  * The global surface a deterministic layer may never name (invariant 2):
  * the clock in both spellings, randomness, the process object — where
- * environment reads live — and globalThis, the escape hatch that would
- * smuggle any of them back in. The gate fails closed: a hit means the
- * layer names the API, in code or in prose, and both are refused.
+ * environment reads live — globalThis, the escape hatch that would
+ * smuggle any of them back in, and the locale-sensitive reads (#292):
+ * Intl, whose formatting and collation move with the runtime's locale
+ * and ICU build — output that varies with TZ and LC_ALL between
+ * machines — and the toLocale* method family, which reads the same
+ * environment one call at a time off every String, Number, Date and
+ * Array. Granularity follows the name each entry polices: the call site
+ * for the clock and the toLocale* family (the law is the call, and a
+ * name in prose is refused with it), the bare word for globalThis and
+ * Intl — names rare enough in prose that naming them anywhere in the
+ * layer is a hit, per the fail-closed law below. `Intl` therefore bites
+ * on the value read too (`const locale = Intl`), not only on
+ * `Intl.DateTimeFormat` — a scan at the property-access granularity,
+ * `process`'s, would let the namespace leak out as a value first.
+ * Residual, stated rather than hidden: the scan judges names, not
+ * calls — `value.localeCompare(other)` is a locale-sensitive read of
+ * the same class and is not on the list yet, recorded here so the gap
+ * stays a decision rather than an oversight. The gate fails closed: a
+ * hit means the layer names the API, in code or in prose, and both are
+ * refused.
  */
 const FORBIDDEN_GLOBALS: readonly {
   readonly token: string;
@@ -152,6 +170,32 @@ const FORBIDDEN_GLOBALS: readonly {
   { token: "Math.random", pattern: /\bMath\.random\s*\(/, why: "randomness" },
   { token: "process", pattern: /\bprocess\s*[.[]/, why: "process or environment access" },
   { token: "globalThis", pattern: /\bglobalThis\b/, why: "global escape hatch" },
+  { token: "Intl", pattern: /\bIntl\b/, why: "locale-sensitive read" },
+  {
+    token: "toLocaleString",
+    pattern: /\btoLocaleString\s*\(/,
+    why: "locale-sensitive read",
+  },
+  {
+    token: "toLocaleDateString",
+    pattern: /\btoLocaleDateString\s*\(/,
+    why: "locale-sensitive read",
+  },
+  {
+    token: "toLocaleTimeString",
+    pattern: /\btoLocaleTimeString\s*\(/,
+    why: "locale-sensitive read",
+  },
+  {
+    token: "toLocaleUpperCase",
+    pattern: /\btoLocaleUpperCase\s*\(/,
+    why: "locale-sensitive read",
+  },
+  {
+    token: "toLocaleLowerCase",
+    pattern: /\btoLocaleLowerCase\s*\(/,
+    why: "locale-sensitive read",
+  },
 ];
 
 /** Name-and-shame scan: every forbidden global the file's text trips. */
@@ -335,7 +379,7 @@ describe("contract §4 A3 — the planner is an isolated layer", () => {
     const violations = render(scan(sideEffectViolations));
     expect(
       violations,
-      "the planner layer names no Date.now, no new Date, no Math.random, no process and no globalThis — identical inputs must decide identically (invariant 2, §2.14)",
+      "the planner layer names no Date.now, no new Date, no Math.random, no process, no globalThis, no Intl and no toLocale* read — identical inputs must decide identically (invariant 2, §2.14)",
     ).toEqual([]);
   });
 
