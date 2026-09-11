@@ -278,7 +278,7 @@ export const MANIFEST: readonly ManifestRow[] = [
     expectedFiles: [],
     provenance: [
       "phase 14 §3.3",
-      "phase 14 §4.3 (the zero-random assembly's determinism — the control that proves the projection rule is the only delta between recorded and live git bytes)",
+      "phase 14 §4.3 (the zero-random assembly's determinism — every memory envelope byte-identical across runs with no projection; the projection-is-the-only-assembly-delta claim is executable as git-15's pairing, not cited from this row)",
     ],
     status: "live",
   },
@@ -517,6 +517,22 @@ export const MANIFEST: readonly ManifestRow[] = [
     provenance: [
       "phase 14 §3.3",
       "phase 11 §2.5 (the engine's own pre-walk refusal on the hand-built-request path — `handle: null`, `drives: []`; the row the CLI's planner-classified lie deliberately does not render, git-12's other half)",
+    ],
+    status: "live",
+  },
+  {
+    id: "git-15",
+    kind: "posture",
+    walk: null,
+    windows: [],
+    assembly: "A-git",
+    transports: ["boundary"],
+    classes: ["ledger projections"],
+    expectedFiles: [],
+    provenance: [
+      "phase 14 §3.3",
+      "phase 14 §4.3 (the projection is the only delta between the two assemblies — proven, not cited: one declared world through both assemblies, the git ledger's projected records equal to the memory ledger's in append order, the identity chain's sha256 literals committed in the cell, the attempt id standing as the repository's own ledger ref)",
+      "#186 (the pairing the provenance rows used to cite, made executable)",
     ],
     status: "live",
   },

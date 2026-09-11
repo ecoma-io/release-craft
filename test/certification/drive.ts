@@ -14,14 +14,20 @@
  *   the hermetic repository fixture (`withSeededRepo`, the `.lock` fault
  *   seater) — the CLI harness carries its own copies because the fixture
  *   may not import it, so the bytes here are kept identical by law
- *   (memory-10/git-01's pairing judges them);
+ *   (git-15's executable pairing judges them);
  * - the projection rule (§4.3), recorded and versioned, applied
  *   identically at generation and at comparison;
+ * - the fixture-side raw ledger readers and the ledger pairing rule
+ *   (#186): the durability and pairing cells read the repository's ledger
+ *   records with THIS module's own git spellings, never the product
+ *   `GitLedger` — a serialization change cannot move write and read
+ *   together silently;
  * - the byte-pinned cells' scenario drivers and the expected-file reader
  *   and writer (only the generator writes; the suites only compare).
  */
 
 import { spawnSync } from "node:child_process";
+import { Buffer } from "node:buffer";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -129,6 +135,39 @@ export const project = (text: string, repo = ""): string => {
 };
 
 // ---------------------------------------------------------------------------
+// The ledger pairing's memory-side half (§4.3, executable as git-15) — the
+// projection is the only assembly delta
+// ---------------------------------------------------------------------------
+
+/** The memory claim token's whole recorded shape — the seeded counter
+ * (`claim:1`, verified: `MemoryClaimStore`), never 64-hex. */
+const MEMORY_CLAIM_TOKEN = /^claim:\d+$/;
+
+/** The pairing's memory-side half: the claim token's field, wherever the
+ * counter's recorded shape stands, reads as CLAIM — mirroring what the
+ * projection does to the git side's random token. Every other value passes
+ * through untouched. */
+export const projectMemoryLedgerRecords = (records: readonly unknown[]): readonly unknown[] =>
+  records.map((record) => projectClaimToken(record));
+
+function projectClaimToken(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((member) => projectClaimToken(member));
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, member]) => [
+        key,
+        key === "claim" && typeof member === "string" && MEMORY_CLAIM_TOKEN.test(member)
+          ? "CLAIM"
+          : projectClaimToken(member),
+      ]),
+    );
+  }
+  return value;
+}
+
+// ---------------------------------------------------------------------------
 // The recorded world as documents — the closed input's bytes
 // ---------------------------------------------------------------------------
 
@@ -140,8 +179,9 @@ export const memoryDoc = (lineId: string, intents: readonly unknown[] = []) =>
  * head (and that head's commit sha) replaced by the real seeded oid — the
  * mint target the git assembly will rev-parse. Extra tags stand for the
  * recorded state a previous run left in the world. Kept byte-identical to
- * the CLI harness's builder by law: the pairing of memory-10 and git-01 is
- * the proof that the projection is the only delta. */
+ * the CLI harness's builder by law; the pairing over this document — the
+ * proof that the projection is the only assembly delta — is executable as
+ * git-15's cell, asserted, not cited. */
 export const gitDoc = (
   lineId: string,
   intents: readonly unknown[],
@@ -234,9 +274,8 @@ export const gitAssemblyWithChannels = (repo: string, channels: ChannelStore): E
 
 /** The repository's durable ledger, constructed the vertical fixture's own
  * way (`new GitLedger` over the repo's runner, exactly `gitStores` builds
- * it) — the tail a crashed walk left behind (the fixture's own crash
- * windows escape the door, so the identity comes from the repo, the only
- * survivor). */
+ * it) — kept for `ledgerTailBytes` above, the cross-check side of git-08's
+ * reader-agreement pin. The cells' oracle is the raw readers below. */
 export const gitLedger = (repo: string): GitLedger => new GitLedger(openGitRun(repo));
 
 /** The repository's claim store itself — `gitStores`'s own construction,
@@ -246,30 +285,30 @@ export const gitLedger = (repo: string): GitLedger => new GitLedger(openGitRun(r
  * register refs the wrapper's engine reads. */
 export const rawGitClaims = (repo: string): GitClaimStore => new GitClaimStore(repo);
 
-/** The attempt's recorded ledger tail, read fresh from the repository. */
-export const ledgerTail = (repo: string, attemptId: string): readonly LedgerRecord[] =>
-  gitLedger(repo).tail(attemptId);
-
-/** The attempt's ledger tail as canonical bytes, read fresh from the
- * repository — the byte-pinned durability comparison. */
+/** The attempt's ledger tail as canonical bytes, read through the product
+ * `GitLedger` — the CROSS-CHECK side only (git-08's agreement pin between
+ * the fixture's raw reader and the product's): the durability and pairing
+ * cells' oracle is the raw reader below, never this. */
 export const ledgerTailBytes = (repo: string, attemptId: string): readonly string[] =>
   tailBytes(gitLedger(repo), attemptId);
-
-/** The attempt's recorded plan fingerprint, guarded — the resume handle's
- * plan half, recovered from the repository. */
-export const ledgerPlanId = (repo: string, attemptId: string): string => {
-  const planId = gitLedger(repo).planFingerprint(attemptId);
-  if (planId === null) {
-    throw new Error(`fixture broken: no recorded plan fingerprint for ${attemptId}`);
-  }
-  return planId;
-};
 
 /** The exact inverse of the adapter's ref-component encoding (upper-case
  * percent escapes, ASCII only) — the ref name back into the engine id. */
 const decodeRefComponent = (value: string): string =>
   value.replace(/%([0-9A-F]{2})/g, (_whole, hex: string) =>
     String.fromCharCode(Number.parseInt(hex, 16)),
+  );
+
+/** The ref-component encoding spelled fixture-side — the recorded inverse
+ * of `decodeRefComponent` above (every character git forbids in a refname,
+ * plus `%` itself, as upper-case byte escapes). The raw readers build the
+ * ledger ref's name with THIS, never the adapter's encoder, so a product
+ * encoding change cannot move the write and the fixture's read together. */
+const encodeRefComponent = (value: string): string =>
+  value.replace(/[^A-Za-z0-9._/-]/g, (character) =>
+    [...Buffer.from(character, "utf8")]
+      .map((byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`)
+      .join(""),
   );
 
 /** The attempt ids the repository's ledger refs carry — the repo itself is
@@ -281,6 +320,56 @@ export const ledgerAttemptIds = (repo: string): readonly string[] =>
     .split("\n")
     .filter((ref) => ref.length > 0)
     .map((ref) => decodeRefComponent(ref.slice("refs/release-craft/ledger/".length)));
+
+// ---------------------------------------------------------------------------
+// The fixture-side raw ledger readers (#186) — the durability and pairing
+// cells' oracle
+// ---------------------------------------------------------------------------
+
+/** The ledger stream's storage layout, spelled by the fixture: one ref per
+ * attempt under `refs/release-craft/ledger/`, named by the percent-encoded
+ * attempt id; the first-parent history one commit per appended record; the
+ * record's canonical JSON as the `record` blob. These spellings are the
+ * recorded copy of the adapter's mapping (#164's posture, one reader up):
+ * a serialization change — namespace, encoding, blob path, ordering —
+ * breaks the fixture's readers loudly instead of moving write and read
+ * together behind green pins. */
+const rawLedgerRefFor = (attemptId: string): string =>
+  `refs/release-craft/ledger/${encodeRefComponent(attemptId)}`;
+
+/** The attempt's ledger tail as the repository stores it — the raw
+ * `record` blob bytes per substrate commit, append order, read with the
+ * fixture's own git spellings (ref read, first-parent walk, blob read).
+ * An absent stream reads as empty. */
+export const rawLedgerTailBytes = (repo: string, attemptId: string): readonly string[] => {
+  const git = openGitRun(repo);
+  const ref = rawLedgerRefFor(attemptId);
+  if (git(["rev-parse", "--verify", "--quiet", ref]).trim().length === 0) {
+    return [];
+  }
+  return git(["rev-list", "--first-parent", ref])
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .reverse()
+    .map((commit) => git(["show", `${commit}:record`]));
+};
+
+/** The attempt's ledger tail as records, parsed fixture-side from the raw
+ * bytes — never through the product `GitLedger`. */
+export const rawLedgerTail = (repo: string, attemptId: string): readonly LedgerRecord[] =>
+  rawLedgerTailBytes(repo, attemptId).map((bytes) => JSON.parse(bytes) as LedgerRecord);
+
+/** The attempt's recorded plan fingerprint from the raw records, guarded —
+ * the resume handle's plan half, recovered without the product reader. */
+export const rawLedgerPlanId = (repo: string, attemptId: string): string => {
+  const plan = rawLedgerTail(repo, attemptId).find(
+    (record) => record.kind === "plan" && record.attemptId === attemptId,
+  );
+  if (plan?.kind !== "plan") {
+    throw new Error(`fixture broken: no recorded plan fingerprint for ${attemptId}`);
+  }
+  return plan.planFingerprint;
+};
 
 /** The attempt-ledger refs' commit chains, exactly as git reports them —
  * one `%an|%ae|%cn|%ce|%s` line per substrate commit, ref by ref in

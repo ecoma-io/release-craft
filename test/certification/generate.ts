@@ -90,8 +90,8 @@ const generateMemory = (): void => {
 /** The git family's writers: the process envelopes ride the recorded
  * projection (§4.3) — the repository path becomes REPO and the claim
  * token's whole value becomes CLAIM, applied identically at generation and
- * at comparison, so `memory-10`'s no-projection pairing proves the
- * projection is the only delta. */
+ * at comparison. The proof that the projection is the only assembly delta
+ * is `git-15`'s executable pairing, not this generator. */
 const generateGit = (): void => {
   withSeededRepo("generate-git-01", (repo, _git, heads) => {
     const child = gitPromoteScenario(repo, heads);

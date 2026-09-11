@@ -8,8 +8,10 @@
  * module). The byte-pinned cells diff their live bytes against the
  * committed `expected/*.json` after the recorded projection (§4.3) — the
  * repository path becomes REPO and the claim token's whole value becomes
- * CLAIM; everything else compares verbatim, and `memory-10` is the control
- * proving the projection is the only delta.
+ * CLAIM; everything else compares verbatim. The projection-is-the-only-
+ * delta claim is executable here: `git-15` drives ONE declared world
+ * through both assemblies and diffs the git ledger's projected records
+ * against the memory ledger's, read with the fixture's raw readers.
  *
  * Durability's crash windows are seated the only way a host's death can be
  * seated at this surface: the declared hook effect throwing mid-walk (the
@@ -32,6 +34,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   InvalidExecutionTransitionError,
+  attemptIdentity,
+  inputsFingerprint,
   type ClaimScope,
   type LedgerRecord,
   type RunOutcome,
@@ -42,7 +46,15 @@ import {
   commitRecord,
   readRef,
 } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
-import { beta, fullDeclaration, promote, rc, runRequest, runToWorld } from "../app/harness.js";
+import {
+  beta,
+  freshAssembly,
+  fullDeclaration,
+  promote,
+  rc,
+  runRequest,
+  runToWorld,
+} from "../app/harness.js";
 import { liveWorld } from "../vertical/matrix.js";
 import { naming, recordedTags } from "../vertical/matrix-git.js";
 import {
@@ -60,12 +72,14 @@ import {
   ladderExtraTags,
   ledgerAttemptIds,
   ledgerIdentityLog,
-  ledgerPlanId,
-  ledgerTail,
   ledgerTailBytes,
   lockChannelRefs,
   project,
+  projectMemoryLedgerRecords,
   rawGitClaims,
+  rawLedgerPlanId,
+  rawLedgerTail,
+  rawLedgerTailBytes,
   runBin,
   seededHead,
   withSeededRepo,
@@ -474,7 +488,7 @@ describe("the certification fixture · A-git", () => {
         // The write-ahead window, read from the repository: the stage's
         // started record stands and the completion does not; the landed
         // move stands only in the store — the ledger holds no move record.
-        const tail = ledgerTail(repo, attemptId);
+        const tail = rawLedgerTail(repo, attemptId);
         expect(recordedTos(tail, "channel-transition")).toStrictEqual(["started"]);
         expect(tail.filter((record) => record.kind === "channel-transition")).toStrictEqual([]);
         expect(new GitChannelStore(repo).read("stable").target).toStrictEqual({
@@ -491,7 +505,7 @@ describe("the certification fixture · A-git", () => {
         // the second move applies, the stage completes, and the mint
         // follows. Never a second move, never a second mint.
         const resumed = crashedEngine.resume(
-          crashedHandle(ledgerPlanId(repo, attemptId), attemptId),
+          crashedHandle(rawLedgerPlanId(repo, attemptId), attemptId),
           {
             ...runRequest(liveWorld(), "main", [promote], fullDeclaration()),
             targets: { main: target },
@@ -503,7 +517,7 @@ describe("the certification fixture · A-git", () => {
         }
         expect(resumed.tag).toBe("5.0.0");
         expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0", ...tagsBefore]);
-        const window = ledgerTail(repo, attemptId);
+        const window = rawLedgerTail(repo, attemptId);
         const startedIndex = window.findIndex(
           (record) =>
             record.kind === "step" &&
@@ -566,7 +580,7 @@ describe("the certification fixture · A-git", () => {
         if (attemptId === undefined) {
           throw new Error("fixture broken: the crashed attempt left no ledger ref");
         }
-        const outcome = engine.resume(crashedHandle(ledgerPlanId(repo, attemptId), attemptId), {
+        const outcome = engine.resume(crashedHandle(rawLedgerPlanId(repo, attemptId), attemptId), {
           ...runRequest(liveWorld(), "main", [promote], fullDeclaration()),
           targets: { main: target },
         });
@@ -660,15 +674,20 @@ describe("the certification fixture · A-git", () => {
         if (attemptId === undefined) {
           throw new Error("fixture broken: the crashed attempt left no ledger ref");
         }
-        const bytes = ledgerTailBytes(repo, attemptId);
+        const bytes = rawLedgerTailBytes(repo, attemptId);
         expect(bytes.length).toBeGreaterThan(0);
 
-        // A fresh binding on the same repo (a reload) reads the same bytes.
+        // A fresh read on the same repo reads the same bytes — and the
+        // fixture's raw reader and the product `GitLedger` agree on the
+        // honest stream. The agreement pin is a cross-check between two
+        // readers, never the oracle: the raw read above is what the
+        // durability pins judge (#186).
+        expect(rawLedgerTailBytes(repo, attemptId)).toStrictEqual(bytes);
         expect(ledgerTailBytes(repo, attemptId)).toStrictEqual(bytes);
 
         // The resume classifies from the reloaded tail and completes; the
         // tail grew append-only — every crashed byte still stands.
-        const resumed = engine.resume(crashedHandle(ledgerPlanId(repo, attemptId), attemptId), {
+        const resumed = engine.resume(crashedHandle(rawLedgerPlanId(repo, attemptId), attemptId), {
           ...runRequest(liveWorld(), "main", [beta], fullDeclaration()),
           targets: { main: target },
         });
@@ -677,7 +696,7 @@ describe("the certification fixture · A-git", () => {
           throw new Error("expected a published outcome");
         }
         expect(resumed.tag).toBe("5.0.0-beta.1");
-        const grown = ledgerTailBytes(repo, attemptId);
+        const grown = rawLedgerTailBytes(repo, attemptId);
         expect(grown.slice(0, bytes.length)).toStrictEqual(bytes);
 
         // Resumed-equals-uninterrupted: a walk that never crashed lands
@@ -718,13 +737,13 @@ describe("the certification fixture · A-git", () => {
         }
         // The recorded tag step stands; the ref does not exist yet (the
         // mint is the completion's own act, never re-run).
-        expect(recordedTos(ledgerTail(repo, attemptId), "tag")).toStrictEqual([
+        expect(recordedTos(rawLedgerTail(repo, attemptId), "tag")).toStrictEqual([
           "started",
           "completed",
         ]);
         expect(recordedTags(git, naming.namespaces)).toStrictEqual([]);
 
-        const outcome = engine.resume(crashedHandle(ledgerPlanId(repo, attemptId), attemptId), {
+        const outcome = engine.resume(crashedHandle(rawLedgerPlanId(repo, attemptId), attemptId), {
           ...runRequest(liveWorld(), "main", [beta], fullDeclaration()),
           targets: { main: target },
         });
@@ -736,7 +755,7 @@ describe("the certification fixture · A-git", () => {
         // Complete-in-place: the recorded tag step never re-opened — the
         // minted tag stands once, the completion is the recorded one.
         expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0-beta.1"]);
-        expect(recordedTos(ledgerTail(repo, attemptId), "tag")).toStrictEqual([
+        expect(recordedTos(rawLedgerTail(repo, attemptId), "tag")).toStrictEqual([
           "started",
           "completed",
         ]);
@@ -878,7 +897,7 @@ describe("the certification fixture · A-git", () => {
         expect(planner.stderr).not.toContain("GitFaultError");
         const mintLeaves = ledgerAttemptIds(repo);
         expect(mintLeaves.length).toBe(1);
-        expect(ledgerTailBytes(repo, mintLeaves[0] as string).length).toBeGreaterThan(0);
+        expect(rawLedgerTailBytes(repo, mintLeaves[0] as string).length).toBeGreaterThan(0);
 
         // The byte layer: the projected fault texts as reviewed bytes.
         const recordedPlanner = expectedScenario(
@@ -915,6 +934,89 @@ describe("the certification fixture · A-git", () => {
         );
         expect(outcome.handle).toBeNull();
         expect(outcome.drives).toStrictEqual([]);
+      });
+    },
+  );
+
+  it(
+    "git-15 · the projection pairing made executable — one declared world through both assemblies: the identity chain's committed literals, the engine's attempt id standing as the repository's own ledger ref, and the git ledger's projected records equal to the memory ledger's",
+    { timeout: 120_000 },
+    () => {
+      withSeededRepo("cert-git-15", (repo, _git, heads) => {
+        // ONE declared world: the exact document the process transport
+        // carries, driven through both assemblies. The recorded rule this
+        // cell executes is LEDGER_PAIRING_RULE below — the comparison the
+        // phase 14 provenance cited before #186 landed it.
+        const document = gitDoc("main", [beta], heads);
+        const request = () => ({
+          input: document,
+          lineIds: ["main"],
+          intents: [beta],
+          actor: "automation",
+          declarations: fullDeclaration(),
+          targets: { main: seededHead(heads, "main") },
+        });
+
+        // The identity chain's committed literals over this world —
+        // inputs, plan, first attempt — the channel-store content_sha256
+        // discipline: a canonicalizer or identity drift turns these red,
+        // never green. The attempt literal doubles as the derivation pin:
+        // the id is attemptIdentity(plan, ordinal 1), content-anchored.
+        expect(inputsFingerprint(document)).toBe(
+          "inputs_sha256:aecdd70f967fa6d896c799a31c31a70d52bec72b57516a2650e8d8058e75eab0",
+        );
+        expect(
+          attemptIdentity(
+            "plan_sha256:4fe3b941b74fd011eeccf168c5588a4a39489b25cc8d9ea839d2ae74584dcbd4",
+            1,
+          ),
+        ).toBe("attempt_sha256:b6bee33fdd09f26bd37051fb26acce8289f06932386319f5a87c6edf5997651a");
+
+        // The memory assembly over that world.
+        const memory = freshAssembly();
+        const memoryOutcome = memory.engine.run(request());
+        expect(memoryOutcome.kind).toBe("published");
+        if (memoryOutcome.kind !== "published" || memoryOutcome.handle === null) {
+          throw new Error("expected a published memory outcome");
+        }
+        expect(memoryOutcome.planId).toBe(
+          "plan_sha256:4fe3b941b74fd011eeccf168c5588a4a39489b25cc8d9ea839d2ae74584dcbd4",
+        );
+        expect(memoryOutcome.handle.attemptId).toBe(
+          "attempt_sha256:b6bee33fdd09f26bd37051fb26acce8289f06932386319f5a87c6edf5997651a",
+        );
+
+        // The git assembly over the SAME world and repository: the plan
+        // and the attempt id are content-anchored, so both assemblies name
+        // the same plan and the same first attempt — and the repository's
+        // own ledger ref (raw for-each-ref, the fixture's decoder) decodes
+        // to exactly that id.
+        const gitOutcome = gitAssembly(repo).run(request());
+        expect(gitOutcome.kind).toBe("published");
+        if (gitOutcome.kind !== "published" || gitOutcome.handle === null) {
+          throw new Error("expected a published git outcome");
+        }
+        expect(gitOutcome.planId).toBe(memoryOutcome.planId);
+        expect(gitOutcome.handle.attemptId).toBe(memoryOutcome.handle.attemptId);
+        expect(gitOutcome.tag).toBe(memoryOutcome.tag);
+        expect(ledgerAttemptIds(repo)).toStrictEqual([memoryOutcome.handle.attemptId]);
+
+        // THE PAIRING: the git ledger's records, read with the fixture's
+        // raw readers (never the product GitLedger), projected by the
+        // recorded §4.3 rule, equal the memory ledger's records with each
+        // side's claim token read as CLAIM — same length, same append
+        // order, same fields. The projection is the only assembly delta.
+        const attemptId = memoryOutcome.handle.attemptId;
+        const rawBytes = rawLedgerTailBytes(repo, attemptId);
+        expect(rawBytes.length).toBeGreaterThan(0);
+        const gitRecords = rawBytes.map(
+          (bytes): unknown => JSON.parse(project(bytes, repo)) as unknown,
+        );
+        const memoryRecords = projectMemoryLedgerRecords(memory.stores.ledger.tail(attemptId));
+        // The recorded §4.3 law, now a value: same length, same append
+        // order, every field equal but the claim token each assembly was
+        // always free to choose.
+        expect(gitRecords).toStrictEqual(memoryRecords);
       });
     },
   );
