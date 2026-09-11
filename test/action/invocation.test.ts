@@ -592,6 +592,25 @@ describe("fixture: an undeclared input key is refused, a declared name changes n
       expect(drive.stderr.toString("utf8")).not.toContain("undeclared action input");
     });
   });
+
+  it("a name of exactly INPUT_ is ignored — the rule is name-based and value-blind", () => {
+    withScratchDir((scratch) => {
+      const bin = join(scratch, "argv-echo.mjs");
+      writeFileSync(bin, ARGV_ECHO_BIN);
+      // An env var named exactly `INPUT_` carries nothing after the
+      // prefix: no action input's name is the empty string, so the
+      // inventory's law (strip the prefix, refuse unknown non-empty
+      // names) declares this boundary rather than silently swallowing a
+      // key — the declared boundary is pinned so a guard change reds it.
+      const drive = runInvoke(baseInputs({ bin }), {
+        env: { PATH: process.env.PATH ?? "", INPUT_: "" },
+      });
+      const replayed = replayOutcome(drive.outputs);
+      expect(replayed).toContain('"argv"');
+      expect(drive.stderr.toString("utf8")).toBe("");
+      expect(drive.stderr.toString("utf8")).not.toContain("undeclared action input");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

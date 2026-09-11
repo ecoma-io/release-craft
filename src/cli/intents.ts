@@ -1,14 +1,17 @@
 /**
  * The operator-intent spellings (phase 12 contract §2.2): kind-first,
- * colon-delimited, exactly as `planner` serializes them. The segment
- * counts are strict — an id that itself carries a colon (the planner's
- * reserved separator) is refused at parse time, exit 64, before any
- * engine sees it (§2.2's law: reserved characters are refused at the
- * boundary, not by a fault the engine discovers later).
+ * colon-delimited, exactly as `planner` serializes them. The declared
+ * spellings are `grammar.ts`'s `INTENT_SPELLINGS` — the one copy, which
+ * the fault below names and help renders. The segment counts are strict —
+ * an id that itself carries a colon (the planner's reserved separator) is
+ * refused at parse time, exit 64, before any engine sees it (§2.2's law:
+ * reserved characters are refused at the boundary, not by a fault the
+ * engine discovers later).
  */
 
 import type { OperatorIntent } from "@ecoma-io/release-craft/planner";
 
+import { INTENT_SPELLINGS } from "./grammar.js";
 import { UsageFault } from "./parse.js";
 
 /** Parse one `--intent` occurrence into the boundary's intent union. */
@@ -54,7 +57,7 @@ const parseIntent = (value: string): OperatorIntent => {
   }
   throw new UsageFault(
     `--intent "${value}" is not an operator intent — the declared spellings are` +
-      " release, release-anyway, prerelease:<stream>:<lineId>," +
-      " release-as:<version>, promote:<lineId>; an id may not carry the `:` separator itself",
+      ` ${INTENT_SPELLINGS.join(", ")}` +
+      "; an id may not carry the `:` separator itself",
   );
 };

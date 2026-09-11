@@ -131,6 +131,18 @@ export const usageText = (): string =>
     "                  --max-retries <n> (default 0)",
   ].join("\n");
 
+/** §2.2's declared intent spellings, executable — the one copy. The
+ * `--intent` parser refuses against this list (its fault names it) and
+ * help renders it, so a spelling added here reaches the fault, help, and
+ * every pin in the same commit; no hand-copied second list can go stale. */
+export const INTENT_SPELLINGS: readonly string[] = [
+  "release",
+  "release-anyway",
+  "prerelease:<stream>:<lineId>",
+  "release-as:<version>",
+  "promote:<lineId>",
+];
+
 /** The help spellings — the whole-process question, answered in the
  * command position before the grammar dispatches (§2.2). Deliberately in
  * NO command's inventory: the inventories stay closed
@@ -149,8 +161,7 @@ export const helpText = (): string =>
     usageText(),
     "",
     "  intents (--intent, repeatable):",
-    "    release | release-anyway | prerelease:<stream>:<lineId>",
-    "    release-as:<version> | promote:<lineId>",
+    `    ${INTENT_SPELLINGS.join(" | ")}`,
     "",
     "  help: release-craft --help | -h prints this text and exits 0",
   ].join("\n");

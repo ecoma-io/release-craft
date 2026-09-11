@@ -15,6 +15,7 @@ import {
   COMMANDS,
   GRAMMAR,
   HELP_FLAGS,
+  INTENT_SPELLINGS,
   helpText,
   usageText,
 } from "@ecoma-io/release-craft/__internal__/cli/grammar.js";
@@ -508,14 +509,10 @@ describe("§2.2 — the help spellings, answered before the grammar dispatches",
       // The closed grammar itself — the fault synopsis, reused, not a
       // second text.
       expect(result.stdout).toContain(usageText());
-      // The one block the synopsis omits: §2.2's five intent spellings.
-      for (const spelling of [
-        "release",
-        "release-anyway",
-        "prerelease:<stream>:<lineId>",
-        "release-as:<version>",
-        "promote:<lineId>",
-      ]) {
+      // The one block the synopsis omits: §2.2's declared intent
+      // spellings, named from the list itself — the pin's data and help's
+      // data are the same copy.
+      for (const spelling of INTENT_SPELLINGS) {
         expect(result.stdout).toContain(spelling);
       }
     }
@@ -524,6 +521,24 @@ describe("§2.2 — the help spellings, answered before the grammar dispatches",
   it("helpText opens with the fault synopsis — one grammar text, no duplication", () => {
     expect(helpText().startsWith(usageText())).toBe(true);
     expect(helpText().length).toBeGreaterThan(usageText().length);
+  });
+
+  it("the spellings block renders the declared list — help and the fault share one copy", () => {
+    // `INTENT_SPELLINGS` is the only list: help renders it joined with
+    // ` | `, the parser's fault names it joined with `, ` — a spelling
+    // added to the list reaches both in the same commit, and a stale
+    // hand-copied block (the pre-#191-round-2 defect) fails here.
+    expect(helpText()).toContain(`    ${INTENT_SPELLINGS.join(" | ")}`);
+    const fault = expectUsageFault([
+      "plan",
+      "--assembly",
+      "memory",
+      "--world",
+      "-",
+      "--intent",
+      "deploy",
+    ]);
+    expect(fault.stderr).toContain(`the declared spellings are ${INTENT_SPELLINGS.join(", ")}`);
   });
 
   it("a help spelling is in no command's inventory: run --help stays a usage fault", () => {
