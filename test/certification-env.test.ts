@@ -31,7 +31,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -99,19 +99,26 @@ describe("the certification process transport's environment law", () => {
       withSeededRepo("cert-env-lethal", (repo, _git, heads) => {
         // The same spawn `runBin` makes, with ONE delta: the plant rides
         // the two-name construction. The exit is node's own refusal, not a
-        // CLI verdict — the channel's lethality, observed.
-        const child = spawnSync(process.execPath, [CLI_BIN, ...gitRunArgs(repo, "main")], {
-          encoding: "utf8",
-          env: {
-            PATH: hermeticGitEnv().PATH ?? "",
-            HOME: mkdtempSync(join(tmpdir(), "release-craft-home-")),
-            NODE_OPTIONS: HOSTILE.NODE_OPTIONS,
-          },
-          input: docBytes(gitBetaDocument(heads)),
-        });
-        expect(child.status).toBe(9);
-        expect(child.stderr).toContain("is not allowed in NODE_OPTIONS");
-        expect(child.stdout).toBe("");
+        // CLI verdict — the channel's lethality, observed. The scratch HOME
+        // follows `runBin`'s own finally discipline: a suite certifying the
+        // construction's cleanliness does not leak what it builds.
+        const home = mkdtempSync(join(tmpdir(), "release-craft-home-"));
+        try {
+          const child = spawnSync(process.execPath, [CLI_BIN, ...gitRunArgs(repo, "main")], {
+            encoding: "utf8",
+            env: {
+              PATH: hermeticGitEnv().PATH ?? "",
+              HOME: home,
+              NODE_OPTIONS: HOSTILE.NODE_OPTIONS,
+            },
+            input: docBytes(gitBetaDocument(heads)),
+          });
+          expect(child.status).toBe(9);
+          expect(child.stderr).toContain("is not allowed in NODE_OPTIONS");
+          expect(child.stdout).toBe("");
+        } finally {
+          rmSync(home, { recursive: true, force: true });
+        }
       });
     },
   );
