@@ -29,7 +29,12 @@ synchronization, release publication, reconciliation behind
 `openGitHubAdapter` (Phase 9, [ADR-0010](docs/adr/0010-github-adapter.md)).
 Not built yet: this repository's own adoption of the engine for its
 releases. The GitHub action — the composite front door over the run door —
-ships (phase 13). Phase 0's model — vocabulary,
+ships (phase 13), and a dispatch-only rehearsal of that adoption exists:
+[`dogfood.yml`](.github/workflows/dogfood.yml)
+([#187](https://github.com/ecoma-io/release-craft/issues/187)) runs one
+self-release through the released Action and certifies it class-shaped per
+[phase 14 §7](docs/design/phase14-certification-fixture-contract.md).
+Phase 0's model — vocabulary,
 invariants, complexity budget, built on the
 [53-scenario matrix](docs/design/release-scenarios.md) and adversarially reviewed — is
 in [`release-model.md`](docs/design/release-model.md); older work in
@@ -88,13 +93,18 @@ Three workflows, three different questions — none is a god workflow:
   finalized PR description — the gate born from #6, which merged with a
   "(To be finalized)" body and an untouched checklist.
 
-Two workflows sit outside this layering — the action-agents dogfood runs,
-consumers of released sibling actions, not governance gates, and neither
-appears in any gate's `needs:`; both are held to the same `check:workflows`
-posture as the three above. `triage.yml` (#101) labels issues and pull
-requests from a model verdict. `review.yml` (#214) reviews pull requests
-with the same sibling's `review` action, currently in its documented
-dry-run posture: the run record is the whole output until the flip.
+Three workflows sit outside this layering — none is a governance gate, and
+none appears in any gate's `needs:`; all are held to the same
+`check:workflows` posture as the three above. `triage.yml` (#101) labels
+issues and pull requests from a model verdict. `review.yml` (#214) reviews
+pull requests with the same sibling's `review` action, currently in its
+documented dry-run posture: the run record is the whole output until the
+flip. `dogfood.yml` (#187) is this repository's own release rehearsal —
+one judged `workflow_dispatch` of the released Action over this
+repository, capturing the four certification classes (phase 14 §7) and
+judging in-job every class the captured material settles mechanically;
+the rows no machine can settle print as NOT ASSERTED, never a waived
+pass.
 
 The three layers rest on GitHub rulesets on `main`: pull requests only, the
 required checks above, linear history, up-to-date branches, resolved

@@ -108,12 +108,17 @@ Three workflows, three questions, no god workflow:
   files · package · workflows · action metadata · docs · PR description) +
   the PR title.
 
-One workflow sits outside the three governance layers: `triage.yml` — the
-action-agents dogfood run (#101) — a consumer of the released sibling action
-`ecoma-io/action-agents/triage`, not a gate of this repository. It judges
-incoming issues and pull requests, not this repository's changes, and appears
-in no gate's `needs:`; `check:workflows` still scans it like every other
-workflow file.
+Three workflows sit outside the three governance layers, none in any
+gate's `needs:`; `check:workflows` still scans each like every other
+workflow file. `triage.yml` — the action-agents dogfood run (#101) — and
+`review.yml` — the same sibling's `review` action (#214), in its
+documented dry-run posture — judge incoming issues and pull requests, not
+this repository's changes. `dogfood.yml` (#187) is the self-dogfood
+certification: one judged `workflow_dispatch` of this repository's own
+released Action over this repository (phase 14 §7) — it captures the four
+certification classes and judges in-job every class the captured material
+settles mechanically, printing the rows no machine can settle as NOT
+ASSERTED rather than waiving them.
 
 When you add a job, add it to its gate's `needs:` — the gates tighten only
 through that list, visibly, in review.
