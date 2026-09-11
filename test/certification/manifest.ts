@@ -50,6 +50,9 @@ export const FIXTURE_DIR = import.meta.dirname;
 export const ASSEMBLIES = [
   "A-memory",
   "A-git",
+  // git-15's posture: one declared world driven through BOTH engines — the
+  // assembly a pairing cell names, not a fourth engine.
+  "A-git + A-memory",
   "A-cross-process",
   "the repository itself",
 ] as const;
@@ -278,7 +281,7 @@ export const MANIFEST: readonly ManifestRow[] = [
     expectedFiles: [],
     provenance: [
       "phase 14 §3.3",
-      "phase 14 §4.3 (the zero-random assembly's determinism — the control that proves the projection rule is the only delta between recorded and live git bytes)",
+      "phase 14 §4.3 (the zero-random assembly's determinism — every memory envelope byte-identical across runs with no projection; the projection-is-the-only-assembly-delta claim is executable as git-15's pairing, not cited from this row)",
     ],
     status: "live",
   },
@@ -517,6 +520,22 @@ export const MANIFEST: readonly ManifestRow[] = [
     provenance: [
       "phase 14 §3.3",
       "phase 11 §2.5 (the engine's own pre-walk refusal on the hand-built-request path — `handle: null`, `drives: []`; the row the CLI's planner-classified lie deliberately does not render, git-12's other half)",
+    ],
+    status: "live",
+  },
+  {
+    id: "git-15",
+    kind: "posture",
+    walk: null,
+    windows: [],
+    assembly: "A-git + A-memory",
+    transports: ["boundary"],
+    classes: ["ledger projections"],
+    expectedFiles: [],
+    provenance: [
+      "phase 14 §3.3",
+      "phase 14 §4.3 (the projection is the only delta between the two assemblies — proven, not cited: one declared world through both assemblies, the git ledger's projected records equal to the memory ledger's in append order, the identity chain's sha256 literals committed in the cell, the attempt id standing as the repository's own ledger ref; each side's claim token reads as CLAIM by the recorded rule — the one value allowed to differ, so a second random value in the git path can only false-red the pairing, never pass it silently)",
+      "#186 (the pairing the provenance rows used to cite, made executable)",
     ],
     status: "live",
   },

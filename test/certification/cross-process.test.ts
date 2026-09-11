@@ -23,7 +23,7 @@ import {
   gitDoc,
   gitRunArgs,
   ledgerAttemptIds,
-  ledgerPlanId,
+  rawLedgerPlanId,
   runBin,
   seededHead,
   withSeededRepo,
@@ -47,7 +47,7 @@ describe("the certification fixture · A-cross-process", () => {
         if (attemptId === undefined) {
           throw new Error("fixture broken: the first run left no ledger ref");
         }
-        const planId = ledgerPlanId(repo, attemptId);
+        const planId = rawLedgerPlanId(repo, attemptId);
 
         // The fresh process's carried-attempt doors: resume, abort,
         // resolve, show attempt — each refuses with the recorded
