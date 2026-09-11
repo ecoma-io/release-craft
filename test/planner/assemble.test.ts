@@ -1516,3 +1516,38 @@ describe("the ambiguous-attribution refusal through the door", () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// §2.1 (D66, issue #272) — the overlapping-band world is refused at the
+// planning door, before any decision is reached
+// ---------------------------------------------------------------------------
+
+describe("the overlapping-band world through the door (D66)", () => {
+  // Issue #272's exact configuration: two lines whose bands share the
+  // major-1 version space, a recorded bootstrap of 1.2.0 inside the
+  // overlap, and the observed tag both bands admit. D64's birth-identity
+  // projection would credit the claim to BOTH lines — the input door
+  // refuses the configuration instead, so decide.ts never sees it.
+  function input(): PlanningInput {
+    return buildInput({
+      digest: DIGEST_S02,
+      lines: [line("1.x", "feed/1", { major: 1 }), line("1.2.x", "feed/2", { major: 1, minor: 2 })],
+      commits: [
+        commit("sha-birth", "fix: the recorded birth"),
+        commit("sha-head", "chore: quiet work", { parents: ["sha-birth"] }),
+      ],
+      refs: [ref("feed/1", "sha-head"), ref("feed/2", "sha-head")],
+      tags: [tag("refs/tags/1.2.0", "sha-birth")],
+      bootstrap: { version: "1.2.0", who: "operator", when: COMMITTED_AT },
+      intents: [{ kind: "release" }],
+    });
+  }
+
+  it("refuses with both lines and both bands named — the birth law holds at the boundary", () => {
+    const attempt = (): PlanningOutcome => plan(input());
+    expect(attempt).toThrow(InvalidPlanningInputError);
+    expect(attempt).toThrow(/overlaps line "1\.x"'s band \(major 1\)/);
+    expect(attempt).toThrow(/line "1\.2\.x"'s band \(major 1, minor 2\)/);
+    expect(attempt).toThrow(/exactly one line/);
+  });
+});
