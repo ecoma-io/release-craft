@@ -652,14 +652,27 @@ slice's suite pins:
   `refs/heads/*` and `refs/tags/*` into the workspace) — never makes one
   run's claim refs visible to another. The declared precondition this
   posture therefore owes the engine: the runs of one release line share
-  one checkout's ref space. Its named failure mode: two
+  one checkout's ref space. Its named failure mode — the no-fetch caller's
+  shape, where nothing beyond the Action's own posture populates the
+  checkout: a bare clone, or a consumer workflow that stands the Action up
+  without performing a caller-side claims fetch. There, two
   `workflow_dispatch` runs of the same line in two separate checkouts each
   acquire the claim in their own ref space, both mint locally, and both
   render a published outcome — the divergence first surfacing at the
   consumer's own push as a non-fast-forward rejection, outside the
   engine's verdict vocabulary. The Action does not verify the precondition
   and v1 adds no enforcement for it; the boundary is pinned by the
-  binding's negative capability test.
+  binding's negative capability test. One hosted consumer answers the
+  precondition from its own caller-side hand — a hand this law does not
+  govern (decision-log D65): the self-release workflow fetches
+  `refs/release-craft/claims/*` into its checkout before the run and
+  serializes dispatches through its concurrency group
+  (`cancel-in-progress: false`), so its sequential second dispatch
+  adjudicates against the fetched register — a replay of a released
+  version blocks at the planning boundary, never as a claim denial, and
+  the never-forced atomic publish stays the refusal guarding the shared
+  ref. Two checkouts without such a caller fetch ride exactly the failure
+  mode above; the cross-checkout racing residue is #237, still declared.
 - **No GitHub API composition into the engine.** No `gh`, no REST, no
   checks or releases API. The `::error::` annotation is the runner's log
   protocol, not an API call.

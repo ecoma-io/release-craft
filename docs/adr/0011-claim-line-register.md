@@ -77,15 +77,26 @@ nothing less.
    over the one repository's own `refs/release-craft/claims/*` — and it
    extends exactly that far (#182). Two runs of the same line in two
    different checkouts of one repository do not share local claim refs
-   (a standard clone fetches only `refs/heads/*` and `refs/tags/*`; the
-   adapter never fetches remote claim state — ADR-0010 decision 3), so
-   each acquires in its own ref space, both mint locally, and the
-   divergence first surfaces at the consumer's push — a non-fast-forward
-   rejection, outside the engine's verdict vocabulary. Serializing across
-   checkouts is a declared precondition of every surface above the
-   binding (the CLI's law, phase 12 §5; the Action's posture, phase 13
-   §2.9), not a mechanism the register provides or ever proposes to
-   provide.
+   when neither checkout holds the namespace — the bare-clone shape the
+   negative capability test pins (a standard clone fetches only
+   `refs/heads/*` and `refs/tags/*`; the adapter never fetches remote
+   claim state — ADR-0010 decision 3) — so each acquires in its own ref
+   space, both mint locally, and the divergence first surfaces at the
+   consumer's push — a non-fast-forward rejection, outside the engine's
+   verdict vocabulary. A caller may fetch the namespace into its checkouts
+   first and put them on the one shared space the register already
+   arbitrates: the self-release surface does exactly that, before the run
+   (decision-log D65) — its sequential second dispatch adjudicates against
+   the fetched register, a replay of a released version blocking at the
+   planning boundary and a new version acquiring normally (a completed
+   claim's version-scoped record excludes no different version), while its
+   concurrent dispatches queue on the workflow's concurrency group. That
+   sharing is the caller's substrate posture, not the register's.
+   Serializing across checkouts is a declared precondition of every
+   surface above the binding (the CLI's law, phase 12 §5; the Action's
+   posture, phase 13 §2.9), met caller-side where it is met at all — never
+   a mechanism the register provides or ever proposes to provide — and two
+   checkouts that race still do not share it (#237, still declared).
 
 3. **Reads narrow to the line, with three named exceptions.** `acquire`
    reads exactly one ref (the
