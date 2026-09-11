@@ -82,12 +82,16 @@ export interface SyncReport {
   readonly refs: readonly SyncedRef[];
 }
 
-/** The `publishRelease()` outcome (contract §2.2). */
+/** The `publishRelease()` outcome (contract §2.2). A `transport-failure`
+ *  or `ambiguous` outcome whose failure came through the guarded
+ *  boundary carries the thrown transport's own words as its optional
+ *  `detail` (issue #179; round-1 review minor 3) — a transport that
+ *  answered (even with status 0) failed bare, with nothing to quote. */
 export type ReleaseOutcome =
   | { readonly kind: "ok"; readonly url: string }
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
-  | { readonly kind: "transport-failure" }
-  | { readonly kind: "ambiguous" };
+  | { readonly kind: "transport-failure"; readonly detail?: string }
+  | { readonly kind: "ambiguous"; readonly detail?: string };
 
 /** The `verifyRelease()` outcome (contract §2.2). A read carries no
  * `ambiguous` (issue #66): that class names a write whose landing is
@@ -96,7 +100,7 @@ export type VerificationOutcome =
   | { readonly kind: "verified" }
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
   | ReleaseAbsent
-  | { readonly kind: "transport-failure" };
+  | { readonly kind: "transport-failure"; readonly detail?: string };
 
 /** The `verifyRelease()` outcome for a release that does not exist for
  *  the recorded tag (issue #60; contract §2.2; D28): absence is a
@@ -120,12 +124,17 @@ export interface Divergence {
 }
 
 /** The completeness of a listing's observation over pagination (issue
- *  #68; D32): the contract binds the observation to the resource's full
- *  surface. `complete` — the walk followed the page chain to its end and
- *  the comparison ran over every row. `truncated` — the observation
- *  stopped before the surface was fully observed; only the adapter's
- *  deliberate stop (none produced today) may be `truncated`, and it
- *  claims no comparison. */
+ *  #68; D32; issue #179; D53): the contract binds the observation to the
+ *  resource's full surface, and the label is claimed from evidence,
+ *  never from a header's absence. `complete` — the walk followed the
+ *  page chain to a page that could not have a successor (fewer rows
+ *  than the requested page size) with no `next` declared on it, and the
+ *  comparison ran over every row. `truncated` — the chain ended on a
+ *  full-size page with no `next`: end-of-chain and a stripped `Link`
+ *  header are indistinguishable there, so the observation carries the
+ *  comparison its rows really earned (divergences and verified tags
+ *  over the rows observed are real) while the label denies the
+ *  clean-bill reading over the rows it never saw. */
 export type PaginationCompleteness = "complete" | "truncated";
 
 /** The tag listing's observation outcome (issue #66; contract §2.2): the
@@ -144,7 +153,7 @@ export type TagsListingOutcome =
       readonly verifiedTags: readonly string[];
     }
   | { readonly state: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
-  | { readonly state: "transport-failure" };
+  | { readonly state: "transport-failure"; readonly detail?: string };
 
 /** The release listing's observation outcome (issue #66; contract
  *  §2.2): the same premise over the remote's releases — `listed` claims
@@ -158,7 +167,7 @@ export type ReleasesListingOutcome =
       readonly divergences: readonly Divergence[];
     }
   | { readonly state: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
-  | { readonly state: "transport-failure" };
+  | { readonly state: "transport-failure"; readonly detail?: string };
 
 /** The `reconcile()` report (contract §2.2): one observation outcome per
  *  listing. Comparison results exist only on `listed` — over an

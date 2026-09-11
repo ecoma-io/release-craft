@@ -49,13 +49,14 @@
 import type { GitBinding } from "@ecoma-io/release-craft/adapters/git";
 import type {
   GitHubCredentials,
+  GitHubRequestInit,
   GitHubResponse,
   GitHubTransport,
   RefusalReason,
   ReleaseOutcome,
   VerificationOutcome,
 } from "./adapter-types.js";
-import { bodyMessage, readFailure } from "./response.js";
+import { bodyMessage, guardedRequest, readFailure } from "./response.js";
 
 /** The step key the kernel records a changelog generation under (the
  *  artifact steps' `artifact:<id>` shape, ADR-0008 decision 5). The
@@ -80,7 +81,7 @@ type RecordedChangelog =
  *  status 0 to `ambiguous` (§2.3) before classifying the rest. */
 type FailureTail =
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
-  | { readonly kind: "transport-failure" };
+  | { readonly kind: "transport-failure"; readonly detail?: string };
 
 const failureTail = (response: GitHubResponse): FailureTail => {
   const failure = readFailure(response);
@@ -185,6 +186,20 @@ const releasePath = (credentials: GitHubCredentials, tag: string): string =>
 const repoPath = (credentials: GitHubCredentials): string =>
   `/repos/${credentials.owner}/${credentials.repo}`;
 
+/** Every transport call this unit makes crosses the one guarded
+ *  boundary (issue #179; D53): the transport is caller-injected — the
+ *  one component the adapter does not own — so its exception must never
+ *  escape the doors past the no-throw law (ADR-0010 decision 7). A
+ *  thrown transport arrives as status 0, whose reading is this unit's
+ *  existing classification: `transport-failure` on a read (nothing has
+ *  landed), `ambiguous` on the create (a response lost mid-write may
+ *  have landed — §2.3). */
+const request = (
+  transport: GitHubTransport,
+  path: string,
+  init?: GitHubRequestInit,
+): GitHubResponse => guardedRequest(transport, path, init);
+
 /** Projects the tag's changelog out of the binding's recorded state
  *  (§2.8): tag → minting claim → holding attempt → the completed
  *  changelog generation record → the recorded tree's file. A claim ref
@@ -256,7 +271,7 @@ export function GitReleasePublication(
       // Idempotency before write (§2.4): a release whose body already
       // matches the recorded changelog satisfies the write — the URL is
       // the existing release's.
-      const existing = transport.request(releasePath(credentials, tag));
+      const existing = request(transport, releasePath(credentials, tag));
       if (existing.status === 200) {
         const url = releaseUrl(existing.body);
         const remoteBody = releaseBody(existing.body);
@@ -283,7 +298,8 @@ export function GitReleasePublication(
       // answer, observed on the wire, the benign race-loss the
       // idempotent re-run resolves;
       // the credential and rate-limit shapes are the read tail's.
-      const created = transport.request(
+      const created = request(
+        transport,
         `/repos/${credentials.owner}/${credentials.repo}/releases`,
         {
           method: "POST",
@@ -296,7 +312,12 @@ export function GitReleasePublication(
         return url === undefined ? { kind: "transport-failure" } : { kind: "ok", url };
       }
       if (created.status === 0) {
-        return { kind: "ambiguous" };
+        // The ambiguous window stays the class (the write may have
+        // landed unseen); the thrown transport's words — a synthesized
+        // status 0 carries them — ride the outcome's detail for the
+        // debugging operator (issue #179; round-1 review minor 3).
+        const thrown = bodyMessage(created.body);
+        return thrown === undefined ? { kind: "ambiguous" } : { kind: "ambiguous", detail: thrown };
       }
       if (created.status === 404) {
         return failureTail(created);
@@ -316,7 +337,7 @@ export function GitReleasePublication(
       if (!recorded.ok) {
         return { kind: "refused", reason: recorded.reason, detail: recorded.detail };
       }
-      const existing = transport.request(releasePath(credentials, tag));
+      const existing = request(transport, releasePath(credentials, tag));
       if (existing.status === 404) {
         // D28's absence, discriminated before it is claimed (#176): a
         // 404 also answers a repository this credential cannot observe.
@@ -325,7 +346,7 @@ export function GitReleasePublication(
         // landed; the caller's action is the idempotent create); over
         // an unobservable one nothing was observed, and the probe's own
         // refusal (`unobservable-remote` on its 404) says so.
-        const probe = transport.request(repoPath(credentials));
+        const probe = request(transport, repoPath(credentials));
         if (probe.status === 200) {
           return { kind: "absent" };
         }
