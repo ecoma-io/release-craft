@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -17,7 +17,11 @@ import { describe, expect, it } from "vitest";
  *   adapters/git), each spelled exactly — never the package front door
  *   (`@ecoma-io/release-craft`), whose import from the CLI was the #155
  *   defect and is a boundary violation the arch gate names by file;
- * - the layer's own siblings ("./…");
+ * - the layer's own siblings ("./…") — judged by the target each relative
+ *   specifier resolves to, never by its prefix: a "./…"-spelled edge that
+ *   resolves outside the layer is a cross-project import, not a sibling
+ *   (the review-round-1 bypass: "./../git/binding.js" carries the sibling
+ *   prefix while resolving into the binding's internals);
  * - the one Node built-in the layer reads: "node:fs" in world.ts — the
  *   `--world` document read (phase 12 contract §2.2; §4: the ambient world
  *   enters only as declared configuration).
@@ -25,9 +29,11 @@ import { describe, expect, it } from "vitest";
  * A legal future import is a reviewed widening of this list, never an
  * ambient permission. Dynamic `import(…)` is banned outright, as in every
  * isolation suite: a computed specifier is exactly how an import scan gets
- * bypassed. The subject is the layer, not a module list: the scan walks
+ * bypassed. Both quote spellings are import spellings and whitespace is
+ * optional — a scanner that depends on a formatter's normalization is not
+ * a scanner. The subject is the layer, not a module list: the scan walks
  * src/cli, so a new CLI module inherits the gate without this suite naming
- * it. The gate bites: the last test runs the scanner over synthetic text
+ * it. The gate bites: the last tests run the scanner over synthetic text
  * carrying one known offense class each — the isolation suites' own
  * self-test shape.
  */
@@ -55,10 +61,12 @@ interface Violation {
   readonly detail: string;
 }
 
-/** Every CLI source file, sorted, so violations report in stable order. */
+/** Every CLI source file, sorted, so violations report in stable order.
+ * The walk matches every TypeScript module spelling (.ts/.tsx/.mts/.cts),
+ * so a new extension inherits the gate instead of escaping it. */
 function cliFiles(): string[] {
   return readdirSync(CLI_DIR, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /\.[cm]?tsx?$/.test(name))
     .sort();
 }
 
@@ -73,16 +81,46 @@ function render(violations: readonly Violation[]): string[] {
 }
 
 /**
+ * Whether one relative specifier, resolved from `file` (a layer-relative
+ * path), stays inside the CLI layer. The law judges the resolved target,
+ * not the spelling: "./parse.js" is a sibling, "./../app/engine.js" is a
+ * cross-project import wearing the sibling prefix (the review-round-1
+ * bypass). The `resolved !== ".."` half guards the bare `..` spelling,
+ * which normalizes to a parent reference without a trailing separator.
+ */
+function resolvesInsideLayer(file: string, specifier: string): boolean {
+  const resolved = posix.normalize(posix.join(posix.dirname(file), specifier));
+  return resolved !== ".." && !resolved.startsWith("../");
+}
+
+/**
  * Every import specifier a CLI file names — static `from "…"` clauses and
- * side-effect `import "…"` statements alike. Dynamic `import(…)` is banned
- * outright: a computed specifier is exactly how an import scan gets bypassed.
+ * side-effect `import "…"` statements alike, in both quote spellings with
+ * whitespace optional (a scanner blind to `from'…'` or `from"…"` depends
+ * on a formatter for its sight). A keyword preceded by a word character, a
+ * quote, or a hyphen is a word inside prose or an object literal —
+ * `kind: "import"`, `"promoted-from"` — not an import, and the pattern
+ * refuses it. The specifier is one token without whitespace, so a quote
+ * that closes a string value ("…recompute from") cannot open one. A
+ * relative specifier is judged by the
+ * target it resolves to: one that stays inside src/cli is a same-project
+ * sibling; one that escapes it is a cross-project import and must name a
+ * barrel (ADR-0001 §8). Dynamic `import(…)` is banned outright: a computed
+ * specifier is exactly how an import scan gets bypassed.
  */
 function importViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
-    if (specifier.startsWith("./")) continue;
+    if (specifier.startsWith("./") || specifier.startsWith("../")) {
+      if (resolvesInsideLayer(file, specifier)) continue;
+      violations.push({
+        file,
+        detail: `imports "${specifier}" — a relative specifier that resolves outside src/cli is a cross-project import and must name a barrel`,
+      });
+      continue;
+    }
     if (ALLOWED_BARRELS.includes(specifier)) continue;
     if (specifier === ONLY_BUILTIN && file === ONLY_BUILTIN_FILE) continue;
     violations.push({ file, detail: `imports "${specifier}"` });
@@ -117,10 +155,13 @@ describe("the CLI is a seam-honest consumer layer", () => {
     expect(
       render(importViolations("rogue.ts", 'import { Version } from "@ecoma-io/release-craft";\n')),
     ).toEqual(['src/cli/rogue.ts imports "@ecoma-io/release-craft"']);
-    // A relative edge out of the layer.
+    // A relative edge out of the layer — judged by its resolved target
+    // (#188), so the report says what the specifier is: cross-project.
     expect(
       render(importViolations("rogue.ts", 'import { engine } from "../app/engine.js";\n')),
-    ).toEqual(['src/cli/rogue.ts imports "../app/engine.js"']);
+    ).toEqual([
+      'src/cli/rogue.ts imports "../app/engine.js" — a relative specifier that resolves outside src/cli is a cross-project import and must name a barrel',
+    ]);
     // The github barrel is not the git barrel — and not the CLI's to import.
     expect(
       render(
@@ -153,5 +194,37 @@ describe("the CLI is a seam-honest consumer layer", () => {
         ].join("\n"),
       ),
     ).toEqual([]);
+  });
+
+  it("the gate bites: a './'-spelled edge that resolves outside the layer is cross-project", () => {
+    // The review-round-1 bypass: "./../" starts with the sibling prefix
+    // while resolving into another project — prettier does not normalize
+    // it, archkeep cannot see the module, so the seam resolves the target.
+    expect(
+      render(importViolations("rogue.ts", 'import { engine } from "./../app/engine.js";\n')),
+    ).toEqual([
+      'src/cli/rogue.ts imports "./../app/engine.js" — a relative specifier that resolves outside src/cli is a cross-project import and must name a barrel',
+    ]);
+    // A genuine sibling stays local — the resolution, not the prefix, decides.
+    expect(
+      render(importViolations("rogue.ts", 'import { UsageFault } from "./parse.js";\n')),
+    ).toEqual([]);
+  });
+
+  it("the gate bites: the quote and whitespace spellings are import spellings", () => {
+    // Single quotes: prettier normalizes them away, the scanner must not
+    // depend on a formatter for its sight (review round 1, minor 2).
+    expect(
+      render(
+        importViolations(
+          "rogue.ts",
+          "import { plan } from '@ecoma-io/release-craft/__internal__/planner/plan.js';\n",
+        ),
+      ),
+    ).toEqual(['src/cli/rogue.ts imports "@ecoma-io/release-craft/__internal__/planner/plan.js"']);
+    // No whitespace before the specifier.
+    expect(
+      render(importViolations("rogue.ts", 'import { Version }from"@ecoma-io/release-craft";\n')),
+    ).toEqual(['src/cli/rogue.ts imports "@ecoma-io/release-craft"']);
   });
 });

@@ -36,18 +36,20 @@ interface Violation {
   readonly detail: string;
 }
 
-/** Every boundary source file, sorted, so violations report in stable order. */
+/** Every boundary source file, sorted, so violations report in stable order.
+ * The walk matches every TypeScript module spelling (.ts/.tsx/.mts/.cts),
+ * so a new extension inherits the gate instead of escaping it. */
 function appFiles(): string[] {
   const dir = join(import.meta.dirname, "..", "..", "src", "app");
   return readdirSync(dir, { encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /\.[cm]?tsx?$/.test(name))
     .sort();
 }
 
 /** Every boundary test file (this directory), sorted the same way. */
 function appTestFiles(): string[] {
   return readdirSync(import.meta.dirname, { encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /\.[cm]?tsx?$/.test(name))
     .sort();
 }
 
@@ -65,8 +67,11 @@ function scan(
  * package alias (`@ecoma-io/release-craft/…` — the spelling archkeep's
  * cross-project rule requires) — never an internal module of another layer,
  * never the package front door (`@ecoma-io/release-craft`, the barrel that
- * re-exports this very boundary). No Node built-in is permitted: the
- * boundary composes, it computes nothing that needs one. */
+ * re-exports this very boundary). The relative entries are the flat layer's
+ * exact sibling names, so a "./"-spelled edge can only pass by naming a
+ * real sibling — it cannot resolve outside src/app and pass. No Node
+ * built-in is permitted: the boundary composes, it computes nothing that
+ * needs one. */
 const ALLOWED_APP_IMPORTS: readonly string[] = [
   "./types.js",
   "./claims.js",
@@ -81,8 +86,8 @@ const ALLOWED_APP_IMPORTS: readonly string[] = [
 
 function importViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
     if (ALLOWED_APP_IMPORTS.includes(specifier)) continue;
     violations.push({ file, detail: `imports "${specifier}"` });
@@ -162,8 +167,8 @@ function providerViolations(file: string, text: string): Violation[] {
  * the boundary a layer instead of a top. */
 function layerImportViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
     if (specifier.includes("app/")) {
       violations.push({ file, detail: `imports the application boundary "${specifier}"` });
@@ -180,8 +185,8 @@ const INTERNAL_LAYER_RE =
  * own modules — never a layer's internal module path. */
 function testImportViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
     if (INTERNAL_LAYER_RE.test(specifier)) {
       violations.push({ file, detail: `reaches an internal module "${specifier}"` });
@@ -288,7 +293,7 @@ describe("obligations 6 and 7 — the boundary modules are closed, ambient-free,
     for (const layer of ["planner", "execution", "adapters"] as const) {
       const dir = join(src, layer);
       const files = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((name) =>
-        name.endsWith(".ts"),
+        /\.[cm]?tsx?$/.test(name),
       );
       expect(files.length).toBeGreaterThan(0);
       expect(
@@ -322,6 +327,14 @@ describe("the gate bites: each scanner reports its offense on synthetic text", (
     expect(
       render(importViolations("rogue.ts", 'const m = await import("./sneaky.js");\n')),
     ).toEqual(["rogue.ts performs a dynamic import()"]);
+    // Single quotes, and no whitespace before the specifier: both are
+    // import spellings the scanner must see (issue #188, review round 1).
+    expect(
+      render(importViolations("rogue.ts", "import x from '@ecoma-io/release-craft';\n")),
+    ).toEqual(['rogue.ts imports "@ecoma-io/release-craft"']);
+    expect(render(importViolations("rogue.ts", 'import y from"node:fs";\n'))).toEqual([
+      'rogue.ts imports "node:fs"',
+    ]);
     expect(render(sideEffectViolations("rogue.ts", "const stamp = Date.now();\n"))).toEqual([
       "rogue.ts names Date.now — clock read",
     ]);

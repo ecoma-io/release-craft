@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -19,16 +19,23 @@ import { describe, expect, it } from "vitest";
  * - the git binding's barrel, spelled exactly
  *   ("@ecoma-io/release-craft/adapters/git") — the one cross-project edge
  *   the layer draws (ADR-0009 decision 7; ADR-0010 decision 1);
- * - the layer's own siblings ("./…");
+ * - the layer's own siblings ("./…") — judged by the target each relative
+ *   specifier resolves to, never by its prefix: a "./…"-spelled edge that
+ *   resolves outside the layer is a cross-project import, not a sibling
+ *   (the review-round-1 bypass: "./../git/binding.js" carries the sibling
+ *   prefix while resolving into the binding's internals, whose barrel is
+ *   index.ts);
  * - the one Node built-in the layer spawns: "node:child_process" in
  *   remote-git.ts, the adapter's own git runner.
  *
  * A legal future import is a reviewed widening of this list, never an
  * ambient permission. Dynamic `import(…)` is banned outright, as in every
  * isolation suite: a computed specifier is exactly how an import scan gets
- * bypassed. The subject is the layer, not a module list: the scan walks
+ * bypassed. Both quote spellings are import spellings and whitespace is
+ * optional — a scanner that depends on a formatter's normalization is not
+ * a scanner. The subject is the layer, not a module list: the scan walks
  * src/adapters/github, so a new adapter module inherits the gate without
- * this suite naming it. The gate bites: the last test runs the scanner over
+ * this suite naming it. The gate bites: the last tests run the scanner over
  * synthetic text carrying one known offense class each — the issue's probe
  * among them.
  */
@@ -51,10 +58,12 @@ interface Violation {
   readonly detail: string;
 }
 
-/** Every adapter source file, sorted, so violations report in stable order. */
+/** Every adapter source file, sorted, so violations report in stable order.
+ * The walk matches every TypeScript module spelling (.ts/.tsx/.mts/.cts),
+ * so a new extension inherits the gate instead of escaping it. */
 function adapterFiles(): string[] {
   return readdirSync(ADAPTER_DIR, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /\.[cm]?tsx?$/.test(name))
     .sort();
 }
 
@@ -71,17 +80,46 @@ function render(violations: readonly Violation[]): string[] {
 }
 
 /**
+ * Whether one relative specifier, resolved from `file` (a layer-relative
+ * path), stays inside the adapter layer. The law judges the resolved
+ * target, not the spelling: "./sync.js" is a sibling, "./../git/binding.js"
+ * is a cross-project import wearing the sibling prefix (the review-round-1
+ * bypass). The `resolved !== ".."` half guards the bare `..` spelling,
+ * which normalizes to a parent reference without a trailing separator.
+ */
+function resolvesInsideLayer(file: string, specifier: string): boolean {
+  const resolved = posix.normalize(posix.join(posix.dirname(file), specifier));
+  return resolved !== ".." && !resolved.startsWith("../");
+}
+
+/**
  * Every import specifier an adapter file names — static `from "…"` clauses
- * and side-effect `import "…"` statements alike. Dynamic `import(…)` is
- * banned outright: a computed specifier is exactly how an import scan gets
- * bypassed.
+ * and side-effect `import "…"` statements alike, in both quote spellings
+ * with whitespace optional (a scanner blind to `from'…'` or `from"…"`
+ * depends on a formatter for its sight). A relative specifier is judged by
+ * the target it resolves to: one that stays inside src/adapters/github is
+ * a same-project sibling; one that escapes it is a cross-project import
+ * and must name a barrel (ADR-0001 §8). Dynamic `import(…)` is banned
+ * outright: a computed specifier is exactly how an import scan gets
+ * bypassed. A keyword preceded by a word character, a quote, or a hyphen
+ * is a word inside prose or an object literal — `kind: "import"`,
+ * `"promoted-from"` — not an import, and the pattern refuses it. The
+ * specifier is one token without whitespace, so a quote that closes a
+ * string value ("…recompute from") cannot open one.
  */
 function importViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
-    if (specifier.startsWith("./")) continue;
+    if (specifier.startsWith("./") || specifier.startsWith("../")) {
+      if (resolvesInsideLayer(file, specifier)) continue;
+      violations.push({
+        file,
+        detail: `imports "${specifier}" — a relative specifier that resolves outside src/adapters/github is a cross-project import and must name a barrel`,
+      });
+      continue;
+    }
     if (specifier === GIT_BARREL) continue;
     if (specifier === ONLY_BUILTIN && file === ONLY_BUILTIN_FILE) continue;
     violations.push({ file, detail: `imports "${specifier}"` });
@@ -139,12 +177,15 @@ describe("the GitHub adapter consumes the binding through the barrel seam", () =
         ),
       ),
     ).toEqual(['src/adapters/github/rogue.ts imports "@ecoma-io/release-craft/app"']);
-    // A relative edge out of the layer.
+    // A relative edge out of the layer — judged by its resolved target
+    // (#188), so the report says what the specifier is: cross-project.
     expect(
       render(
         importViolations("rogue.ts", 'import { requestStep } from "../../execution/kernel.js";\n'),
       ),
-    ).toEqual(['src/adapters/github/rogue.ts imports "../../execution/kernel.js"']);
+    ).toEqual([
+      'src/adapters/github/rogue.ts imports "../../execution/kernel.js" — a relative specifier that resolves outside src/adapters/github is a cross-project import and must name a barrel',
+    ]);
     // The one built-in spawn, outside its one declared file.
     expect(
       render(importViolations("sync.ts", 'import { spawnSync } from "node:child_process";\n')),
@@ -167,5 +208,42 @@ describe("the GitHub adapter consumes the binding through the barrel seam", () =
     expect(
       importViolations("remote-git.ts", 'import { spawnSync } from "node:child_process";\n'),
     ).toEqual([]);
+  });
+
+  it("the gate bites: a './'-spelled edge that resolves outside the layer is cross-project", () => {
+    // The review-round-1 bypass, the reviewer's own specifier: "./../" starts
+    // with the sibling prefix while resolving into the binding's internal
+    // module — the barrel is index.ts. It passed typecheck and arch (right
+    // tag pair, wrong module); the seam resolves the target and refuses it.
+    expect(
+      render(
+        importViolations("rogue.ts", 'import { openGitBinding } from "./../git/binding.js";\n'),
+      ),
+    ).toEqual([
+      'src/adapters/github/rogue.ts imports "./../git/binding.js" — a relative specifier that resolves outside src/adapters/github is a cross-project import and must name a barrel',
+    ]);
+    // A genuine sibling stays local — the resolution, not the prefix, decides.
+    expect(
+      render(importViolations("rogue.ts", 'import { GitRemoteSync } from "./sync.js";\n')),
+    ).toEqual([]);
+  });
+
+  it("the gate bites: the quote and whitespace spellings are import spellings", () => {
+    // Single quotes: prettier normalizes them away, the scanner must not
+    // depend on a formatter for its sight (review round 1, minor 2).
+    expect(
+      render(
+        importViolations(
+          "rogue.ts",
+          "import { openGitRun } from '@ecoma-io/release-craft/__internal__/adapters/git/git-run.js';\n",
+        ),
+      ),
+    ).toEqual([
+      'src/adapters/github/rogue.ts imports "@ecoma-io/release-craft/__internal__/adapters/git/git-run.js"',
+    ]);
+    // No whitespace before the specifier.
+    expect(
+      render(importViolations("rogue.ts", 'import { Version }from"@ecoma-io/release-craft";\n')),
+    ).toEqual(['src/adapters/github/rogue.ts imports "@ecoma-io/release-craft"']);
   });
 });
