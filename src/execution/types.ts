@@ -607,16 +607,29 @@ export interface ExternalSatisfaction {
 }
 
 /** One precondition observation (E-04, E-06): the executing side re-proved
- * a plan precondition and records what it saw. `holds: false` suspends the
- * attempt — `blocked(cause)` — with the cause recorded verbatim (E-04's
- * `precondition-delta`, E-06's `unattributed-state`, PR-03's `validation`). */
+ * a plan precondition and records what it saw — or, when `derivation` names
+ * `plan-recorded`, records the plan's own precondition content with where
+ * its hold came from, never an unevaluated literal (#269). `holds: false`
+ * suspends the attempt — `blocked(cause)` — with the cause recorded
+ * verbatim (E-04's `precondition-delta`, E-06's `unattributed-state`,
+ * PR-03's `validation`). */
 export interface PreconditionObservation {
-  /** What was re-proved — the plan's own precondition, verbatim. */
+  /** The plan's own precondition, verbatim — a re-proof the executing
+   * side performed when no `derivation` names the row, or the plan's own
+   * recorded content carried under a `derivation` (#269). */
   readonly precondition: string;
   readonly holds: boolean;
   /** The recorded cause when `holds` is false; defaults to E-04's
    * `precondition-delta`. */
   readonly cause?: string;
+  /** Where a `holds: true` row's hold was derived, when it was not
+   * re-proved against a world: `plan-recorded` — the hold rides the plan's
+   * own recorded precondition content, the planning boundary having derived
+   * it from the closed input world. Absent means the observation is a
+   * re-proof the executing side performed itself. The closed vocabulary
+   * keeps the fabrication class (#269: a bare `holds: true` no check
+   * derived) from returning under a new spelling. */
+  readonly derivation?: "plan-recorded";
 }
 
 /** A step request (§2.7): the requested stage, who requests it, and the

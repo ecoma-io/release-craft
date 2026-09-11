@@ -846,11 +846,15 @@ export function walkStages(
       // the walk stops in order; nothing further appends.
       return stage;
     }
+    // The plan-recorded hold, named as such (#269): the fixture drive
+    // records the same derivation the boundary's walk records — the two
+    // are proven equal record for record, never asserted equal.
     const preconditions =
       stage === "validate"
         ? ctx.planLine.preconditions.map((row) => ({
             precondition: JSON.stringify(row),
             holds: true,
+            derivation: "plan-recorded" as const,
           }))
         : undefined;
     if (stage !== skipStartFor) {

@@ -166,7 +166,8 @@ plan → claim → prepare → validate → commit → tag → channel-transitio
 
 `plan` binds the frozen plan (fingerprint recorded, E-05); `claim` acquires
 ownership (§2.4); `prepare` and `commit` are workspace-mutating;
-`validate` re-proves preconditions (E-04's guard home); `tag` is the
+`validate` records the caller's precondition observations (E-04's guard
+home — re-proofs, or plan-recorded content, #269); `tag` is the
 **no-return boundary** (E-01: "the tag-push as the no-return boundary" —
 once `tag` completes, supersede can no longer void the attempt, only record
 it for reconciliation); `publish` and `verify` are post-tag. The sequence is

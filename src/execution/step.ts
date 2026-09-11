@@ -10,8 +10,9 @@
  *
  * The guard table is invariant 11's executable home: every mutating stage
  * demands a held, verified claim (§2.9), `claim` demands the acquisition it
- * records, `validate` consumes the caller's precondition re-proofs (E-04,
- * E-06), and `verify` — the stage that re-proves external state — demands
+ * records, `validate` consumes the caller's precondition observations
+ * (E-04, E-06 — re-proofs or plan-recorded content, #269), and `verify` —
+ * the stage that re-proves external state — demands
  * the `tag` boundary behind it. Guard failures classify in outcome.ts;
  * this module is the table they read.
  */
