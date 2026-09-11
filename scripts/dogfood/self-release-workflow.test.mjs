@@ -8,7 +8,11 @@
 // judgment steps, and an invocation whose `with:` keys are exactly the
 // Action's declared eight (the closed inventory #191/#252 refuse outside
 // the metadata; a workflow that misspelled a key would be refused too —
-// but only after a runner burned finding out).
+// but only after a runner burned finding out). Since #274, the shared
+// claims-register integration is pinned too — the step exists, fetches
+// exactly the claims namespace with --no-tags, and sits before the
+// snapshot capture (a diff that cannot see the shared tip would push a
+// register built from empty, the non-fast-forward loss #274 fixes).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -102,6 +106,36 @@ describe("the self-release workflow's law", () => {
     const checkout = stepBlock("Check out the repository the run releases");
     assert.match(checkout, /persist-credentials: false/);
     assert.match(checkout, /fetch-depth: 0/);
+  });
+
+  it("integrates the shared claims register — the run claims against the shared tip, never an empty one (#274)", () => {
+    // `stepBlock` itself refuses a missing step, so deleting the
+    // integration is a red suite here, not a hosted run spent discovering
+    // the non-fast-forward rejection #274 records
+    const integrate = stepBlock("Integrate the shared claims register");
+    assert.match(integrate, /run: git fetch/);
+  });
+
+  it("fetches exactly the shared claims namespace — the refspec verbatim, --no-tags, nothing beside it (#274)", () => {
+    const integrate = stepBlock("Integrate the shared claims register");
+    assert.match(
+      integrate,
+      /run: git fetch --no-tags origin '\+refs\/release-craft\/claims\/\*:refs\/release-craft\/claims\/\*'\s*$/,
+    );
+  });
+
+  it("integrates before the snapshots are captured — the publish diff must see the shared tip the run moves (#274)", () => {
+    const lines = executable.split("\n");
+    /** @type {(name: string) => number} */
+    const lineOf = (name) => lines.findIndex((line) => line.trim() === `- name: ${name}`);
+    const integrate = lineOf("Integrate the shared claims register");
+    const snapshots = lineOf("Record the snapshots the verification reads");
+    assert.notEqual(integrate, -1, 'no step named "Integrate the shared claims register"');
+    assert.notEqual(snapshots, -1, 'no step named "Record the snapshots the verification reads"');
+    assert.ok(
+      integrate < snapshots,
+      "the integration must precede the snapshot capture — a before-state without the shared tip diffs the register as wholly new and pushes a history origin does not hold",
+    );
   });
 
   it("the token travels through env:, never a run: interpolation", () => {

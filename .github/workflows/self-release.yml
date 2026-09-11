@@ -9,10 +9,11 @@ name: self-release
 # tag exists in the runner's copy (phase 13 §2.8: the Action's own token
 # journey is decided empty). This workflow is the real leg beside it: the
 # same caller-side world closure, the same pinned Action, the same in-job
-# judgment — plus the caller-side steps the dogfood refuses by design: the
-# claims-register integration that builds the run's local register on the
-# shared tip origin already carries (#274, decision-log D65), the publish
-# step that carries the run's local mint to origin, and the origin
+# judgment — plus the caller-side steps the dogfood does not carry: the
+# claims-register integration, a read that builds the run's local register
+# on the shared tip origin already carries (#274, decision-log D65); the
+# publish step that carries the run's local mint to origin — the one step
+# the dogfood refuses by design, a remote write — and the origin
 # verification that reads origin back against the run's claims
 # (`scripts/dogfood/publish-mint.mjs`, `scripts/dogfood/verify-origin.mjs`).
 #
