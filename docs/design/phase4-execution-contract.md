@@ -110,11 +110,20 @@ A claim carries its **claim token** (E-07: "attempts carry their claim
 token") — an opaque, store-allocated, per-scope monotonic value — and its
 holder. The **claim store port** is the ownership truth:
 `acquire(scope, attemptId) → Claim | ClaimDenied`, `verify(token) → held |
-lost`, `release(token)`. The port's reference implementation is an in-memory
-value with explicit initial state; the physical primitive that backs it in a
-real repository (the tag-push CAS of E-07/E-08) is the Phase 8 adapter's
-binding — the fork-13 resolution is the protocol here, the primitive there
-([ADR-0005](../adr/0005-execution-kernel.md) decision 4).
+lost | superseded`, `release(token)`. The port's reference implementation is
+an in-memory value with explicit initial state; the physical primitive that
+backs it in a real repository (the tag-push CAS of E-07/E-08) is the Phase 8
+adapter's binding — the fork-13 resolution is the protocol here, the
+primitive there ([ADR-0005](../adr/0005-execution-kernel.md) decision 4).
+The `superseded` verdict is the takeover fence (§2.4 item 6): it names the
+superseding claim — `{ kind: "superseded", supersededBy: Claim }` — and is
+returned wherever the store is asked about a token whose lease a takeover
+has passed. A `ClaimDenied` may additionally name a **refusal** — a policy
+refusal rather than a lost race — and the closed marker set is
+`"namespace"` (the binding's naming door, phase 8 as amended) and
+`"superseded"` (§2.4 item 6's re-acquisition denial). A refusal-denial
+carries no `holderSequence` and is final at acquisition: the E-08 retry arm
+recomputes from recorded races, never from a policy refusal.
 
 Scopes do not overlap silently: `stable-version` and `prerelease-sequence`
 claims on one line coexist (a release and an rc stream are different
@@ -133,7 +142,9 @@ its violation is a store bug the tests make unrepresentable.
    ownership before each write"). Each mutating step's guard re-checks the
    claim token against the store's current state; a lost verification is
    `claim-lost`, the step does not run, and the attempt classifies per
-   §2.7 (the loser path).
+   §2.7 (the loser path). A `superseded` verification is the same loser
+   path with the winner named: the step does not run, and the fence
+   evidence rides the classification (§2.4 item 6).
 3. **Deterministic collision adjudication.** An `acquire` on an occupied
    scope is `ClaimDenied` naming the holder — the store's accepted claim
    wins, and the denial is a value carrying the winner's attempt id (E-07:
@@ -143,7 +154,11 @@ its violation is a store bug the tests make unrepresentable.
    implementation resolves same-tick contentions by explicit initial state,
    so tests are deterministic by construction.
 4. **Idempotent re-acquisition.** The same attempt re-acquiring its own held
-   scope receives the same claim (a no-op, not a denial, not a second token).
+   scope receives the same claim (a no-op, not a denial, not a second
+   token). The one exception is the takeover fence (item 6): a holder whose
+   recorded lease a takeover has passed is denied on re-acquisition, naming
+   the superseding holder, with the `refusal: "superseded"` marker — never
+   silently re-armed with a token the store no longer honors.
 5. **Bounded retry on sequence loss** (E-08). A denied
    `prerelease-sequence` acquire may recompute from the winner's recorded
    sequence (`sequence + 1` from the denial's recorded holder state) and
@@ -152,6 +167,30 @@ its violation is a store bug the tests make unrepresentable.
    the second if policy serializes rc runs" (E-08's own alternative,
    declared-policy-selectable). The naive read-max-then-write is refused by
    construction: allocation is claim-verify-write, never read-compute-write.
+6. **A takeover past a standing lease is a recorded supersession, never a
+   silent inheritance** (issue #227; [ADR-0011](../adr/0011-claim-line-register.md)
+   decision 9). When an acquire lands a `prerelease-sequence` claim whose
+   sequence sits past another holder's standing lease on the same
+   `(lineId, target, streamId)` — the E-08 retry arm, or a plan that simply
+   sequences past a recorded lease — the same atomic mutation that accepts
+   the new claim also records one **supersession** naming each passed lease:
+   the superseded claim's scope, token, and holder, and the superseding
+   claim's own three values. The store consults its supersession records in
+   every verdict it computes: a passed lease's token verifies `superseded`
+   (naming the taker), its holder's re-acquisition denies with
+   `refusal: "superseded"` (no retry base — a refused holder does not
+   re-enter the race its taker won), and nothing downstream may treat the
+   passed lease as held. The record is the whole honesty of the takeover —
+   the store cannot consult liveness (decision 6's no-clock law), so it
+   records every pass-past uniformly: for a dead holder the record is the
+   visible crash recovery (the fresh process's takeover is named, and the
+   dead attempt's stranded tail stands as evidence), and for a live holder
+   it is the fence that fails the holder's next verification loudly. The
+   superseded scope's record itself stays: same-scope adjudication keeps
+   denying non-holders of it, so the superseded version can never be
+   re-minted by a third claim. `stable-version` scopes are records, not
+   leases — no takeover arm applies to them, and their denial law (E-07's
+   permanent naming) is unchanged.
 
 ### 2.5 Step identity and the canonical stage sequence (invariant 12)
 

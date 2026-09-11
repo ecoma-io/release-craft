@@ -259,7 +259,15 @@ hooks, artifacts)` then `start`; a plan already carried by the
    (E-07); E-08's bounded retry — a denied `prerelease-sequence`
    re-acquiring at the winner's `sequence + 1` under the declared
    `maxRetries`, an explicit conflict past the bound — is the kernel's
-   own clause driven, never a new retry invented at the boundary.
+   own clause driven, never a new retry invented at the boundary. A retry
+   (or any acquisition) that lands past a standing lease on the same
+   stream is a **recorded takeover**, not a silent inheritance: the store
+   appends the supersession naming the superseded holder (phase 4 §2.4
+   item 6; ADR-0011 decision 9), the boundary maps a
+   `refusal: "superseded"` denial straight to `denied` naming the taker —
+   a refused holder is final at acquisition, never re-entered into the
+   race — and a superseded holder's next in-walk verification fails
+   loudly ([§2.8](#28-how-outcomes-cross-the-boundary)'s `denied` row).
 4. **Walk** — per stage: extension steps at their anchors before and
    after the stage (`scheduleHooks`, `scheduleArtifacts`,
    [ADR-0007](../adr/0007-hooks-as-steps.md) decision 9,
@@ -402,12 +410,18 @@ diverge, and both divergences are accepted residuals:
   caller in `src/`), and the token itself is engine-unreachable after
   process death. The restart's denial names the dead holder and repeats
   forever — the plan can never complete.
-- **The prerelease E-08 retry at holderSequence+1 stranding the tail.**
+- **The prerelease E-08 retry at holderSequence+1 passing a dead lease.**
   A prerelease-sequence denial carries the winner's sequence, and where
   the declared retry bound allows it, the E-08 retry at
-  `holderSequence+1` succeeds past the dead lease: the restart completes
-  the plan at the next sequence, stranding the dead attempt's unrecorded
-  tail work and consuming the sequence. (The CLI's default
+  `holderSequence+1` lands past the dead lease. That landing is a
+  **recorded takeover** since #227: the store appends a supersession
+  naming the dead holder's scope, token, and holder beside the
+  superseding claim, so the takeover is durable evidence, never a silent
+  inheritance (phase 4 §2.4 item 6; ADR-0011 decision 9). The dead
+  attempt's tail work stays stranded — the attempt store is
+  process-local, so nothing resumes it — but the tail's ownership change
+  is now visible in the register, and a dead holder revived mid-walk
+  fails loudly at its next claim verification. (The CLI's default
   `--max-retries 0` exhausts the bound first, landing the explicit
   conflict — the stranding is the declared bound's own choice.)
 
@@ -418,11 +432,13 @@ the same attempt id; only the durable git register produces it.)
 Whether the attempt store becomes a durable port — the plan-keyed lookup
 door the ledger port does not name today — is
 [§4](#4-open-questions-for-the-maintainer) question 6, and a port
-widening is its own reviewed change, not a drive-by: tracked as #227,
-which owns the durable lookup, the holder policy for a dead holder's
-claim, and the fingerprint pinning. Until it lands, cross-process
-recovery is unsupported — the envelope is the process, and the two
-residuals above are its recorded cost.
+widening is its own reviewed change, not a drive-by. The holder policy
+it would need is decided and landed (#227's recorded-takeover slice:
+supersession fences the passed lease at acquisition, in-walk, and at the
+mint door); the durable lookup and the fingerprint pinning a durable
+resume needs remain unlanded. Until one lands, cross-process recovery is
+unsupported — the envelope is the process, and the two residuals above
+are its recorded cost.
 
 ### 2.8 How outcomes cross the boundary
 
@@ -439,7 +455,7 @@ in the message (phase 4 §2.2, §2.7).
 | `published`                  | the walk completed, the tag minted, the terminal recorded                                                                                                                                                                                                          | proceed                                                                                                                                                                                                                                                                                                                                                                        |
 | `satisfied-externally`       | ledger-first done-ness, provenance recorded (E-03)                                                                                                                                                                                                                 | proceed; the evidence reads back through `observe`                                                                                                                                                                                                                                                                                                                             |
 | `refused(detail)`            | a planning refusal, a namespace denial, a store-less channel plan, a protocol refusal                                                                                                                                                                              | read the detail; it names the owner and the refused door                                                                                                                                                                                                                                                                                                                       |
-| `denied(holder)`             | a claim denial naming the winner (E-07); E-08's retry exhausted lands `conflict`                                                                                                                                                                                   | another attempt owns the scope; the loser path is recorded                                                                                                                                                                                                                                                                                                                     |
+| `denied(holder)`             | a claim denial naming the winner (E-07); a superseded holder's acquisition or in-walk verification lands here naming the taker — the refusal class `superseded` rides the record (#227, phase 4 §2.4 item 6); E-08's retry exhausted lands `conflict`              | another attempt owns the scope; the loser path is recorded — the supersession names both holders in the register                                                                                                                                                                                                                                                               |
 | `blocked(cause)`             | a guard failed on world state (E-04, PR-03, a hook's or artifact's validation); when `handle` is null it is the planning boundary's own record — a `blocked` decision for the executed line (phase 2 §2.9; #263's released-version replay), no attempt ever opened | a walk-time block resolves through `.resolve`, then `.resume`; a planning-boundary block (`handle` null) has no loop to resolve — the world's release state is what answers it (the observed release stands, or the operator retires it), and only then is the dispatch repeated                                                                                               |
 | `failed(cause)`              | a recorded failure stopped the walk — a record, never a throw                                                                                                                                                                                                      | inspect the tail; a later `.resume` re-judges                                                                                                                                                                                                                                                                                                                                  |
 | `conflict(detail)`           | same identity, different content or inconsistent evidence (E-02)                                                                                                                                                                                                   | a human judges; nothing auto-re-plans, nothing auto-retries                                                                                                                                                                                                                                                                                                                    |
@@ -560,11 +576,12 @@ left open, each with its proposed default:
 6. **The attempt store's future.** Process-local bookkeeping now
    ([§2.7](#27-the-attempt-store-bookkeeping-never-authority)) —
    cross-process recovery is unsupported on main, and §2.7's two
-   residuals are its recorded cost. The durable plan-keyed attempt
-   lookup (a ledger port widening or a register read door), the holder
-   policy that decides what may supersede a dead holder's claim, and the
-   fingerprint pinning a durable resume needs are one reviewed change —
-   tracked as #227; the maintainer decides when.
+   residuals are its recorded cost. The holder policy is decided and
+   landed (#227: a takeover past a standing lease is a recorded
+   supersession, phase 4 §2.4 item 6); the durable plan-keyed attempt
+   lookup (a ledger port widening or a register read door) and the
+   fingerprint pinning a durable resume needs are the remaining reviewed
+   change — the maintainer decides when.
 7. **Multi-line runs.** The fixtures run one line per run (M-02's
    posture) and the proposal keeps `lineIds` per run; a whole-plan pass
    needs a cross-line claim-ordering decision and is deferred until a
@@ -615,7 +632,9 @@ barrel only. The phase's named fixtures:
   [ADR-0012](../adr/0012-channel-transition.md)'s own slices; the wiring
   point here is decided, the port is not.
 - A durable attempt lookup — [§4](#4-open-questions-for-the-maintainer)
-  question 6's own reviewed change, tracked as #227.
+  question 6's own reviewed change (the holder policy it needed is
+  landed — #227's recorded-takeover slice; the lookup and the
+  fingerprint pinning remain unlanded).
 - Remote effect executors for the publish stage — adapter and publishing
   slice territory ([ADR-0007](../adr/0007-hooks-as-steps.md) decision 12;
   [ADR-0008](../adr/0008-artifact-graph.md) decision 12;

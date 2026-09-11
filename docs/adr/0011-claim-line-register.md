@@ -2,7 +2,7 @@
 id: 0011-claim-line-register
 status: proposed
 created: 2026-09-07
-updated: 2026-09-10
+updated: 2026-09-12
 ---
 
 # ADR-0011: The per-line claim register — atomic cross-scope exclusion
@@ -165,7 +165,11 @@ nothing less.
    attempt's tail for a prerelease sequence (phase 11 contract §2.7's
    accepted residuals). The durable plan-keyed attempt lookup and the
    holder policy that would make a takeover honest are tracked as #227,
-   not provided by the register.
+   not provided by the register. Amendment landed in #227: the holder
+   policy is decided and the register provides it — a takeover past a
+   standing lease lands a recorded supersession (decision 9) — while the
+   durable plan-keyed attempt lookup remains unlanded and cross-process
+   `resume` stays refused.
 
 7. **Denials match the in-memory store exactly (issue #69, folded
    here).** An exclusion-path denial carries no `holderSequence` — the
@@ -196,6 +200,39 @@ nothing less.
    same caller contract. No engine port widens and no new door exists;
    the widening is the binding's own §2.8 read seam, named above.
 
+9. **A takeover past a standing lease is a recorded supersession, not a
+   silent inheritance (issue #227).** Decision 6's `holderSequence+1`
+   recovery and any direct acquisition that lands a
+   `prerelease-sequence` claim with a sequence strictly greater than
+   another holder's standing lease on the same
+   `(lineId, target, streamId)` append one supersession record per
+   passed lease in the SAME register mutation that lands the
+   superseding claim — the claim set and the takeover evidence are one
+   compare-and-set, never two. The record names both sides exactly:
+   `{"kind":"supersession","superseded":{"scope","token","holder"},"supersededBy":{"scope","token","holder"}}`.
+   The envelope carries an optional `supersessions` array beside
+   `claims` (present iff non-empty, sorted by the superseded scope's
+   canonical form, unique), and every claim verdict consults it as an
+   input, not as history: a token found in `supersessions` verifies
+   `superseded` naming the taker, and a re-acquisition of a superseded
+   record denies with the closed refusal marker `superseded` carrying no
+   `holderSequence` — a policy refusal is not a race, so it offers no
+   retry base and cannot be raced into a tag war. The superseded scope's
+   claim record itself STAYS: same-scope adjudication keeps denying
+   non-holders of it, so the superseded version can never be re-minted
+   by a third claim after the takeover. The fence is observable at
+   three doors — the superseded holder's acquisition and its in-walk
+   verification both answer `denied` naming the taker (the boundary's
+   E-07 winner-naming row, exit 11 — no new exit band), and the tag
+   door, filtering superseded records from its held-claim lookup,
+   refuses a holder frozen between its verify and its mint with the
+   `unclaimed` refusal naming the takeover (exit 10, the mint door's
+   own class). Stable-version scopes are records, not leases: no
+   supersession arm applies to them, and the stable-scope dead lock of
+   decision 6 stands unchanged. Recovery is unblocked by construction —
+   the E-08 retry still completes the plan at the next sequence; the
+   takeover it performs is now on the record.
+
 ### Rejected alternatives
 
 - **Rejected — the issue's lease lock** (`refs/ecoma/locks/<lineId>` —
@@ -223,6 +260,11 @@ nothing less.
 - **Rejected — documenting the serial-only guarantee**: #49's own
   rejected alternative; it weakens the Phase 4 contract instead of
   enforcing it.
+- **Rejected — a separate supersession ref beside the register**
+  (#227): the takeover evidence would land in a second compare-and-set
+  after the claim's, reopening a crash window between them — a claim
+  past a lease with no record, the exact silent inheritance the
+  supersession exists to refuse. One mutation, one ref.
 
 ## Consequences
 
@@ -242,7 +284,13 @@ nothing less.
   holder's record, never the new holder's. The crash windows pin the
   register at a
   consistent tip on either side of every CAS. The #69 pins hold the
-  denial shapes. The empty-register, foreign-blob, and non-canonical-form
+  denial shapes. The takeover pins (#227, decision 9) hold the fence on
+  both backends: an acquisition past a standing lease lands the claim
+  and its supersession in one register commit, the superseded holder's
+  re-acquisition denies with `refusal: "superseded"` and no retry base,
+  its in-walk verification returns `superseded` naming the taker, and
+  the mint door refuses a frozen holder naming the takeover. The
+  empty-register, foreign-blob, and non-canonical-form
   pins hold decision 4 and 5's postures. The decision 2 scope boundary
   (#182) is pinned as a negative capability test: two clones of one
   repository, the same line's claim acquired in each — both acquire,
