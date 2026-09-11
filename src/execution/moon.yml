@@ -4,17 +4,17 @@
 # tag) rather than a scanner suite alone.
 #
 # The execution kernel reaches the planner barrel
-# (`../planner/index.js` — `canonicalJson` and planner types) and the
-# frozen `node:crypto` in identity.ts.  No app, adapter, or cli import
-# is legal here.
+# (`@ecoma-io/release-craft/planner` — `canonicalJson` and planner types)
+# and the frozen `node:crypto` in identity.ts.  No app, adapter, or cli
+# import is legal here.
 #
 # Task roster:
 #   - no `build` task: emitted as part of release-craft:build
 #   - `arch` runs once per workspace (release-craft:arch)
 id: execution
 language: typescript
-# The execution kernel imports the planner barrel (`../planner/index.js`)
-# and the domain kernel's alias. The edges archkeep judges against
+# The execution kernel imports the planner barrel
+# (`@ecoma-io/release-craft/planner`) and the domain kernel's alias. The edges archkeep judges against
 # `type-execution → type-planner, type-execution → type-domain`, and the
 # edges Moon needs for the `project://` inputs below.
 dependsOn:
