@@ -2,7 +2,7 @@
 // gate is judged on real filesystem facts rather than on the live repository
 // (which would make the test a mirror of the gate's own list).
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -22,32 +22,46 @@ function makeTree(/** @type {Record<string, string>} */ files) {
 describe("collectMissingFiles", () => {
   it("reports a required file that is absent", () => {
     const root = makeTree({ "README.md": "x", "package.json": "{}" });
-    const missing = collectMissingFiles(root);
+    try {
+      const missing = collectMissingFiles(root);
 
-    assert.ok(missing.includes("AGENTS.md"));
-    assert.ok(!missing.includes("README.md"));
+      assert.ok(missing.includes("AGENTS.md"));
+      assert.ok(!missing.includes("README.md"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("reports nothing for a tree that has a required file", () => {
     const root = makeTree({ "docs/bootstrap/ecosystem-analysis.md": "x" });
-
-    assert.ok(!collectMissingFiles(root).includes("docs/bootstrap/ecosystem-analysis.md"));
+    try {
+      assert.ok(!collectMissingFiles(root).includes("docs/bootstrap/ecosystem-analysis.md"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
 describe("collectForbiddenFiles", () => {
   it("flags a root archkeep.json in a Moon workspace", () => {
     const root = makeTree({ "archkeep.json": "{}" });
-    const forbidden = collectForbiddenFiles(root);
+    try {
+      const forbidden = collectForbiddenFiles(root);
 
-    assert.equal(forbidden.length, 1);
-    assert.equal(forbidden[0]?.path, "archkeep.json");
-    assert.match(forbidden[0]?.reason ?? "", /\.moon/);
+      assert.equal(forbidden.length, 1);
+      assert.equal(forbidden[0]?.path, "archkeep.json");
+      assert.match(forbidden[0]?.reason ?? "", /\.moon/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("is silent when no forbidden file exists", () => {
     const root = makeTree({ "README.md": "x" });
-
-    assert.deepEqual(collectForbiddenFiles(root), []);
+    try {
+      assert.deepEqual(collectForbiddenFiles(root), []);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

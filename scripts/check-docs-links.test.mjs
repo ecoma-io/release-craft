@@ -3,7 +3,7 @@
 // on honest documentation.
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -41,72 +41,108 @@ describe("auditMarkdown", () => {
 
   it("accepts honest documentation", () => {
     const { root, dir } = makeTree();
-    const violations = auditMarkdown(
-      [
-        "See [target](target.md#an-anchor-here) and [top](#top-of-this-page).",
-        "",
-        "# Top of this page",
-        "",
-        "Run `pnpm format`, `pnpm run check`, or `node scripts/check-thing.mjs`.",
-        "Install with `pnpm install` and run any bin with `pnpm exec vitest`.",
-      ].join("\n"),
-      "docs/page.md",
-      dir,
-      root,
-      scripts,
-    );
+    try {
+      const violations = auditMarkdown(
+        [
+          "See [target](target.md#an-anchor-here) and [top](#top-of-this-page).",
+          "",
+          "# Top of this page",
+          "",
+          "Run `pnpm format`, `pnpm run check`, or `node scripts/check-thing.mjs`.",
+          "Install with `pnpm install` and run any bin with `pnpm exec vitest`.",
+        ].join("\n"),
+        "docs/page.md",
+        dir,
+        root,
+        scripts,
+      );
 
-    assert.deepEqual(violations, []);
+      assert.deepEqual(violations, []);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("refuses a link to a missing file", () => {
     const { root, dir } = makeTree();
-    const violations = auditMarkdown("See [ghost](ghost.md).", "docs/page.md", dir, root, scripts);
+    try {
+      const violations = auditMarkdown(
+        "See [ghost](ghost.md).",
+        "docs/page.md",
+        dir,
+        root,
+        scripts,
+      );
 
-    assert.deepEqual(violations, ["docs/page.md: link target does not exist: ghost.md"]);
+      assert.deepEqual(violations, ["docs/page.md: link target does not exist: ghost.md"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("refuses a broken anchor in another file", () => {
     const { root, dir } = makeTree();
-    const violations = auditMarkdown(
-      "See [target](target.md#no-such-heading).",
-      "docs/page.md",
-      dir,
-      root,
-      scripts,
-    );
+    try {
+      const violations = auditMarkdown(
+        "See [target](target.md#no-such-heading).",
+        "docs/page.md",
+        dir,
+        root,
+        scripts,
+      );
 
-    assert.equal(violations.length, 1);
-    assert.match(violations[0] ?? "", /broken anchor/);
+      assert.equal(violations.length, 1);
+      assert.match(violations[0] ?? "", /broken anchor/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("refuses a bare anchor with no matching heading", () => {
     const { root, dir } = makeTree();
-    const violations = auditMarkdown("[jump](#missing)", "docs/page.md", dir, root, scripts);
+    try {
+      const violations = auditMarkdown("[jump](#missing)", "docs/page.md", dir, root, scripts);
 
-    assert.deepEqual(violations, ["docs/page.md: broken anchor #missing"]);
+      assert.deepEqual(violations, ["docs/page.md: broken anchor #missing"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("refuses a documented command that is not a script", () => {
     const { root, dir } = makeTree();
-    const violations = auditMarkdown("Run `pnpm nonexistent`.", "docs/page.md", dir, root, scripts);
+    try {
+      const violations = auditMarkdown(
+        "Run `pnpm nonexistent`.",
+        "docs/page.md",
+        dir,
+        root,
+        scripts,
+      );
 
-    assert.deepEqual(violations, [
-      "docs/page.md: documents `pnpm nonexistent` — no such script in package.json",
-    ]);
+      assert.deepEqual(violations, [
+        "docs/page.md: documents `pnpm nonexistent` — no such script in package.json",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("refuses a cited gate script that does not exist", () => {
     const { root, dir } = makeTree();
-    const violations = auditMarkdown(
-      "Run `node scripts/check-ghost.mjs`.",
-      "docs/page.md",
-      dir,
-      root,
-      scripts,
-    );
+    try {
+      const violations = auditMarkdown(
+        "Run `node scripts/check-ghost.mjs`.",
+        "docs/page.md",
+        dir,
+        root,
+        scripts,
+      );
 
-    assert.equal(violations.length, 1);
-    assert.match(violations[0] ?? "", /no such file/);
+      assert.equal(violations.length, 1);
+      assert.match(violations[0] ?? "", /no such file/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

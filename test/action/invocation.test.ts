@@ -28,7 +28,7 @@
  *     repositories give byte-equal verdicts modulo the claim token.
  */
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,31 +62,34 @@ const baseInputs = (overrides: Partial<InvokeInputs> = {}): InvokeInputs => ({
   ...overrides,
 });
 
-/** The stand-in bins are sources; the harness drives real paths, so each
- * projection look writes the echo bin into a scratch directory first. */
-const echoBin = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "release-craft-action-echo-"));
-  const bin = join(dir, "argv-echo.mjs");
-  writeFileSync(bin, ARGV_ECHO_BIN);
-  return bin;
-};
-
 /** Drives the script with the argv-echo stand-in bin and returns the argv
- * the script assembled — the window into the projection. The echo's stdout
- * is not an envelope, so the step itself concludes `no verdict` at exit 0;
- * the relayed bytes are the echo's document, and that is what this reads. */
+ * the script assembled — the window into the projection. The stand-in bins
+ * are sources the harness drives by real path, so each projection look
+ * writes the echo bin into a scratch directory the look itself owns: the
+ * bin is read only while runInvoke's synchronous child runs, so the
+ * directory is removed the moment the look ends, pass or fail. The echo's
+ * stdout is not an envelope, so the step itself concludes `no verdict` at
+ * exit 0; the relayed bytes are the echo's document, and that is what this
+ * reads. */
 const projectedArgv = (
   overrides: Partial<InvokeInputs> = {},
   options: { env?: NodeJS.ProcessEnv; input?: Buffer; cwd?: string } = {},
 ): readonly string[] => {
-  const drive = runInvoke({ ...baseInputs(overrides), bin: echoBin() }, options);
-  const relayed = drive.stdout
-    .toString("utf8")
-    .split("\n")
-    .filter((line) => line.length > 0 && !line.startsWith("::error::"));
-  expect(relayed).toHaveLength(1);
-  const parsed = JSON.parse(relayed[0] ?? "") as { argv: string[] };
-  return parsed.argv;
+  const dir = mkdtempSync(join(tmpdir(), "release-craft-action-echo-"));
+  try {
+    const bin = join(dir, "argv-echo.mjs");
+    writeFileSync(bin, ARGV_ECHO_BIN);
+    const drive = runInvoke({ ...baseInputs(overrides), bin }, options);
+    const relayed = drive.stdout
+      .toString("utf8")
+      .split("\n")
+      .filter((line) => line.length > 0 && !line.startsWith("::error::"));
+    expect(relayed).toHaveLength(1);
+    const parsed = JSON.parse(relayed[0] ?? "") as { argv: string[] };
+    return parsed.argv;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 };
 
 describe("fixture: the argv projection is §2.7's command, exactly", () => {
