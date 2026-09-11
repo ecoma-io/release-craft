@@ -259,8 +259,10 @@ field.
 
 The guard table encodes it: every mutating stage (`prepare`, `commit`, `tag`,
 `publish`) requires a held, verified claim in its guard list, and `verify`
-(the stage that re-proves external state) requires the attempt to have passed
-`tag` or `publish`. The refusal is `refused(mutation-without-claim)` — a
+(whose guard reads the walk's recorded sequence — every prior stage's
+completion recorded, no world re-observation; the boundary's world-side
+re-check lives at the mint door's create-if-absent CAS, #279) requires the
+attempt to have passed `tag` or `publish`. The refusal is `refused(mutation-without-claim)` — a
 record, testable, never a silent execution. This item is invariant 11's
 executable home; its stress list (E-07, E-08, M-11) is the test set.
 

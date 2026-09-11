@@ -186,3 +186,52 @@ describe("the outcome classification (E-03, §2.7 fingerprint laws)", () => {
     ).toThrow(InvalidExecutionTransitionError);
   });
 });
+
+describe("#279 — the verify stage's evidence names its derivation", () => {
+  /** An executing attempt whose recorded prefix runs through `publish` — by
+   * sequence `verify` is last, so reaching it at all means every prior
+   * stage has recorded its completion (§2.5's sequence law). */
+  const withRecordedPrefix = (store: MemoryClaimStore, log: MemoryTransitionLog) => {
+    const attempt = open();
+    store.acquire(SCOPE, attempt.attemptId);
+    for (const stage of [
+      "plan",
+      "claim",
+      "prepare",
+      "validate",
+      "commit",
+      "tag",
+      "channel-transition",
+      "publish",
+    ] as const) {
+      expect(run(attempt, stage, store, log).kind).toBe("advance");
+    }
+    return attempt;
+  };
+
+  it("the tag-boundary row states the recorded-sequence derivation, byte-pinned", () => {
+    const store = new MemoryClaimStore();
+    const log = new MemoryTransitionLog();
+    const attempt = withRecordedPrefix(store, log);
+
+    const outcome = run(attempt, "verify", store, log);
+    expect(outcome.kind).toBe("advance");
+    if (outcome.kind !== "advance") {
+      throw new Error("fixture broken: verify did not advance over the recorded prefix");
+    }
+    // The durable row names what the check derived: a recorded-sequence
+    // projection — every prior stage's completion read from the records,
+    // no world re-observation — with the boundary's world-side re-check
+    // named where it lives (the mint door's create-if-absent CAS). The
+    // pre-#279 wording claimed a re-proof this check never ran; reverting
+    // it turns exactly this pin red.
+    expect(outcome.record.guards).toStrictEqual([
+      {
+        guard: "tag-boundary",
+        passed: true,
+        detail:
+          "the tag boundary stands by the walk's recorded sequence — every prior stage's completion recorded, no world re-observation here; the world's re-check lives at the mint door's create-if-absent CAS (§2.9)",
+      },
+    ]);
+  });
+});

@@ -12,9 +12,10 @@
  * demands a held, verified claim (§2.9), `claim` demands the acquisition it
  * records, `validate` consumes the caller's precondition observations
  * (E-04, E-06 — re-proofs or plan-recorded content, #269), and `verify` —
- * the stage that re-proves external state — demands
- * the `tag` boundary behind it. Guard failures classify in outcome.ts;
- * this module is the table they read.
+ * whose guard reads the recorded sequence only, re-observing no world (the
+ * boundary's world-side re-check lives at the mint door's create-if-absent
+ * CAS) — demands the `tag` boundary behind it (#279). Guard failures
+ * classify in outcome.ts; this module is the table they read.
  */
 import { CANONICAL_STAGES, type StageKey } from "./types.js";
 
