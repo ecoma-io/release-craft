@@ -139,7 +139,7 @@ jobs:
       # human maintainer's name.
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@5b8300f5a0ede34cdc3f75423cb9d9ad2acfd23e
+        uses: ecoma-io/release-craft@7f7d70253ac0a453a3ca6c063343783479844385
         with:
           world: world.json
           line: main
