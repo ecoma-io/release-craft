@@ -44,9 +44,12 @@ const ENVELOPE_DENIED = JSON.stringify({
 
 /**
  * A temporary repository with a bare "origin" beside it and one commit on
- * main — the dispatch's checkout shape at the smallest it can be.
+ * main — the dispatch's checkout shape at the smallest it can be. The root is
+ * the caller's to remove, and the root is what the caller removes: it holds
+ * both the working clone and origin.git, so nothing of the fixture survives
+ * the test's finally.
  *
- * @returns {{ repo: string, origin: string, git: (args: string[]) => string }}
+ * @returns {{ root: string, repo: string, origin: string, git: (args: string[]) => string }}
  */
 function buildCheckout() {
   const root = mkdtempSync(join(tmpdir(), "rc-self-release-"));
@@ -89,7 +92,7 @@ function buildCheckout() {
   git(["commit", "-q", "-m", "feat: seed"]);
   git(["clone", "-q", "--bare", ".", origin]);
   git(["remote", "add", "origin", origin]);
-  return { repo, origin, git };
+  return { root, repo, origin, git };
 }
 
 /**
@@ -153,7 +156,7 @@ function runScript(script, args, repo, { outcome, rcToken, env: extra = {} } = {
 
 describe("publish-mint", () => {
   it("pushes exactly the minted pairs, atomically, for a published verdict", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const before = git(["for-each-ref", "--format=%(refname) %(objectname)"]);
       writeFileSync(join(repo, "local-refs-before.txt"), before);
@@ -171,12 +174,12 @@ describe("publish-mint", () => {
       const localTag = git(["rev-parse", "refs/tags/0.1.0"]).trim();
       assert.match(refs, new RegExp(`${localTag}\\s+refs/tags/0\\.1\\.0`));
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("pushes nothing for a stop-band verdict — origin stays untouched", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       writeFileSync(
         join(repo, "local-refs-before.txt"),
@@ -192,12 +195,12 @@ describe("publish-mint", () => {
       assert.match(run.stdout, /no release minted, origin untouched/);
       assert.equal(remoteRefs(git), remoteBefore);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("refuses a published verdict whose mint is empty", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       writeFileSync(
         join(repo, "local-refs-before.txt"),
@@ -209,12 +212,12 @@ describe("publish-mint", () => {
       assert.equal(run.status, 1);
       assert.match(run.stderr, /minted no ref/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("refuses a published verdict whose named tag is not in the mint", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       writeFileSync(
         join(repo, "local-refs-before.txt"),
@@ -229,12 +232,12 @@ describe("publish-mint", () => {
       assert.match(run.stderr, /partial mint/);
       assert.equal(remoteRefs(git), remoteBefore);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("never forces a push: a ref origin already holds is a loud rejection, not an overwrite", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       // origin already carries the tag at the seeded head; the run minted
       // it at a different object — a plain push refuses, and --atomic keeps
@@ -259,12 +262,12 @@ describe("publish-mint", () => {
       // and nothing rode in half-pushed: the recorded namespaces are absent
       assert.doesNotMatch(remoteRefs(git), /refs\/release-craft\//);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("refuses an empty envelope loudly — nothing claimed is not a publish", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       writeFileSync(
         join(repo, "local-refs-before.txt"),
@@ -274,12 +277,12 @@ describe("publish-mint", () => {
       assert.equal(run.status, 1);
       assert.match(run.stderr, /RC_OUTCOME is empty/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("refuses a survivor that is not JSON", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       writeFileSync(
         join(repo, "local-refs-before.txt"),
@@ -290,30 +293,29 @@ describe("publish-mint", () => {
       });
       assert.equal(run.status, 1);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("a protocol violation is a usage fault — exit 64", () => {
-    const { repo } = buildCheckout();
+    const { root, repo } = buildCheckout();
     try {
       const run = runScript(PUBLISH, [], repo, { outcome: ENVELOPE_PUBLISHED });
       assert.equal(run.status, 64);
       assert.match(run.stderr, /missing --local-before/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("pushes behind the empty-helper reset — an ambient helper never rides in", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     // The reset's own proof: a hostile ambient helper configured in the
     // spawn's HOME, and the argv git actually receives, read back through a
     // logging shim ahead of the real git on PATH. The filesystem transport
     // never queries a helper, so the load-bearing assertions are the argv's
     // shape — the reset first, the inline helper second, the token in
     // neither — which is exactly the shape an http transport would obey.
-    const root = join(repo, "..");
     const shimDir = join(root, "bin");
     const home = join(root, "home");
     const argvLog = join(root, "git-argv.log");
@@ -399,7 +401,7 @@ describe("verify-origin", () => {
   }
 
   it("holds for a published verdict whose whole mint is on origin", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       mintLocally(git);
@@ -425,12 +427,12 @@ describe("verify-origin", () => {
         assert.match(run.stdout, new RegExp(`${row}: \\*\\*PASS\\*\\*`));
       }
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("breaks when a minted ref never reached origin — the green-but-unminted class", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       mintLocally(git);
@@ -446,12 +448,12 @@ describe("verify-origin", () => {
       assert.match(run.stdout, /every minted ref reached origin: \*\*FAIL\*\*/);
       assert.match(run.stdout, /the envelope's tag is on origin: \*\*FAIL\*\*/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("breaks when origin carries the tag at a different object", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       mintLocally(git);
@@ -472,12 +474,12 @@ describe("verify-origin", () => {
       assert.equal(run.status, 1);
       assert.match(run.stdout, /every minted ref reached origin: \*\*FAIL\*\*/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("fails by the object when the tag sits at a wrong sha among correctly landed refs", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       mintLocally(git);
@@ -510,12 +512,12 @@ describe("verify-origin", () => {
       );
       assert.match(run.stdout, /the envelope's tag is on origin: \*\*FAIL\*\*/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("holds for a stop-band verdict over an unchanged origin", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       git(["update-ref", "refs/release-craft/claims/replay", "HEAD"]); // local evidence only
@@ -529,12 +531,12 @@ describe("verify-origin", () => {
       assert.match(run.stdout, /origin is unchanged: \*\*PASS\*\*/);
       assert.match(run.stdout, /verdict: HOLD/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("breaks when origin moved under a verdict that claims no mint", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       // something landed on origin despite the denied verdict
@@ -549,12 +551,12 @@ describe("verify-origin", () => {
       assert.equal(run.status, 1);
       assert.match(run.stdout, /origin is unchanged: \*\*FAIL\*\*/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("an envelope that never arrived claims nothing — the unchanged band, asserted", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       const run = runScript(
@@ -567,12 +569,12 @@ describe("verify-origin", () => {
       assert.match(run.stdout, /no readable envelope/);
       assert.match(run.stdout, /origin is unchanged: \*\*PASS\*\*/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("an unexpected origin is a broken leg — the credentials-origin cross-check", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       const run = runScript(
@@ -591,12 +593,12 @@ describe("verify-origin", () => {
       assert.match(run.stdout, /origin is the dispatching repository: \*\*FAIL\*\*/);
       assert.match(run.stdout, /the mint must not ride another repository/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("an expect-kind outside the run union is a usage fault naming the union", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       const snapshots = writeSnapshots(git, repo);
       const run = runScript(
@@ -610,12 +612,12 @@ describe("verify-origin", () => {
       assert.match(run.stderr, /published, satisfied-externally, resolved, abandoned/);
       assert.match(run.stderr, /denied, blocked/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("a missing demanded flag is a usage fault — exit 64", () => {
-    const { repo, git } = buildCheckout();
+    const { root, repo, git } = buildCheckout();
     try {
       writeSnapshots(git, repo);
       const run = runScript(VERIFY, ["--before", "remote-before.txt"], repo, {
@@ -624,7 +626,7 @@ describe("verify-origin", () => {
       assert.equal(run.status, 64);
       assert.match(run.stderr, /missing --after/);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
