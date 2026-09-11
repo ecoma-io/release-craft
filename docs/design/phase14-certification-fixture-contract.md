@@ -742,6 +742,28 @@ demanded by the wording — which is precisely why they must be named):
   is: one dispatch whose declared world faults the run on purpose, judged
   against the same four classes on their failure-band rows.
 
+**Who judges the four classes, and the boundary of that judgment** (issue
+#187, decision-log D59): in the dispatching job itself, by
+`scripts/dogfood/judge.mjs`, over what the job mechanically persists — the
+`outcome` output, the invoke step's conclusion, and the local ledger refs
+and tags (the run persists no artifacts). The judge asserts row by row:
+the envelope class (2) in full — parse, the pinned shape inventory, the
+carrying fields, the product-boundary invariant; the ledger-projection
+class (3) in full — the recorded tail projected against the envelope's
+own drives, not the process's claims; the Action leg's conclusion row
+(4); and the exit-code class (1) at the dispatch's declared posture,
+whose only rendered kind is `published` — the conclusion table's sole
+exit-0 kind — so a success conclusion is exactly the exit the table
+demands there. What no machine inside the job can read stays a human log
+read and prints as an explicit NOT ASSERTED row, never a waived pass:
+the byte-for-byte equality of the surviving `outcome` value with the
+invoke step's log relay (class 4's byte half — a running job cannot read
+its own step log through the API), and the exact nonzero exit value of a
+stop-band kind (unreachable at this posture; the failure-path leg above
+closes it). A green judge therefore means "certified" for the declared
+posture exactly this far: every mechanically available row holds, and
+every row left to a human is named.
+
 ## 8. What the fixture never does
 
 The never-does inventory, each row with its enforcement:
