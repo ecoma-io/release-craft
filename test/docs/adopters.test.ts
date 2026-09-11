@@ -17,8 +17,14 @@
  *
  * The transcripts (command output) on the page are not re-executed here —
  * the process surface has its own suites (`test/cli/`,
- * `test/action/invocation.test.ts`); what this file owns is the page's
- * *documents*, whose bytes are the adopter's whole input.
+ * `test/action/invocation.test.ts`). What this file owns from them is the
+ * content-derived identity a transcript quotes: every `plan_sha256:` digest
+ * on the page is checked against the engine's own computed plan identity
+ * over the page's world bytes (the plain plan, the composed plan, and the
+ * release-intent plan the `run` door replans), and the run rendering's stop
+ * row is checked against the engine's own renderer over the same world —
+ * so the transcripts can still stale only word-for-word, never in their
+ * digests or their stop row.
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -28,6 +34,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { AssemblySelection } from "@ecoma-io/release-craft/__internal__/cli/parse.js";
+import { renderHuman } from "@ecoma-io/release-craft/__internal__/cli/render.js";
 import { selectEngine } from "@ecoma-io/release-craft/__internal__/cli/selection.js";
 import { readWorldDocument } from "@ecoma-io/release-craft/__internal__/cli/world.js";
 import type { LineDecision, PlanningInput, PlanningOutcome } from "../../src/index.js";
@@ -91,6 +98,24 @@ const memory: AssemblySelection = { assembly: "memory", maxRetries: 0 };
 
 const planDocument = (document: PlanningInput): PlanningOutcome =>
   selectEngine(memory).plan({ ...document, intents: document.intents ?? [] });
+
+/** The plan identity a planned outcome carries — the `plan_sha256:` digest
+ * the plan door renders and the page's transcripts quote. */
+const plannedPlanId = (outcome: PlanningOutcome): string => {
+  if (outcome.kind !== "planned") {
+    throw new Error(`expected a planned outcome, got "${outcome.kind}"`);
+  }
+  return outcome.plan.planId;
+};
+
+/** Every `plan_sha256:` digest the page quotes, in transcript order — the
+ * content-derived plan identities the engine computed on the head the
+ * transcripts were captured at. */
+const pagePlanDigests = (markdown: string): string[] =>
+  [...markdown.matchAll(/plan_sha256:([0-9a-f]{64})/g)]
+    .map((match) => match[1])
+    .filter((hex): hex is string => hex !== undefined)
+    .map((hex) => `plan_sha256:${hex}`);
 
 /** The reader is a filesystem door — the page's example reaches it as a
  * `--world <path>` value, so the test hands it a path too. */
@@ -165,6 +190,49 @@ describe("docs/adopters.md — the adopter journey's world documents", () => {
     expect(line?.lineId).toBe("main");
     expect(line?.stable?.version).toBe("0.1.0");
     expect(line?.stable?.tag).toBe("0.1.0");
+  });
+
+  it("every plan digest the page quotes is the engine's own computed plan identity over the page's world", () => {
+    const first = worlds[0];
+    expect(first).toBeDefined();
+    const composed = { ...(first as PlanningInput), ...(additions[0] as object) };
+    // The three plans the page's transcripts quote identities for: the
+    // plain plan over the first document, the plan after the operator's
+    // record, and the release-intent plan the `run` door replans under.
+    const computed = [
+      planDocument(first as PlanningInput),
+      planDocument(composed),
+      planDocument({ ...composed, intents: [{ kind: "release" }] }),
+    ].map(plannedPlanId);
+    expect([...new Set(pagePlanDigests(markdown))].sort()).toStrictEqual(computed.sort());
+  });
+
+  it("the run rendering's stop row is the engine's own, and the page quotes it verbatim", () => {
+    const first = worlds[0];
+    const additionsBlock = additions[0];
+    expect(first).toBeDefined();
+    expect(additionsBlock).toBeDefined();
+    const composed = { ...(first as PlanningInput), ...(additionsBlock as object) };
+    const who = (additionsBlock?.bootstrap as { who: unknown } | undefined)?.who;
+    if (typeof who !== "string") {
+      throw new Error("the page's additions block names no bootstrap `who` to run as");
+    }
+    const outcome = selectEngine(memory).run({
+      input: composed,
+      lineIds: ["main"],
+      intents: [{ kind: "release" }],
+      actor: who,
+    });
+    if (outcome.kind !== "published") {
+      throw new Error(`expected a published run over the page's world, got "${outcome.kind}"`);
+    }
+    const stopRow = renderHuman(outcome)
+      .split("\n")
+      .find((line) => line.startsWith("stopped at "));
+    // The engine's own renderer, over the page's own world — the same row
+    // the page's `run` transcript quotes as its last line.
+    expect(stopRow).toBe("stopped at verify (advance)");
+    expect(markdown).toContain(stopRow);
   });
 
   it("every Action reference on the page is a full 40-character SHA", () => {
