@@ -59,6 +59,22 @@ E-05):
   promote's planned channel moves; absence is the pre-ADR-0012 posture and
   refuses nothing.
 
+The declared `versionBand`s are pairwise disjoint (issue #272, D66). Two
+bands overlap when some version satisfies both grammars: equal declared
+major and at least one of the two unpinned on the minor, or both pinned to
+the same minor — so `1.x` and `1.2.x` overlap, majors `1` and `2` do not,
+and `1.2.x` and `1.9.x` do not; two identical bands overlap trivially and
+are refused as their own case (distinct from the unique-line-id rule:
+identical bands on distinct ids are legal ids with an illegal shape). The
+projection (§2.13) admits a tag into every line whose band contains it, so
+a shared version space lets two lines claim one recorded birth — D64's
+birth-identity law (the bootstrap records the birth of exactly one line)
+holds only over disjoint bands, and the input door refuses a violation
+naming both lines and both bands, one per overlapping pair in input order.
+A band-absent line is not a band and joins no comparison: its
+single-line namespace (§2.13) admits every admissible tag, and the unbanded
+line beside banded maintenance lines stays legal.
+
 Repeated execution against an identical `PlanningInput` is deterministic and
 produces an identical plan fingerprint (invariant 2; proven by running the
 golden matrix twice).
