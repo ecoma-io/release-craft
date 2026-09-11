@@ -383,6 +383,70 @@ describe("contract §4 A3 — the planner is an isolated layer", () => {
     ).toEqual([]);
   });
 
+  it("the gate bites: Intl and the toLocale* reads are refused (invariant 2, #292)", () => {
+    // The planted vectors: before the locale entries, a formatter whose
+    // output moves with TZ, LC_ALL and the ICU build read as pure. One
+    // assertion per entry, so removing any single entry reddens exactly
+    // its own pin.
+    expect(
+      render(sideEffectViolations("rogue.ts", 'const f = new Intl.DateTimeFormat("de-DE");\n')),
+    ).toEqual(["src/planner/rogue.ts names Intl — locale-sensitive read"]);
+    // The bare value read is a hit too: the entry refuses the name, not a
+    // property access — the namespace cannot leave the layer as a value.
+    expect(render(sideEffectViolations("rogue.ts", "const locale = Intl;\n"))).toEqual([
+      "src/planner/rogue.ts names Intl — locale-sensitive read",
+    ]);
+    // The toLocale* family, one pin per entry — the reads every String,
+    // Number, Date and Array carry.
+    expect(
+      render(sideEffectViolations("rogue.ts", 'const s = total.toLocaleString("de-DE");\n')),
+    ).toEqual(["src/planner/rogue.ts names toLocaleString — locale-sensitive read"]);
+    expect(
+      render(sideEffectViolations("rogue.ts", 'const d = at.toLocaleDateString("fr");\n')),
+    ).toEqual(["src/planner/rogue.ts names toLocaleDateString — locale-sensitive read"]);
+    expect(
+      render(sideEffectViolations("rogue.ts", 'const t = at.toLocaleTimeString("fr");\n')),
+    ).toEqual(["src/planner/rogue.ts names toLocaleTimeString — locale-sensitive read"]);
+    expect(
+      render(sideEffectViolations("rogue.ts", 'const u = word.toLocaleUpperCase("tr");\n')),
+    ).toEqual(["src/planner/rogue.ts names toLocaleUpperCase — locale-sensitive read"]);
+    expect(
+      render(sideEffectViolations("rogue.ts", 'const l = word.toLocaleLowerCase("tr");\n')),
+    ).toEqual(["src/planner/rogue.ts names toLocaleLowerCase — locale-sensitive read"]);
+    // The locale-free siblings stay clean — the entries name APIs, not
+    // substrings (toString and toUpperCase are locale-independent).
+    expect(
+      render(
+        sideEffectViolations(
+          "plan.ts",
+          "const text = String(total);\nconst upper = word.toUpperCase();\n",
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("the live tree stays clean with the locale entries active (invariant 2, #292)", () => {
+    // The entries are on the list — a silently dropped entry is this
+    // test's own red — and the real layer trips none of them: the
+    // renderer is pure, so the scan over src/planner must come back empty
+    // under the new classes as under the old.
+    const tokens = FORBIDDEN_GLOBALS.map((forbidden) => forbidden.token);
+    for (const token of [
+      "Intl",
+      "toLocaleString",
+      "toLocaleDateString",
+      "toLocaleTimeString",
+      "toLocaleUpperCase",
+      "toLocaleLowerCase",
+    ]) {
+      expect(tokens, `the gate's forbidden list names ${token}`).toContain(token);
+    }
+    expect(
+      render(scan(sideEffectViolations)).filter((violation) => /Intl|toLocale/.test(violation)),
+      "the planner layer trips no locale-sensitivity entry — it reads no locale data (invariant 2)",
+    ).toEqual([]);
+  });
+
   it("double-runs plan over the S-03 world to deep-equal outcomes (§2.14)", () => {
     const first = plan(scenarioInput());
     const second = plan(scenarioInput());
