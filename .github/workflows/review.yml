@@ -6,7 +6,7 @@ name: Review
 # dogfood.md step 11) per maintainer order. Enrolled dry-run first, per the
 # documented ladder; the checklist passed twice and the flip is live.
 #
-# The ref is digest-pinned to the commit the released tag v0.12.0 names — the
+# The ref is digest-pinned to the commit the released tag v0.12.1 names — the
 # same bytes triage runs on since #198. The rollout's policy is the released
 # exact version, never `@main` and never a floating tag: the operator must
 # know which bytes run before any of them do, and adopting a later fix is a
@@ -71,7 +71,7 @@ jobs:
           fetch-depth: 1
 
       - id: review
-        uses: ecoma-io/action-agents/review@97f294f439ee9dd12f60a1a723469f6dcdf9c93f # v0.12.0
+        uses: ecoma-io/action-agents/review@2f0e18a8e1ea5bdfa8fc690057ca1bbdfaa4f3a4 # v0.12.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-url: ${{ secrets.ECOMA_LLM_BASE_URL }}
