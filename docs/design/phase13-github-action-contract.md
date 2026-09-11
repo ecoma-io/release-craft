@@ -349,8 +349,19 @@ The demanded rows (`world`, `line`, `actor`, `tag-namespaces`) are declared
 `required` in the metadata — and the metadata is _not_ the enforcement
 layer: the grammar's own demands stand behind every invocation, and an
 input that arrives empty where the runner's `required` check was satisfiable
-surfaces as the CLI's exit 64 with the synopsis, annotated. The Action adds
-no validation of its own; the closed grammar is the validation.
+surfaces as the CLI's exit 64 with the synopsis, annotated. The Action
+validates one thing of its own — the input **key** inventory — and nothing
+else: the closed grammar is the values' only validation (as amended by
+#191). GitHub passes undeclared `with:` keys through (documented composite
+behavior), so a misspelled key (`intent:` for `intents:`) arrives as an
+unknown `INPUT_<NAME>` name in the step's environment while the declared
+input's default silently takes over — the consumer's intent never arrives
+and nothing says so. The invocation program therefore reads the injected
+`INPUT_` **key names** — never a value; the `${{ inputs.* }}` interpolation
+stays the only channel a value rides — and refuses an unknown name as the
+pre-invocation fault it is, naming the key and the declared set: fail loud,
+never a defaulted typo. Widening the declared set is a reviewed change
+paired with `action.yml`, never an ambient permission.
 
 Sketch of the decided metadata shape (the implementation slice's file, not
 this contract's artifact):
@@ -811,9 +822,12 @@ places, outer and inner, and names what each owns:
   composite's `run:` steps (documented runner behavior), which is why
   `env -i` is load-bearing rather than decorative: without it, every input
   would silently have a second, ambient channel beside the reviewed
-  interpolation. No Action script reads `INPUT_*`; the suite pins that a
-  planted `INPUT_*` lie changes nothing
-  ([§6](#6-test-obligations), fixture 4).
+  interpolation. The invocation program reads the injected `INPUT_` key
+  **names** — never a value — for exactly the one refusal [§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar)
+  owns (an undeclared key, fail loud); a planted lie with a **declared**
+  name still changes nothing — the name compares, the value is never read —
+  and the suite pins both legs
+  ([§6](#6-test-obligations), fixture 4 and the key-inventory fixture).
 - **The inner line — the binding's floor, inherited verbatim.** Every git
   spawn runs on `hermeticGitEnv()` (`src/adapters/git/git-run.ts`, verified):
   process env minus the leaked repository context (`GIT_DIR`,
@@ -992,7 +1006,12 @@ already cover those; phase 11 §5, phase 12 §6).
    `token`, `declarations`, `naming-module`, `target` — phase 12 §6.4's
    fixture, one layer up. The multiline rule is pinned at its edges: the
    dropped trailing newline, the interior empty line forwarded verbatim
-   (`--tag-namespace ""` accepted, `--intent ""` usage-faulted).
+   (`--tag-namespace ""` accepted, `--intent ""` usage-faulted). As amended
+   by #191, the inventory's other side is executable too: an unknown
+   injected `INPUT_` name (a typo'd `with:` key the runner passed through)
+   is the pre-invocation fault — naming the key and the declared set, no
+   annotation, no output written — while a declared name, including one
+   that reaches no flag (`working-directory`), changes nothing.
 7. **Determinism at the step.** Double invocation over one declared world —
    byte-identical outputs and the same conclusion (phase 2 §2.14's law at
    the automation layer).
