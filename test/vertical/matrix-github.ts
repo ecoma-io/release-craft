@@ -12,9 +12,13 @@
  * - the binding's create-if-absent tag door mints real refs in the temp
  *   repository (the mint runs inside the reused run driver), and the
  *   adapter's synchronization — the git-path unit — pushes the recorded refs
- *   to a real bare `origin` the fixture stands up beside the repo. The
- *   fixture never pushes: the adapter's own runner is the only writer of the
- *   remote's refs;
+ *   to a real bare `origin` the fixture stands up beside the repo. Since
+ *   #177 (§2.9; D54) the configured origin is the credentials' repository
+ *   URL — the identity agreement the factory refuses to open without — and
+ *   the bare repository stands behind that URL through a `git` PATH shim
+ *   (the house pattern: every argv delegates to the real git except
+ *   `ls-remote`/`push` of the mapped URL). The fixture never pushes: the
+ *   adapter's own runner is the only writer of the remote's refs;
  * - the injected `GitHubTransport` IS the fake GitHub remote: its two
  *   listings (paginated, D32), its release read and its one create route are
  *   the whole API surface the publication and reconciliation doors reach.
@@ -31,6 +35,15 @@
  * Every golden is matrix.ts recorded data consumed verbatim — no fixture
  * computes. No clock, no environment, no randomness (§5).
  */
+// The origin shim must sit on PATH before the github barrel evaluates
+// (the adapter's transport git freezes its child environment at barrel
+// load) — the shim helper is this file's first import, plain ESM order,
+// and the github barrel is imported only after it. Consumers that need
+// the factory import it from here, never from the barrel directly: an
+// import in a file that loads before this module's shim would freeze an
+// environment the shim never joins.
+import { mapOriginTo, ORIGIN_URL } from "../adapters/github/origin-shim.js";
+
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -52,6 +65,10 @@ import type { ArtifactProducer } from "@ecoma-io/release-craft/__internal__/exec
 import { withTempRepo } from "../adapters/git/temp-repo.js";
 import { openGitState, type Declarations, type GitState } from "./matrix-git.js";
 import { artifactProducers, hookEffects, matrixArtifacts, matrixHooks } from "./matrix.js";
+
+/** The factory, re-exported for this fixture's consumers: importing the
+ *  barrel through this module keeps the shim's PATH ordering intact. */
+export { openGitHubAdapter };
 
 // ---------------------------------------------------------------------------
 // The recorded changelog and the credentials — fixture data, never computed
@@ -299,7 +316,10 @@ export const recordedTagRows = (state: GitState): readonly { name: string; targe
 export interface GitHubVerticalState {
   readonly repo: string;
   /** The bare repository the sync's git path transports against — `origin`,
-   * ADR-0010 decision 3's default, configured by the fixture substrate. */
+   * ADR-0010 decision 3's default, configured by the fixture substrate.
+   * Since #177 (§2.9) the remote is configured under the credentials' URL
+   * (`ORIGIN_URL`), with this bare repository standing behind it through
+   * the shim's map. */
   readonly origin: string;
   /** The 10.4 git-backed state the adapter opens over (binding, runner,
    * line heads, standing channels). */
@@ -362,7 +382,12 @@ export function withGitHubVertical(name: string, fn: (state: GitHubVerticalState
     const origin = mkdtempSync(join(tmpdir(), `release-craft-github-vertical-origin-${name}-`));
     try {
       spawn(["init", "--bare", "--quiet", origin], origin);
-      spawn(["-C", repo, "remote", "add", "origin", origin]);
+      // The remote is configured under the credentials' repository URL —
+      // the identity the adapter's open-time agreement reads (§2.9; #177;
+      // D54) — with the bare repository standing behind it through the
+      // shim's map.
+      spawn(["-C", repo, "remote", "add", "origin", ORIGIN_URL]);
+      mapOriginTo(origin);
       const state = openGitState(repo);
       const changelogDigest = recordChangelogTree(git);
       const hooks = matrixHooks();

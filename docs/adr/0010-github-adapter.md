@@ -75,6 +75,17 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    the process — or the sync discipline (§2.2, the units' synchronous
    shape). Injection at the composition root keeps the token's lifecycle
    entirely with the caller, like the credentials themselves.
+   Amendment for #177 (D55): the factory owns the open-time identity
+   agreement — before any door exists it reads the binding's origin the
+   way the sync transports it (`git remote get-url origin`, the
+   effective URL) and refuses to open (`GitFaultError`, naming both
+   identities) unless the origin and the credentials name the same
+   repository (the Phase 9 contract §2.9). The composition root is the
+   one point every door crosses: a credential for a fork must never
+   reach a factory that would sync to one repository and publish to
+   another. A repository with no origin configured opens — one
+   identity, no agreement to break — and the sync's own environmental
+   fault stands at use time.
 
 3. **Remote synchronization is push-only for writes, fetch-only for
    discovery.** The adapter pushes refs (the binding's claim refs under
@@ -97,6 +108,18 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    vocabulary. ADR-0011 decision 2 records the declared scope; the GitHub
    Action's posture (phase 13 §2.9) states the precondition and the
    failure mode it inherits from this decision.
+   Amendment for #177 (D55): the configured remote and the API doors'
+   addressee are one repository by construction, not by convention —
+   the open-time identity agreement (decision 2's amendment; the Phase
+   9 contract §2.9) parses the origin by git's own URL grammar (the
+   "GIT URLS" section of git's `Documentation/urls.adoc`: the URL
+   forms, the scp-like form with its no-slash-before-the-first-colon
+   recognition rule, the local forms) and opens only when it names the
+   credentials' `owner/repo` on github.com — the credential shape
+   carries no host, so any other host names a repository no expressible
+   credential can be the same as. Push and discover therefore always
+   address the repository the credentials were issued for; an origin
+   that cannot be proven to name it refuses the open, never a door.
 
 4. **Every remote write carries an idempotency identity derived from the
    binding's recorded state (the Phase 9 contract §2.4).** A tag push's
