@@ -36,6 +36,19 @@ const planningLines = (outcome: PlanningOutcome): string[] => {
         : `line ${line.lineId} ${line.stable.version} (tag ${line.stable.tag})`,
     );
   }
+  // The stop-shaped decision records ride the human text (§3.1): a blocked
+  // or refused line contributes no plan line (D18) — the decision record is
+  // the line's whole presence in the pass — so without these rows a door
+  // that exits 0 would name nothing a human can act on while the `--json`
+  // document carries the operator's next move in `decisions[].detail`.
+  // Rendering stays a projection: the same value, no re-translation.
+  for (const decision of outcome.decisions) {
+    if (decision.kind !== "blocked" && decision.kind !== "refused") {
+      continue;
+    }
+    lines.push(`decision ${decision.lineId} ${decision.kind} ${decision.cause}`);
+    lines.push(`detail ${decision.detail}`);
+  }
   return lines;
 };
 

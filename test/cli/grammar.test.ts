@@ -11,7 +11,14 @@ import { writeFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { COMMANDS, GRAMMAR, usageText } from "@ecoma-io/release-craft/__internal__/cli/grammar.js";
+import {
+  COMMANDS,
+  GRAMMAR,
+  HELP_FLAGS,
+  INTENT_SPELLINGS,
+  helpText,
+  usageText,
+} from "@ecoma-io/release-craft/__internal__/cli/grammar.js";
 import { betaIntent, cliJson, docBytes, memoryDoc, runCli, withTempDir } from "./harness.js";
 
 const ABSENT_FLAGS = ["target", "naming-module", "declarations", "help", "h", "version"] as const;
@@ -485,6 +492,58 @@ describe("§2.2 — the negative inventory, through the built bin (exit 64)", ()
     expect(missing.stderr).toContain(
       'the world document at "/nonexistent/world.json" could not be read',
     );
+  });
+});
+
+describe("§2.2 — the help spellings, answered before the grammar dispatches", () => {
+  it("the help flag table is exactly --help and -h", () => {
+    expect(HELP_FLAGS).toStrictEqual(["--help", "-h"]);
+  });
+
+  it("--help and -h print the closed grammar plus the intent spellings, exit 0", () => {
+    for (const flag of ["--help", "-h"]) {
+      const result = runCli([flag]);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout.endsWith("\n")).toBe(true);
+      // The closed grammar itself — the fault synopsis, reused, not a
+      // second text.
+      expect(result.stdout).toContain(usageText());
+      // The one block the synopsis omits: §2.2's declared intent
+      // spellings, named from the list itself — the pin's data and help's
+      // data are the same copy.
+      for (const spelling of INTENT_SPELLINGS) {
+        expect(result.stdout).toContain(spelling);
+      }
+    }
+  });
+
+  it("helpText opens with the fault synopsis — one grammar text, no duplication", () => {
+    expect(helpText().startsWith(usageText())).toBe(true);
+    expect(helpText().length).toBeGreaterThan(usageText().length);
+  });
+
+  it("the spellings block renders the declared list — help and the fault share one copy", () => {
+    // `INTENT_SPELLINGS` is the only list: help renders it joined with
+    // ` | `, the parser's fault names it joined with `, ` — a spelling
+    // added to the list reaches both in the same commit, and a stale
+    // hand-copied block (the pre-#191-round-2 defect) fails here.
+    expect(helpText()).toContain(`    ${INTENT_SPELLINGS.join(" | ")}`);
+    const fault = expectUsageFault([
+      "plan",
+      "--assembly",
+      "memory",
+      "--world",
+      "-",
+      "--intent",
+      "deploy",
+    ]);
+    expect(fault.stderr).toContain(`the declared spellings are ${INTENT_SPELLINGS.join(", ")}`);
+  });
+
+  it("a help spelling is in no command's inventory: run --help stays a usage fault", () => {
+    const result = expectUsageFault(["run", "--help"]);
+    expect(result.stderr).toContain("unknown flag --help");
   });
 });
 

@@ -159,6 +159,22 @@ invariant 2.10 becomes when it reaches the process:
   carrying `:` — the serialization is kind-first and colon-delimited, and
   a colon-bearing stream or line id would make the split ambiguous; such
   an id is declared in the world document, never in an `--intent`.
+- **The help spellings** (as amended by #191): `release-craft --help` or
+  `release-craft -h`, answered in the command position before the grammar
+  dispatches — the closed grammar (the §2.2 block `usageText` renders) plus
+  the intent spellings above, on stdout, exit 0, nothing on stderr, no door
+  reached. `helpText` is built from `usageText`, never duplicated: there is
+  one grammar text and help is its whole rendering, so a row added to the
+  grammar cannot drift from what help prints; the spellings block is the
+  declared list itself (`INTENT_SPELLINGS`, round 2 on #191) — the one
+  copy the parser's fault names and help renders, so a spelling added to
+  the list reaches both in the same commit rather than staling a
+  hand-copied second list behind green pins. A help spelling is
+  deliberately in **no** command's inventory (the negative inventory keeps
+  `--help` and `-h` absent): anywhere but the command position one of them
+  is the unknown flag it always was — `run --help` remains the exit-64
+  fault that prints the same synopsis — and the usage-fault path's
+  semantics are unchanged by the amendment.
 - **Defaults are declared, never ambient.** No flag reads `process.env`, no
   flag defaults from the working directory, no flag falls back to git
   config for the actor. `--actor` is demanded on every mutating door
@@ -459,8 +475,16 @@ across invocations with zero grammar change ([§7](#7-the-other-slices)).
   ([§6](#6-test-obligations), fixture 4).
 - **Default (human) rendering**: the same information, as short text on
   stdout — the kind, the handle, the minted tag, the stopping step and its
-  outcome, the detail/cause string verbatim. Diagnostics, when any, go to
-  stderr. Both shapes carry the same facts; only the encoding differs.
+  outcome, the detail/cause string verbatim. On the plan door this includes
+  the stop-shaped decision records (as amended by #191): a `blocked` or
+  `refused` line contributes no plan line (D18) — the decision record is the
+  line's whole presence in the pass — so its `decision <lineId> <kind>
+<cause>` row and the record's own `detail` are the human text's only
+  rendering of the operator's next move (S-02's bootstrap call among them);
+  without those rows the door exits 0 and names nothing a human can act on
+  while `--json`'s `decisions[]` carries the sentence. Diagnostics, when
+  any, go to stderr. Both shapes carry the same facts; only the encoding
+  differs — the amendment added human lines, never machine bytes.
 
 ### 3.2 The exit-code table
 

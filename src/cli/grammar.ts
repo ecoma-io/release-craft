@@ -130,3 +130,39 @@ export const usageText = (): string =>
     "  assembly flags: --repo <path> --tag-namespace <ns> (git only, repeatable)",
     "                  --max-retries <n> (default 0)",
   ].join("\n");
+
+/** §2.2's declared intent spellings, executable — the one copy. The
+ * `--intent` parser refuses against this list (its fault names it) and
+ * help renders it, so a spelling added here reaches the fault, help, and
+ * every pin in the same commit; no hand-copied second list can go stale. */
+export const INTENT_SPELLINGS: readonly string[] = [
+  "release",
+  "release-anyway",
+  "prerelease:<stream>:<lineId>",
+  "release-as:<version>",
+  "promote:<lineId>",
+];
+
+/** The help spellings — the whole-process question, answered in the
+ * command position before the grammar dispatches (§2.2). Deliberately in
+ * NO command's inventory: the inventories stay closed
+ * (`test/cli/grammar.test.ts` pins `help`/`h` absent), so `run --help`
+ * remains the usage fault that prints the same synopsis; only the
+ * whole-process question is answered, on stdout, exit 0. */
+export const HELP_FLAGS: readonly string[] = ["--help", "-h"];
+
+/** The help text (§2.2): the fault synopsis — `usageText`, reused, never
+ * duplicated — plus the one block the synopsis omits, the declared intent
+ * spellings rendered from `INTENT_SPELLINGS` itself: the list is the one
+ * copy (the parser's fault names it; the pin ties both renderings to it),
+ * so a spelling added to the list reaches help, the fault, and the pins
+ * in the same commit. */
+export const helpText = (): string =>
+  [
+    usageText(),
+    "",
+    "  intents (--intent, repeatable):",
+    `    ${INTENT_SPELLINGS.join(" | ")}`,
+    "",
+    "  help: release-craft --help | -h prints this text and exits 0",
+  ].join("\n");

@@ -11,12 +11,14 @@
  * both rendering the outcome on stdout — 64 a usage fault (with the
  * synopsis, on stderr, stdout empty), 70 an escaped throw (name and
  * message verbatim on stderr, stdout empty). An outcome is never
- * translated into a fault and a fault never renders as an outcome.
+ * translated into a fault and a fault never renders as an outcome. The
+ * one answer that is no door and no fault: `--help`/`-h` in the command
+ * position prints the closed grammar (§2.2) on stdout and exits 0.
  */
 
 import type { StepKey } from "@ecoma-io/release-craft/execution";
 import { EXIT_FAULT, EXIT_USAGE, exitCodeFor, type DoorOutcome } from "./exit-codes.js";
-import { usageText } from "./grammar.js";
+import { HELP_FLAGS, helpText, usageText } from "./grammar.js";
 import { overlayIntents } from "./intents.js";
 import { parseArgv, UsageFault, type Invocation } from "./parse.js";
 import { renderHuman, renderJson } from "./render.js";
@@ -94,6 +96,16 @@ const faultOrUsage = (error: unknown): number => {
 };
 
 const main = (argv: readonly string[]): number => {
+  // The whole-process question (§2.2): the closed grammar plus the intent
+  // spellings on stdout, exit 0, nothing on stderr, no door reached. The
+  // help spellings are answered in the command position only — anywhere
+  // else one of them is the unknown flag it always was, and the usage
+  // fault that answers prints the same synopsis.
+  const first = argv[0];
+  if (first !== undefined && HELP_FLAGS.includes(first)) {
+    process.stdout.write(`${helpText()}\n`);
+    return 0;
+  }
   let invocation: Invocation;
   try {
     invocation = parseArgv(argv);
