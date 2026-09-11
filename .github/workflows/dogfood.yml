@@ -19,12 +19,24 @@ name: dogfood
 #      conclusion equals the conclusion table's row for the envelope's
 #      kind.
 #
-# The workflow captures; it never judges. Every dump below is
-# display-not-translation, and `if: always()` guards the evidence — a
-# stop-band verdict concludes FAILURE, and the evidence must be captured
-# regardless. The judgment itself reads the run's log against the four
-# classes; one mismatch is a filed defect against the owning slice, never
-# a waived row.
+# The workflow captures AND judges. The judge step below re-derives, in
+# the same job, every class the captured material can settle mechanically
+# (`scripts/dogfood/judge.mjs`): the envelope's shape inventory and
+# carrying fields (class 2), the recorded tail against the envelope's own
+# drives (class 3), the step conclusion against the conclusion table's row
+# for the rendered kind (class 4's conclusion half), and — at this
+# workflow's declared posture (`intents: release`, whose only rendered
+# kind is `published`, the conclusion table's sole exit-0 kind) — the
+# exit-code row (class 1). Whatever the judge cannot settle mechanically
+# it prints as an explicit NOT ASSERTED row, never a pretend pass: the
+# byte-for-byte equality of the `outcome` output with the invoke step's
+# log relay (class 4's byte half — a running job cannot read its own step
+# log through the API), and the exact nonzero exit value for a stop-band
+# kind (none is reachable at this posture). One judge mismatch fails the
+# job and is a filed defect against the owning slice, never a waived row;
+# the dumps below stay display-not-translation, and `if: always()` guards
+# them because a stop-band verdict concludes FAILURE and the evidence
+# must be captured regardless.
 #
 # `workflow_dispatch` is the ONLY trigger, on purpose: the dogfood must
 # never run during the PR's own CI — it mints a tag, and a push or PR
@@ -147,3 +159,26 @@ jobs:
           cat remote-before.txt
           echo '--- after ---'
           cat remote-after.txt
+
+      # — the judgment — the four classes over what this job can settle
+      # mechanically, asserted in-job instead of left to a human log read.
+      # The survivor and the conclusion reach the judge through `env:` (the
+      # same `if: always()` posture as the capture: a stop-band run still
+      # carries its envelope, and the judge, not the absence of evidence,
+      # is what must fail). A judge FAIL exits nonzero, which fails the
+      # job — the certification's machine leg; the rows it cannot settle
+      # print as NOT ASSERTED and stay a human log read (see the header).
+      # The rows also land on the job summary, so the verdict survives the
+      # runner.
+      - name: Judge the captured classes
+        if: always()
+        env:
+          RC_OUTCOME: ${{ steps.invoke.outputs.outcome }}
+          RC_CONCLUSION: ${{ steps.invoke.conclusion }}
+        run: |
+          set -euo pipefail
+          node scripts/dogfood/judge.mjs \
+            --repo . \
+            --actor release-craft-dogfood \
+            --expect-kind published \
+            | tee -a "$GITHUB_STEP_SUMMARY"
