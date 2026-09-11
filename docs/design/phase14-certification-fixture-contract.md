@@ -774,9 +774,16 @@ decided-empty token journey), not that anything left the runner.
 `self-release.yml` is the real leg beside it, and it grows nothing on the
 Action itself: the same `workflow_dispatch`-only trigger, the same
 caller-side world closure, the same pinned Action at a full SHA, the same
-in-job judgment — plus the two steps the dogfood refuses by design. The
-publish step (`scripts/dogfood/publish-mint.mjs`) carries the run's local
-mint to origin: the credential is the workflow's own, step-scoped through
+in-job judgment — plus the caller-side steps the read-only dogfood has no
+counterpart for: the shared claims-register integration fetch (#274,
+decision-log D65), the publish step, and the origin leg below. Two of the
+three touch no origin state — the fetch, which brings
+`refs/release-craft/claims/*` into the checkout before the run
+(caller-side substrate posture, the engine discovering nothing), and the
+origin leg, which only reads origin back. The publish step
+(`scripts/dogfood/publish-mint.mjs`) is the one step the dogfood refuses
+by design, and it carries the run's local mint to origin: the credential
+is the workflow's own, step-scoped through
 `env:` and spent through the inline credential helper of the github
 adapter's own class (`remote-git.ts` — child-scoped, never persisted to
 config or disk, never ambient, never an argument, never a URL), and the

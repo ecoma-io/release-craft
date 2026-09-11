@@ -98,16 +98,22 @@ credentials: GitHubCredentials): GitHubAdapter`. The binding is already
    merging remote refs into the local namespace. Revised in #133: the
    binding's namespace is `refs/release-craft/` (product-neutral, invariant
    2.12) — the mapping's shape is unchanged.
-   The never-fetch clause's scope consequence, recorded in #182: because
-   nothing fetches `refs/release-craft/*` into a checkout (a standard
-   clone fetches only `refs/heads/*` and `refs/tags/*`), the claim
-   exclusion the binding enforces holds within one repository's ref space
-   and exactly that far — two runs of one line in two separate checkouts
-   each acquire, both mint, and the divergence surfaces at the consumer's
-   push as a non-fast-forward rejection outside the engine's verdict
-   vocabulary. ADR-0011 decision 2 records the declared scope; the GitHub
-   Action's posture (phase 13 §2.9) states the precondition and the
-   failure mode it inherits from this decision.
+   The never-fetch clause's scope consequence, recorded in #182: the
+   binding itself never fetches `refs/release-craft/*` into a checkout —
+   that is this decision's own hand, and the clause above stands — while
+   which refs a checkout holds is also its caller's posture (a standard
+   clone fetches only `refs/heads/*` and `refs/tags/*`; a caller may fetch
+   the claim namespace itself, and the self-release caller does —
+   decision-log D65). Where no caller fetch joins the checkouts onto the
+   namespace — the bare-clone shape the negative capability test pins —
+   the claim exclusion the binding enforces holds within one repository's
+   ref space and exactly that far: two runs of one line in two separate
+   checkouts each acquire, both mint, and the divergence surfaces at the
+   consumer's push as a non-fast-forward rejection outside the engine's
+   verdict vocabulary. A caller-side fetch changes which refs the writers
+   share, never the exclusion's reach. ADR-0011 decision 2 records the
+   declared scope; the GitHub Action's posture (phase 13 §2.9) states the
+   precondition and the failure mode it inherits from this decision.
    Amendment for #177 (D55): the configured remote and the API doors'
    addressee are one repository by construction, not by convention —
    the open-time identity agreement (decision 2's amendment; the Phase

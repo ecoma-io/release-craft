@@ -191,14 +191,22 @@ mint(tag, target) — the binding's tag door, not the port —
   window (#47) does not exist. The CAS arbitrates one shared ref space —
   the writers of one repository, over that repository's own
   `refs/release-craft/*` — and its reach ends at the ref space's edge
-  (#182): writers in different checkouts of one repository hold disjoint
-  claim refs (a standard clone fetches only `refs/heads/*` and
-  `refs/tags/*`; the adapter never fetches remote claim state — ADR-0010
-  decision 3), so both acquire the same line and both mint, and the
-  divergence surfaces at the consumer's push as a non-fast-forward
+  (#182). Which refs of that space a checkout holds is the checkout's and
+  its caller's posture, not the CAS's: writers in different checkouts of
+  one repository hold disjoint claim refs when neither checkout has the
+  namespace fetched into it (a standard clone fetches only `refs/heads/*`
+  and `refs/tags/*`; the adapter never fetches remote claim state —
+  ADR-0010 decision 3), so both acquire the same line and both mint, and
+  the divergence surfaces at the consumer's push as a non-fast-forward
   rejection outside the engine's verdict vocabulary — the declared scope
   ADR-0011 decision 2 records and the negative capability test pins. A
-  lost CAS re-reads and re-evaluates —
+  caller that fetches the namespace before the run joins its checkouts
+  onto the shared space the CAS already arbitrates — the self-release
+  surface does (decision-log D65): its sequential second dispatch
+  adjudicates against the fetched register, its concurrent dispatches
+  queue on the workflow's concurrency group, and both postures leave the
+  reach sentence above verbatim (the racing residue is #237, still
+  declared). A lost CAS re-reads and re-evaluates —
   it never adjudicates against stale state; releasing the last claim of
   a line leaves the empty register in place (the ref is never deleted,
   so the write path stays one primitive); and a claim-namespace blob
