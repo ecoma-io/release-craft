@@ -151,6 +151,14 @@ function buildLedgerRepo(tail, { mintTag = true, extraAttempt = false } = {}) {
       {
         cwd: repo,
         encoding: "utf8",
+        // The ambient environment is held out, the way runJudge holds it out:
+        // invoked from a git hook, git exports GIT_DIR, and GIT_DIR overrides
+        // cwd-based repository discovery — without this, the fixture's
+        // `record` commits land in the developer's working repository.
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+        },
       },
     );
     assert.equal(result.status, 0, `fixture git ${args.join(" ")} failed: ${result.stderr}`);
