@@ -125,8 +125,11 @@ const firstUnrecordedArtifact = (
 
 /** The durable detail a non-re-proved hold carries on its passed guard row
  * (#269), per derivation token — the closed vocabulary on
- * `PreconditionObservation.derivation`. A token with no entry records no
- * detail, byte-identical to the pre-#269 shape. */
+ * `PreconditionObservation.derivation`. A row without a derivation records no
+ * detail, byte-identical to the pre-#269 shape; a row whose token is outside
+ * this map never reaches the emission — the door refuses it upstream
+ * (`KNOWN_DERIVATIONS` below is this map's own key set, the vocabulary's one
+ * copy). */
 const DERIVATION_DETAILS: Partial<Record<"plan-recorded", string>> = {
   "plan-recorded":
     "plan-recorded: the hold is the plan's own recorded precondition content, derived at planning from the closed input world — the walk re-observed nothing (phase 11 §2.5)",
