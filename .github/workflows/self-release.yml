@@ -1,0 +1,244 @@
+name: self-release
+
+# The self-release (#259, decision-log D63; phase 14 §7's self-release
+# surface): this repository's release really minted on origin through this
+# repository's own Action. The dogfood (`dogfood.yml`) is the read-only
+# rehearsal — `permissions: contents: read`, no persisted credentials, and
+# zero remote writes PROVEN by hashing `git ls-remote` before and after,
+# because "published" through the Action means the walk completed and the
+# tag exists in the runner's copy (phase 13 §2.8: the Action's own token
+# journey is decided empty). This workflow is the real leg beside it: the
+# same caller-side world closure, the same pinned Action, the same in-job
+# judgment — plus the two steps the dogfood refuses by design, the publish
+# step that carries the run's local mint to origin and the origin
+# verification that reads origin back against the run's claims
+# (`scripts/dogfood/publish-mint.mjs`, `scripts/dogfood/verify-origin.mjs`).
+#
+# The Action's surface does not grow to make this possible: no token input
+# exists (§2.8's decided-empty journey; the input inventory is closed and
+# unknown inputs are refused — #191, #252), so the credential is the
+# workflow's own, step-scoped through `env:` and spent by the publish
+# script exactly the in-tree precedent's class (phase 13 §2.8,
+# `src/adapters/github/remote-git.ts`): an inline credential helper
+# answering from the spawned git's own child environment behind the empty
+# helper that resets any inherited helper list — never persisted to config
+# or disk (`persist-credentials: false` below keeps the checkout's token
+# out of `.git/config`, which `pnpm check:workflows` enforces on every
+# workflow in this repository), never ambient, never an argument, never a
+# URL. The job's permission is the minimum a mint needs: `contents: write`
+# and nothing else.
+#
+# What is judged, and how a refusal stays honest: the dispatch declares its
+# expected kind (`expect-kind`, demanded, no default — a posture is
+# declared, never guessed) from the run union, and the same three judges
+# the dogfood's run carries judge it here:
+#
+#   - `scripts/dogfood/judge.mjs` — the four classes over the captured
+#     material. For a `published` dispatch every machine-available row is
+#     asserted. For a stop-band dispatch (the unchanged re-dispatch: the
+#     mint's scope is already owned — `denied`, exit 11, the holder named,
+#     or the tag-absent precondition's `blocked`, exit 12, where the tag
+#     rode origin into a fresh checkout) the judge reuses its declared
+#     degraded posture unchanged: the conclusion row is asserted (a
+#     stop-band kind concludes failure through the conclusion table), and
+#     the exact exit value, the carrying fields, and the ledger projection
+#     print as named NOT ASSERTED rows — a judged refusal, never a spurious
+#     failure and never a waived pass;
+#   - `scripts/dogfood/verify-origin.mjs` — the origin leg: a published
+#     verdict must find every (refname, sha) pair it minted present on
+#     origin, its tag among them, with origin itself cross-checked as the
+#     dispatching repository; any other verdict must find origin
+#     byte-identical to its before-state. Missing tag or refs fails the
+#     job — the green-but-unminted silent failure this leg exists to catch.
+#
+# `workflow_dispatch` is the ONLY trigger, the dogfood's own law: a release
+# surface must never mint on a push or PR trigger — a push trigger would
+# mint on every merge instead of under a judged dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      expect-kind:
+        description: >-
+          The run-union kind this dispatch declares and judges against:
+          published for a fresh or changed cycle, the rendered stop-band
+          kind (denied, blocked, ...) for a replay dispatch. Demanded — a
+          posture is declared, never inferred; an unknown kind is a usage
+          fault in the verify step.
+        required: true
+        type: string
+
+concurrency:
+  # Two dispatches at once would race for the same mint; the second one's
+  # conflict is evidence, not something to cancel a first run over — the
+  # dogfood's own spelling, and the serialization the racing-dispatch
+  # silent-failure class is answered with.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  # The minimum a real mint needs: the tag and the refs/release-craft/*
+  # namespaces are contents. Nothing else — no actions, no id-token, no
+  # packages.
+  contents: write
+
+jobs:
+  self-release:
+    name: self-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # No token past this step (`persist-credentials: false` — the org law
+      # every checkout in this repository carries, and the reason the
+      # publish step spends its own step-scoped credential instead of an
+      # ambient one). Full history is load-bearing twice over here: the
+      # world closure observes the line's whole ancestry (a shallow clone
+      # would close a world whose birth is the clone's edge — a declared
+      # lie), and the mint's `rev-parse` resolves the head the run walks.
+      - name: Check out the repository the run releases
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The closure, the publish script and the verify script import
+      # `node:` modules only — zero installs — but the interpreter is
+      # pinned by value (§2.2's posture, the same value the Action pins).
+      - name: Provision Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # The caller closes the world (phase 12 §2.4); the CLI discovers
+      # nothing. The same closure the dogfood runs — this repository's own
+      # world, over the dispatched main.
+      - name: Close the world
+        run: node scripts/dogfood/close-world.mjs > world.json
+
+      # The snapshots every later row reads: the remote's refs, hashed, and
+      # the local substrate, listed — the before-state the publish step
+      # diffs to choose what to push and the verify step diffs to know what
+      # must have landed. The remote is public; this read needs no
+      # credential, and none exists to leak into it.
+      - name: Record the snapshots the verification reads
+        run: |
+          git ls-remote origin > remote-before.txt
+          sha256sum remote-before.txt
+          git for-each-ref --format='%(refname) %(objectname)' > local-refs-before.txt
+
+      # A consumer's invocation, spelled as the dogfood spells it — the
+      # same eight declared inputs, the every-tag namespace root as ONE
+      # EMPTY LINE, the FULL 40-character SHA this workflow certifies
+      # (§2.1: one commit, one behavior; re-pinned by reviewed commits, as
+      # the dogfood's pin is). The actor is the dispatch's invoking
+      # identity — §2.4's own spelling ("the workflow author writes
+      # `actor: ${{ github.actor }}` when the triggering identity is their
+      # declared word"): a bot dispatch records the token identity, never a
+      # human maintainer's name.
+      - name: Invoke the run door
+        id: invoke
+        uses: ecoma-io/release-craft@5b8300f5a0ede34cdc3f75423cb9d9ad2acfd23e
+        with:
+          world: world.json
+          line: main
+          actor: ${{ github.actor }}
+          tag-namespaces: "\n"
+          intents: release
+          repo: .
+          max-retries: "0"
+
+      # — the publish — the one step the dogfood refuses by design. The
+      # authority to push is the envelope's rendered kind (never the
+      # dispatch's declaration): a published verdict is the engine's own
+      # mint, and the exact (refname, sha) pairs the run minted locally
+      # ride origin atomically through the child-scoped credential; any
+      # other verdict pushes nothing. The token enters through `env:` (the
+      # workflow gate's law), never a `run:` interpolation, and the helper
+      # reads it from the child's own environment.
+      - name: Publish the mint to origin
+        if: always()
+        env:
+          RC_OUTCOME: ${{ steps.invoke.outputs.outcome }}
+          RC_TOKEN: ${{ github.token }}
+        run: node scripts/dogfood/publish-mint.mjs --local-before local-refs-before.txt
+
+      # — the evidence — display only, captured before the runner
+      # evaporates, guarded by `always()` because a stop-band verdict
+      # concludes FAILURE and the evidence must be captured regardless. The
+      # `outcome` output reaches this shell through `env:`, never an
+      # interpolation into the script source, so its bytes are dumped, not
+      # re-quoted. The remote-after half is captured HERE, after the
+      # publish step and before the verify step reads it.
+      - name: Capture the evidence
+        if: always()
+        env:
+          OUTCOME: ${{ steps.invoke.outputs.outcome }}
+        run: |
+          set -euo pipefail
+          echo '## the commit the run certified'
+          git rev-parse HEAD
+          echo '## the closed world the run planned over'
+          cat world.json
+          echo '## the refs after the run'
+          git for-each-ref
+          echo '## the recorded ledger tails'
+          for ref in $(git for-each-ref --format='%(refname)' 'refs/release-craft/ledger/'); do
+            echo "== ${ref}"
+            for sha in $(git rev-list --first-parent "${ref}"); do
+              echo "-- commit ${sha}"
+              git show "${sha}:record"
+            done
+          done
+          echo '## the tags after the run'
+          git tag -l
+          echo '## the outcome output, byte for byte'
+          printf '%s' "$OUTCOME" | od -c
+          echo '## the remote refs, before and after the run'
+          git ls-remote origin > remote-after.txt
+          sha256sum remote-before.txt remote-after.txt
+          echo '--- before ---'
+          cat remote-before.txt
+          echo '--- after ---'
+          cat remote-after.txt
+
+      # — the judgment — the four classes over what this job can settle
+      # mechanically, exactly the dogfood's step at this workflow's
+      # declared posture (`--expect-kind` from the dispatch's input; for a
+      # stop-band dispatch the judge's degraded posture prints the named
+      # NOT ASSERTED rows and certifies what it can). A judge FAIL exits
+      # nonzero and fails the job — the certification's machine leg.
+      - name: Judge the captured classes
+        if: always()
+        env:
+          RC_OUTCOME: ${{ steps.invoke.outputs.outcome }}
+          RC_CONCLUSION: ${{ steps.invoke.conclusion }}
+          EXPECT_KIND: ${{ inputs.expect-kind }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          node scripts/dogfood/judge.mjs \
+            --repo . \
+            --actor "$ACTOR" \
+            --expect-kind "$EXPECT_KIND" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # — the origin leg — the run's claims read back against origin: the
+      # minted pairs present, the tag among them, origin itself the
+      # dispatching repository; or, on any other verdict, origin
+      # byte-identical to its before-state. `always()` semantics: a failed
+      # publish or a stop-band verdict still leaves this row's evidence on
+      # the run page.
+      - name: Verify the run's claims against origin
+        if: always()
+        env:
+          RC_OUTCOME: ${{ steps.invoke.outputs.outcome }}
+          EXPECT_KIND: ${{ inputs.expect-kind }}
+          EXPECT_ORIGIN: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node scripts/dogfood/verify-origin.mjs \
+            --before remote-before.txt \
+            --after remote-after.txt \
+            --local-before local-refs-before.txt \
+            --expect-kind "$EXPECT_KIND" \
+            --expect-origin "$EXPECT_ORIGIN" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
