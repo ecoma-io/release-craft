@@ -384,7 +384,7 @@ describe("normalize — the closed input boundary (§2.1)", () => {
     });
   });
 
-  describe("declared version bands — pairwise disjoint (§2.1, D66)", () => {
+  describe("declared version bands — pairwise disjoint (§2.1, D67)", () => {
     it("refuses the overlapping bands of issue #272 — a 1.x line beside a 1.2.x line — naming both lines and both bands", () => {
       const input = withLines([
         { ...baseLine(), id: "1.x", versionBand: { major: 1 } },

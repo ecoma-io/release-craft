@@ -5,7 +5,7 @@
  * stating one intent twice has stated it once; intents differing in any
  * field stay, since contradictions like promote-over-pending are
  * decide-layer concerns, never input-layer ones). The lines' declared
- * `versionBand`s must be pairwise disjoint (§2.1, D66): overlapping bands
+ * `versionBand`s must be pairwise disjoint (§2.1, D67): overlapping bands
  * would let two lines claim one recorded birth — the configuration D64's
  * exactly-one-line birth law forbids — so the door refuses it here, where
  * it is cheap and loud, instead of leaving `decide.ts`'s birth projection
@@ -440,7 +440,7 @@ function checkTags(
 }
 
 /** Line validation (§2.6): at least one line, unique ids, pairwise-disjoint
- * declared version bands (§2.1, D66), closed schema, and the declared line
+ * declared version bands (§2.1, D67), closed schema, and the declared line
  * policy (ADR-0004): the stream policy inside its declared fork, withhold
  * rules that can be explained, and a `publishes` binding naming a declared
  * component. */
@@ -542,7 +542,7 @@ function declaredBandOf(line: Record<string, unknown>): DeclaredBand | undefined
 }
 
 /**
- * The version-space predicate (§2.1, D66): two bands overlap when some
+ * The version-space predicate (§2.1, D67): two bands overlap when some
  * version satisfies both grammars — equal declared majors and at least one
  * band unpinned on the minor, or both pinned to the same minor. So `1.x`
  * overlaps `1.2.x`; disjoint majors never overlap; the same major with
@@ -565,7 +565,7 @@ function bandSeries(band: DeclaredBand): string {
 }
 
 /**
- * The declared bands are pairwise disjoint (§2.1, D66, issue #272): §2.13's
+ * The declared bands are pairwise disjoint (§2.1, D67, issue #272): §2.13's
  * projection admits a tag into every line whose band contains it, so two
  * overlapping bands let both lines claim the same recorded birth — while
  * D64's law is that the bootstrap records the birth of exactly one line.

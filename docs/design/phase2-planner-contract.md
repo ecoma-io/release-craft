@@ -59,7 +59,7 @@ E-05):
   promote's planned channel moves; absence is the pre-ADR-0012 posture and
   refuses nothing.
 
-The declared `versionBand`s are pairwise disjoint (issue #272, D66). Two
+The declared `versionBand`s are pairwise disjoint (issue #272, D67). Two
 bands overlap when some version satisfies both grammars: equal declared
 major and at least one of the two unpinned on the minor, or both pinned to
 the same minor — so `1.x` and `1.2.x` overlap, majors `1` and `2` do not,

@@ -1518,11 +1518,11 @@ describe("the ambiguous-attribution refusal through the door", () => {
 });
 
 // ---------------------------------------------------------------------------
-// §2.1 (D66, issue #272) — the overlapping-band world is refused at the
+// §2.1 (D67, issue #272) — the overlapping-band world is refused at the
 // planning door, before any decision is reached
 // ---------------------------------------------------------------------------
 
-describe("the overlapping-band world through the door (D66)", () => {
+describe("the overlapping-band world through the door (D67)", () => {
   // Issue #272's exact configuration: two lines whose bands share the
   // major-1 version space, a recorded bootstrap of 1.2.0 inside the
   // overlap, and the observed tag both bands admit. D64's birth-identity
