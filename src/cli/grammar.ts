@@ -152,10 +152,11 @@ export const INTENT_SPELLINGS: readonly string[] = [
 export const HELP_FLAGS: readonly string[] = ["--help", "-h"];
 
 /** The help text (§2.2): the fault synopsis — `usageText`, reused, never
- * duplicated — plus the one block the synopsis omits, the intent
- * spellings (§2.2's five rows, the same list the intent parser's own
- * fault names). Built from the synopsis so a grammar row cannot drift
- * from help: there is one grammar text, and this is its whole rendering. */
+ * duplicated — plus the one block the synopsis omits, the declared intent
+ * spellings rendered from `INTENT_SPELLINGS` itself: the list is the one
+ * copy (the parser's fault names it; the pin ties both renderings to it),
+ * so a spelling added to the list reaches help, the fault, and the pins
+ * in the same commit. */
 export const helpText = (): string =>
   [
     usageText(),

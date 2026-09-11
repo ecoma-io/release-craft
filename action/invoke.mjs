@@ -167,8 +167,13 @@ function parseProtocol(argv) {
  * says so. The fail-loud law (§2.3 as amended): an unknown name is the
  * pre-invocation fault it is — this program names the key and the
  * declared set instead of running on a default the consumer never chose.
- * Widening this set is a reviewed change paired with `action.yml`, never
- * an ambient permission.
+ * The refusal reaches foreign names too, by design: the runner propagates
+ * the step's whole environment into a composite step, so a workflow-level
+ * `env:` variable named `INPUT_<something>` lands in the same scan and a
+ * legitimate run behind a colliding ambient name fails loud rather than
+ * letting anything outside `with:` speak in an input's name. Widening
+ * this set is a reviewed change paired with `action.yml`, never an
+ * ambient permission.
  *
  * @type {ReadonlySet<string>}
  */
@@ -189,7 +194,11 @@ const DECLARED_INPUTS = new Set([
  * lower-cased (the runner upper-cases names and folds spaces to
  * underscores; a hyphen is not folded, so `max_retries` does not decode
  * to the declared `max-retries` — it is refused, which is the point).
- * Names only: the values in `env` are never read here.
+ * A name of exactly `INPUT_` — nothing after the prefix — is ignored: no
+ * action input's name is the empty string, so the empty-name arm declares
+ * the boundary rather than validating a value; the rule stays name-based
+ * and value-blind throughout. Names only: the values in `env` are never
+ * read here.
  *
  * @param {NodeJS.ProcessEnv} env
  * @returns {string[]}

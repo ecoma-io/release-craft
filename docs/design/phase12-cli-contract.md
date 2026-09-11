@@ -165,7 +165,11 @@ invariant 2.10 becomes when it reaches the process:
   the intent spellings above, on stdout, exit 0, nothing on stderr, no door
   reached. `helpText` is built from `usageText`, never duplicated: there is
   one grammar text and help is its whole rendering, so a row added to the
-  grammar cannot drift from what help prints. A help spelling is
+  grammar cannot drift from what help prints; the spellings block is the
+  declared list itself (`INTENT_SPELLINGS`, round 2 on #191) — the one
+  copy the parser's fault names and help renders, so a spelling added to
+  the list reaches both in the same commit rather than staling a
+  hand-copied second list behind green pins. A help spelling is
   deliberately in **no** command's inventory (the negative inventory keeps
   `--help` and `-h` absent): anywhere but the command position one of them
   is the unknown flag it always was — `run --help` remains the exit-64

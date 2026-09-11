@@ -360,8 +360,14 @@ and nothing says so. The invocation program therefore reads the injected
 `INPUT_` **key names** — never a value; the `${{ inputs.* }}` interpolation
 stays the only channel a value rides — and refuses an unknown name as the
 pre-invocation fault it is, naming the key and the declared set: fail loud,
-never a defaulted typo. Widening the declared set is a reviewed change
-paired with `action.yml`, never an ambient permission.
+never a defaulted typo. A foreign name is refused by the same arm and by
+design (review round 2 on #191): the runner propagates the step's whole
+environment into a composite step, so a workflow-level `env:` variable
+named `INPUT_<something>` reaches the same scan and a legitimate run
+behind a colliding ambient name fails loud instead of impersonating a
+default — the declared set is the Action's own, and nothing outside
+`with:` may speak in an input's name. Widening the declared set is a
+reviewed change paired with `action.yml`, never an ambient permission.
 
 Sketch of the decided metadata shape (the implementation slice's file, not
 this contract's artifact):
