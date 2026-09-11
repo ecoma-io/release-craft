@@ -81,7 +81,7 @@ type RecordedChangelog =
  *  status 0 to `ambiguous` (§2.3) before classifying the rest. */
 type FailureTail =
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
-  | { readonly kind: "transport-failure" };
+  | { readonly kind: "transport-failure"; readonly detail?: string };
 
 const failureTail = (response: GitHubResponse): FailureTail => {
   const failure = readFailure(response);
@@ -312,7 +312,12 @@ export function GitReleasePublication(
         return url === undefined ? { kind: "transport-failure" } : { kind: "ok", url };
       }
       if (created.status === 0) {
-        return { kind: "ambiguous" };
+        // The ambiguous window stays the class (the write may have
+        // landed unseen); the thrown transport's words — a synthesized
+        // status 0 carries them — ride the outcome's detail for the
+        // debugging operator (issue #179; round-1 review minor 3).
+        const thrown = bodyMessage(created.body);
+        return thrown === undefined ? { kind: "ambiguous" } : { kind: "ambiguous", detail: thrown };
       }
       if (created.status === 404) {
         return failureTail(created);

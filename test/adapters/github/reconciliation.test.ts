@@ -905,8 +905,22 @@ describe("the walk's completeness evidence and its faults (§4 scenarios 22–23
         },
       };
       const report = fixture.reconcile(transport);
-      expect(report.tags).toEqual({ state: "transport-failure" });
-      expect(report.releases).toEqual({ state: "transport-failure" });
+      // The thrown value's own words survive the guard: the failure's
+      // detail carries the error's name and message and the request
+      // surface it escaped from — a bare status would leave an operator
+      // debugging a hostile transport nothing to read.
+      expect(report.tags).toEqual({
+        state: "transport-failure",
+        detail: expect.stringContaining("Error: hostile transport") as string,
+      });
+      if (report.tags.state !== "transport-failure") {
+        throw new Error("unreachable");
+      }
+      expect(report.tags.detail).toContain("GET /repos/ecoma-io/release-craft/tags");
+      expect(report.releases).toEqual({
+        state: "transport-failure",
+        detail: expect.stringContaining("Error: hostile transport") as string,
+      });
     });
   });
 
@@ -930,7 +944,10 @@ describe("the walk's completeness evidence and its faults (§4 scenarios 22–23
         },
       };
       const report = fixture.reconcile(transport);
-      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(report.tags).toEqual({
+        state: "transport-failure",
+        detail: expect.stringContaining("hostile transport on the follow-up page") as string,
+      });
       expect(tagsRequests).toBe(2);
       expect(report.releases).toEqual({
         state: "listed",
@@ -938,6 +955,62 @@ describe("the walk's completeness evidence and its faults (§4 scenarios 22–23
         pagination: "complete",
         divergences: [],
       });
+    });
+  });
+
+  it("R-23 — a next target whose whitespace is load-bearing is malformed on the raw value, never laundered", () => {
+    withReconcileRepo("padded-next-target", (fixture) => {
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.path.includes("/releases")) {
+          return listResponse([]);
+        }
+        if (calls.length > 1) {
+          throw new Error(`the walk followed the laundered target: ${call.path}`);
+        }
+        return rawResponse(
+          200,
+          // The leading space is part of the value the header carried:
+          // `< /repos/…>` conveys " /repos/…", and trimming the target
+          // before classification would launder a link the provider did
+          // not mean into a request.
+          { link: `< /repos/ecoma-io/release-craft/tags?page=2>; rel="next"` },
+          JSON.stringify([tagRow("v1.2.3", fixture.recordedTarget)]),
+        );
+      });
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(calls.map((call) => call.path)).toEqual([
+        "/repos/ecoma-io/release-craft/tags?per_page=100",
+        "/repos/ecoma-io/release-craft/releases?per_page=100",
+      ]);
+    });
+  });
+
+  it("R-23 — a zero-width character in a next target is malformed, never an invisible part of a request", () => {
+    withReconcileRepo("zwsp-next-target", (fixture) => {
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.path.includes("/releases")) {
+          return listResponse([]);
+        }
+        if (calls.length > 1) {
+          throw new Error(`the walk followed the invisible target: ${call.path}`);
+        }
+        return rawResponse(
+          200,
+          // U+200B (zero width space, Unicode category Cf) renders as
+          // nothing between the path and the query: a screen matching
+          // only visible whitespace would follow a link whose target no
+          // reader can see.
+          { link: `</repos/ecoma-io/release-craft/tags\u200b?page=2>; rel="next"` },
+          JSON.stringify([tagRow("v1.2.3", fixture.recordedTarget)]),
+        );
+      });
+      const report = fixture.reconcile(transport);
+      expect(report.tags).toEqual({ state: "transport-failure" });
+      expect(calls.map((call) => call.path)).toEqual([
+        "/repos/ecoma-io/release-craft/tags?per_page=100",
+        "/repos/ecoma-io/release-craft/releases?per_page=100",
+      ]);
     });
   });
 });

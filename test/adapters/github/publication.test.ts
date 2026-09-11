@@ -715,7 +715,12 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
       seed(fixture);
       const { transport } = hostileTransport(() => true);
       const outcome = fixture.adapter(transport).publishRelease(TAG);
-      expect(outcome).toEqual({ kind: "transport-failure" });
+      // The thrown value's own words survive the guard on the failure's
+      // detail — the operator reads what escaped, not a bare status.
+      expect(outcome).toEqual({
+        kind: "transport-failure",
+        detail: expect.stringContaining("Error: hostile transport") as string,
+      });
     });
   });
 
@@ -726,10 +731,18 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
       // create's transport throws. A throw is indistinguishable from a
       // lost connection: the write may have landed unseen, so the
       // outcome is §2.3's ambiguous window, never a determinate
-      // failure and never an escape.
+      // failure and never an escape — and the thrown words ride the
+      // outcome's detail, naming the write surface they escaped from.
       const { transport, calls } = hostileTransport((call) => call.init?.method === "POST");
       const outcome = fixture.adapter(transport).publishRelease(TAG);
-      expect(outcome).toEqual({ kind: "ambiguous" });
+      expect(outcome).toEqual({
+        kind: "ambiguous",
+        detail: expect.stringContaining("Error: hostile transport") as string,
+      });
+      if (outcome.kind !== "ambiguous") {
+        throw new Error("unreachable");
+      }
+      expect(outcome.detail).toContain("POST /repos/ecoma-io/release-craft/releases");
       expect(calls).toHaveLength(2);
     });
   });
@@ -739,7 +752,10 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
       seed(fixture);
       const { transport } = hostileTransport(() => true);
       const outcome = fixture.adapter(transport).verifyRelease(TAG);
-      expect(outcome).toEqual({ kind: "transport-failure" });
+      expect(outcome).toEqual({
+        kind: "transport-failure",
+        detail: expect.stringContaining("Error: hostile transport") as string,
+      });
     });
   });
 
@@ -753,7 +769,10 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
       // is the unobserved class, never `absent`.
       const { transport, calls } = hostileTransport((call) => call.path === REPO_PATH);
       const outcome = fixture.adapter(transport).verifyRelease(TAG);
-      expect(outcome).toEqual({ kind: "transport-failure" });
+      expect(outcome).toEqual({
+        kind: "transport-failure",
+        detail: expect.stringContaining("Error: hostile transport") as string,
+      });
       expect(calls.map((call) => call.path)).toEqual([RELEASE_PATH, REPO_PATH]);
     });
   });

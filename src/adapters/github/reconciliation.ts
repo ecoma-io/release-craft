@@ -281,7 +281,9 @@ const listAll = (
     if (!("ok" in parsed)) {
       return parsed.kind === "refused"
         ? { state: "refused", reason: parsed.reason, detail: parsed.detail }
-        : { state: "transport-failure" };
+        : parsed.detail === undefined
+          ? { state: "transport-failure" }
+          : { state: "transport-failure", detail: parsed.detail };
     }
     rows.push(...parsed.rows);
     lastPageRows = parsed.rows.length;

@@ -82,12 +82,16 @@ export interface SyncReport {
   readonly refs: readonly SyncedRef[];
 }
 
-/** The `publishRelease()` outcome (contract §2.2). */
+/** The `publishRelease()` outcome (contract §2.2). A `transport-failure`
+ *  or `ambiguous` outcome whose failure came through the guarded
+ *  boundary carries the thrown transport's own words as its optional
+ *  `detail` (issue #179; round-1 review minor 3) — a transport that
+ *  answered (even with status 0) failed bare, with nothing to quote. */
 export type ReleaseOutcome =
   | { readonly kind: "ok"; readonly url: string }
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
-  | { readonly kind: "transport-failure" }
-  | { readonly kind: "ambiguous" };
+  | { readonly kind: "transport-failure"; readonly detail?: string }
+  | { readonly kind: "ambiguous"; readonly detail?: string };
 
 /** The `verifyRelease()` outcome (contract §2.2). A read carries no
  * `ambiguous` (issue #66): that class names a write whose landing is
@@ -96,7 +100,7 @@ export type VerificationOutcome =
   | { readonly kind: "verified" }
   | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
   | ReleaseAbsent
-  | { readonly kind: "transport-failure" };
+  | { readonly kind: "transport-failure"; readonly detail?: string };
 
 /** The `verifyRelease()` outcome for a release that does not exist for
  *  the recorded tag (issue #60; contract §2.2; D28): absence is a
@@ -149,7 +153,7 @@ export type TagsListingOutcome =
       readonly verifiedTags: readonly string[];
     }
   | { readonly state: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
-  | { readonly state: "transport-failure" };
+  | { readonly state: "transport-failure"; readonly detail?: string };
 
 /** The release listing's observation outcome (issue #66; contract
  *  §2.2): the same premise over the remote's releases — `listed` claims
@@ -163,7 +167,7 @@ export type ReleasesListingOutcome =
       readonly divergences: readonly Divergence[];
     }
   | { readonly state: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
-  | { readonly state: "transport-failure" };
+  | { readonly state: "transport-failure"; readonly detail?: string };
 
 /** The `reconcile()` report (contract §2.2): one observation outcome per
  *  listing. Comparison results exist only on `listed` — over an

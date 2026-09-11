@@ -145,7 +145,7 @@ const rateLimitDetail = (response: GitHubResponse): string => {
  *   retryable class. */
 export type ReadFailure =
   | { readonly kind: "refused"; readonly reason: ReadRefusalReason; readonly detail: string }
-  | { readonly kind: "transport-failure" };
+  | { readonly kind: "transport-failure"; readonly detail?: string };
 
 export const readFailure = (response: GitHubResponse): ReadFailure => {
   if (isPrimaryRateLimit(response) || isSecondaryRateLimit(response)) {
@@ -182,7 +182,16 @@ export const readFailure = (response: GitHubResponse): ReadFailure => {
     };
   }
   // Status 0 is the transport's "no determinate response"; on a read
-  // nothing has landed, so it is the ordinary retryable failure.
+  // nothing has landed, so it is the ordinary retryable failure. When
+  // the status-0 body is the guard's own envelope (guardedRequest
+  // below), the thrown transport's words ride the body's message
+  // channel into the detail.
+  if (response.status === 0) {
+    const thrown = bodyMessage(response.body);
+    return thrown === undefined
+      ? { kind: "transport-failure" }
+      : { kind: "transport-failure", detail: thrown };
+  }
   return { kind: "transport-failure" };
 };
 
@@ -205,7 +214,13 @@ export const readFailure = (response: GitHubResponse): ReadFailure => {
  *   "`path` is API-relative; the transport applies the credential and
  *   the base URL", so a header written in the transport's own absolute
  *   form belongs to the transport's side of that boundary, and a blind
- *   follow is the request-error shape issue #179 refuses). A malformed
+ *   follow is the request-error shape issue #179 refuses). The target
+ *   is classified on its raw value, never trimmed or otherwise
+ *   laundered first: a header declaring leading whitespace, a control
+ *   character, or a zero-width code point inside the angle brackets is
+ *   declaring a corrupted request, and trimming it into a plausible
+ *   one would follow a link the sender did not declare (round-1 review
+ *   minor 4). A malformed
  *   next is a *fault*, loudly reported by the walk — never a silent
  *   stop that reads as the chain's end, and never a request the
  *   transport never agreed to speak. */
@@ -215,17 +230,30 @@ export type NextLink =
   | { readonly kind: "malformed"; readonly target: string };
 
 /** The target as a usable API-relative request path, or undefined:
- *  anchored at the API root, and free of the whitespace and control
- *  characters that would corrupt the request. The characters are
- *  screened by code point rather than by one regex so the control
- *  range never appears as a pattern. */
+ *  anchored at the API root, and free of the characters that would
+ *  corrupt the request. Character policy (round-1 review minor 4): the
+ *  target arrives raw and is never trimmed or laundered here — the
+ *  screen runs over the declared value exactly as the header wrote it.
+ *  Any whitespace anywhere (`\s`), any C0 control (≤ U+001F), the C1
+ *  controls and DEL (U+007F–U+009F), and the Unicode format characters
+ *  (category Cf — the zero-width space U+200B, the joiners, the BOM)
+ *  all disqualify: each is invisible or corrupting in a request path,
+ *  and a header declaring one inside the target is declaring a
+ *  corrupted request. The characters are screened by code point and
+ *  Unicode property rather than by one regex over ranges, so the
+ *  control ranges never appear as a pattern. */
 const asApiRelativePath = (target: string): string | undefined => {
   if (!target.startsWith("/")) {
     return undefined;
   }
   for (const character of target) {
     const code = character.codePointAt(0) ?? 0;
-    if (/\s/u.test(character) || code <= 0x1f || code === 0x7f) {
+    if (
+      /\s/u.test(character) ||
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      /\p{Cf}/u.test(character)
+    ) {
       return undefined;
     }
   }
@@ -250,7 +278,10 @@ export const nextLink = (headers: Readonly<Record<string, string>>): NextLink =>
     const trimmed = part.trim();
     const match = /<([^>]*)>[^,]*\brel\s*=\s*"?next"?/i.exec(trimmed);
     if (match !== null) {
-      const target = (match[1] ?? "").trim();
+      // The target is classified raw: the part-level trim above is the
+      // RFC 8288 §3 OWS around the link-value; anything inside the
+      // angle brackets is the declared value and is never laundered.
+      const target = match[1] ?? "";
       const path = asApiRelativePath(target);
       return path === undefined ? { kind: "malformed", target } : { kind: "next", path };
     }
@@ -269,7 +300,12 @@ export const nextLink = (headers: Readonly<Record<string, string>>): NextLink =>
  *  the one table; on a write whose response is lost mid-call, §2.3's
  *  `ambiguous` window — the write may have landed unseen. Nothing the
  *  door can observe separates a thrown transport from a lost
- *  connection, so both read through status 0 (issue #179; D53). */
+ *  connection, so both read through status 0 (issue #179; D53). The
+ *  thrown value's own words ride the status-0 body's message channel
+ *  (round-1 review minor 3): the error's name and message, with the
+ *  request surface it escaped from, are preserved verbatim for the
+ *  outcome detail — while the classification itself is unchanged, a
+ *  throw still being exactly a lost response, never a verdict. */
 export const guardedRequest = (
   transport: GitHubTransport,
   path: string,
@@ -277,7 +313,14 @@ export const guardedRequest = (
 ): GitHubResponse => {
   try {
     return transport.request(path, init);
-  } catch {
-    return { status: 0, headers: {}, body: "" };
+  } catch (error) {
+    const thrown = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return {
+      status: 0,
+      headers: {},
+      body: JSON.stringify({
+        message: `the injected transport threw (${init?.method ?? "GET"} ${path}): ${thrown}`,
+      }),
+    };
   }
 };
