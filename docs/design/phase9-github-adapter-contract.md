@@ -146,7 +146,12 @@ to a transport or proxy stripping the header), so it reads `truncated`:
 an honest partial observation that still claims the comparison its rows
 really earned, its `pagination` denying the clean-bill reading over the
 rows it never saw — the truncated listing is never a passed
-observation, and never a discarded one either. Two chain shapes have no
+observation, and never a discarded one either. Two readings are declared
+permanent (D53; round-1 review minor 2): a row count that is an exact
+multiple of the page size ends on a full page with no `next` on **every**
+reconciliation and reads `truncated` each time — the honest label, and
+one nothing retries on; a page returning **more** than the requested size
+also reads `truncated`, the conservative direction. Two chain shapes have no
 honest end and fault the whole listing `transport-failure` — the
 fail-closed class, the loudest signal the no-throw law leaves: a `next`
 target the walk already requested (a cycle — the walk must never hang),
@@ -546,7 +551,13 @@ The phase's named scenarios:
     truncated observation claims the comparison its rows really earned
     — the observed divergences and verified tags stand — and its label
     denies the clean bill; a full page that _declares_ a `next` is
-    still followed, and the walk reads the final page only.
+    still followed, and the walk reads the final page only. The reading
+    is permanent, not a corner: an exact multiple of the page size reads
+    `truncated` on every reconciliation, and a page over the requested
+    size reads `truncated` too — the conservative direction (D53). The
+    follow trusts the header as given within the API-relative shape: the
+    walk pins no endpoint prefix, the `Link` header arriving through the
+    same trusted transport as the rows it paginates (D53).
 23. **The chain's faults and the no-throw law** (issue #179, D53) — a
     `next` chain that cycles (a target the walk already requested) and
     a declared `next` whose target is no requestable API-relative path
