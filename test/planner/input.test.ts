@@ -384,6 +384,115 @@ describe("normalize — the closed input boundary (§2.1)", () => {
     });
   });
 
+  describe("declared version bands — pairwise disjoint (§2.1, D67)", () => {
+    it("refuses the overlapping bands of issue #272 — a 1.x line beside a 1.2.x line — naming both lines and both bands", () => {
+      const input = withLines([
+        { ...baseLine(), id: "1.x", versionBand: { major: 1 } },
+        { ...baseLine(), id: "1.2.x", versionBand: { major: 1, minor: 2 } },
+      ]);
+
+      const rejected = reject(input);
+
+      expect(fieldsOf(rejected)).toContain("lines[1].versionBand");
+      const violation = rejected.violations.find(
+        (candidate) => candidate.field === "lines[1].versionBand",
+      );
+      expect(violation?.problem).toContain('"1.x"');
+      expect(violation?.problem).toContain('"1.2.x"');
+      expect(violation?.problem).toContain("major 1)"); // the unpinned band's series
+      expect(violation?.problem).toContain("major 1, minor 2"); // the pinned band's series
+      expect(violation?.problem).toContain("exactly one line"); // the D64 law the arm enforces
+    });
+
+    it("accepts disjoint majors — a 1.9-lts line beside a 2.x line", () => {
+      const input = withLines([
+        { ...baseLine(), id: "1.9-lts", versionBand: { major: 1, minor: 9 } },
+        { ...baseLine(), id: "2.x", versionBand: { major: 2 } },
+      ]);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input); // validation-only — the same closed value
+    });
+
+    it("accepts the same major with disjoint pinned minors — 1.2.x beside 1.9.x", () => {
+      const input = withLines([
+        { ...baseLine(), id: "1.2.x", versionBand: { major: 1, minor: 2 } },
+        { ...baseLine(), id: "1.9.x", versionBand: { major: 1, minor: 9 } },
+      ]);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input);
+    });
+
+    it("refuses identical bands on distinct ids as the overlap arm — never the duplicate-id arm", () => {
+      const input = withLines([
+        { ...baseLine(), id: "a", versionBand: { major: 1, minor: 2 } },
+        { ...baseLine(), id: "b", versionBand: { major: 1, minor: 2 } },
+      ]);
+
+      const rejected = reject(input);
+
+      // Exactly one violation, on the band field: the ids are legal, the
+      // shared version space is the defect.
+      expect(fieldsOf(rejected)).toEqual(["lines[1].versionBand"]);
+      const violation = rejected.violations[0];
+      if (violation === undefined) throw new Error("unreachable — fieldsOf found the field");
+      expect(violation.problem).toContain('"a"');
+      expect(violation.problem).toContain('"b"');
+    });
+
+    it("accepts a band-absent line beside banded lines — absent is not a band (the vertical-matrix posture)", () => {
+      const input = withLines([
+        baseLine(),
+        { ...baseLine(), id: "2.x", feedRef: "refs/heads/2.x", versionBand: { major: 2 } },
+        {
+          ...baseLine(),
+          id: "1.9-lts",
+          feedRef: "refs/heads/1.9-lts",
+          versionBand: { major: 1, minor: 9 },
+        },
+      ]);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input);
+    });
+
+    it("reports every overlapping pair in input order — the determinism pin", () => {
+      const input = withLines([
+        { ...baseLine(), id: "1.2.x", versionBand: { major: 1, minor: 2 } },
+        { ...baseLine(), id: "1.x", versionBand: { major: 1 } },
+        { ...baseLine(), id: "1.2.alt", versionBand: { major: 1, minor: 2 } },
+      ]);
+
+      const rejected = reject(input);
+
+      // Pairs (0,1), (0,2), (1,2) all overlap, reported on the later line
+      // of each pair, earlier index ascending — the fixed traversal order.
+      expect(fieldsOf(rejected)).toEqual([
+        "lines[1].versionBand",
+        "lines[2].versionBand",
+        "lines[2].versionBand",
+      ]);
+    });
+
+    it("joins no comparison for a band outside the declared grammar — the boundary's declared residual", () => {
+      // The band shape is the manifest door's and the world reader's law
+      // (integer major/minor); the input door's arm compares declared
+      // numeric values only and stays silent here — reported, not widened.
+      const input = withLines([
+        { ...baseLine(), id: "main", versionBand: wrong({ major: "1" }) },
+        { ...baseLine(), id: "other", feedRef: "refs/heads/other", versionBand: { major: 1 } },
+      ]);
+
+      const result = normalize(input);
+
+      expect(result).toBe(input);
+    });
+  });
+
   describe("components", () => {
     it("accepts well-formed component metadata, unchanged", () => {
       const input = withComponents([

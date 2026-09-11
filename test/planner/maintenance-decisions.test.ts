@@ -257,7 +257,12 @@ function m02Input(): PlanningInput {
   return buildInput({
     digest: DIGEST_M02,
     lines: [
-      { ...line("main", "main", { major: 2 }), publishes: "app" },
+      // main rides the band-absent single-namespace idiom (the vertical
+      // matrix's rolling line): its declared major-2 band overlapped 2.2's
+      // pinned 2.2 band — issue #272's ambiguous configuration, refused by
+      // the input door since D67 — while the scenario never needed it (the
+      // pointers come from tags on main's own branch).
+      { ...line("main", "main"), publishes: "app" },
       { ...line("2.2", "rel/2.2", { major: 2, minor: 2 }), publishes: "web" },
       { ...line("1.9", "rel/1.9", { major: 1, minor: 9 }), publishes: "cli" },
     ],
@@ -327,7 +332,12 @@ function m03Input(): PlanningInput {
   return buildInput({
     digest: DIGEST_M03,
     lines: [
-      { ...line("main", "main", { major: 2 }), publishes: "app" },
+      // main rides the band-absent single-namespace idiom (the vertical
+      // matrix's rolling line): its declared major-2 band overlapped 2.2's
+      // pinned 2.2 band — issue #272's ambiguous configuration, refused by
+      // the input door since D67 — while the scenario never needed it (the
+      // pointers come from tags on main's own branch).
+      { ...line("main", "main"), publishes: "app" },
       { ...line("2.2", "rel/2.2", { major: 2, minor: 2 }), publishes: "web" },
       { ...line("1.9", "rel/1.9", { major: 1, minor: 9 }), publishes: "cli" },
     ],

@@ -4,7 +4,12 @@
  * operator intents collapse to their first occurrence (m-6b — an operator
  * stating one intent twice has stated it once; intents differing in any
  * field stay, since contradictions like promote-over-pending are
- * decide-layer concerns, never input-layer ones).
+ * decide-layer concerns, never input-layer ones). The lines' declared
+ * `versionBand`s must be pairwise disjoint (§2.1, D67): overlapping bands
+ * would let two lines claim one recorded birth — the configuration D64's
+ * exactly-one-line birth law forbids — so the door refuses it here, where
+ * it is cheap and loud, instead of leaving `decide.ts`'s birth projection
+ * ambiguous.
  *
  * Posture: a malformed `PlanningInput` is a caller contract violation, not
  * a planning outcome — this throws {@link InvalidPlanningInputError} naming
@@ -434,10 +439,11 @@ function checkTags(
   }
 }
 
-/** Line validation (§2.6): at least one line, unique ids, closed schema,
- * and the declared line policy (ADR-0004): the stream policy inside its
- * declared fork, withhold rules that can be explained, and a `publishes`
- * binding naming a declared component. */
+/** Line validation (§2.6): at least one line, unique ids, pairwise-disjoint
+ * declared version bands (§2.1, D67), closed schema, and the declared line
+ * policy (ADR-0004): the stream policy inside its declared fork, withhold
+ * rules that can be explained, and a `publishes` binding naming a declared
+ * component. */
 function checkLines(
   lines: readonly unknown[],
   declaredComponents: ReadonlySet<string>,
@@ -505,6 +511,90 @@ function checkLines(
     const publishes: unknown = line.publishes;
     if (publishes !== undefined) {
       checkLinePublishes(`lines[${String(i)}].publishes`, publishes, declaredComponents, out);
+    }
+  }
+  checkBandDisjointness(lines, out);
+}
+
+/**
+ * One declared `versionBand` the disjointness comparison can read — the
+ * declared grammar's numeric fields. A band outside this shape is that
+ * line's own defect, reported on its own field by the doors that own band
+ * shape (the manifest door refuses a missing or non-integer `major` /
+ * `minor` and unknown band keys; the CLI world reader refuses non-numbers),
+ * and it joins no comparison here.
+ */
+interface DeclaredBand {
+  readonly major: number;
+  readonly minor?: number;
+}
+
+/** The line's band when its declared values carry the comparison grammar,
+ * else `undefined`. Comparison needs numeric equality only — the boundary
+ * declares no additional shape law of its own. */
+function declaredBandOf(line: Record<string, unknown>): DeclaredBand | undefined {
+  const band: unknown = line.versionBand;
+  if (!isObject(band) || typeof band.major !== "number") return undefined;
+  if (band.minor !== undefined && typeof band.minor !== "number") return undefined;
+  return band.minor === undefined
+    ? { major: band.major }
+    : { major: band.major, minor: band.minor };
+}
+
+/**
+ * The version-space predicate (§2.1, D67): two bands overlap when some
+ * version satisfies both grammars — equal declared majors and at least one
+ * band unpinned on the minor, or both pinned to the same minor. So `1.x`
+ * overlaps `1.2.x`; disjoint majors never overlap; the same major with
+ * distinct pinned minors does not; identical bands overlap trivially and
+ * are refused as their own case (never the duplicate-id arm, which stays
+ * about ids).
+ */
+function bandsOverlap(a: DeclaredBand, b: DeclaredBand): boolean {
+  return (
+    a.major === b.major && (a.minor === undefined || b.minor === undefined || a.minor === b.minor)
+  );
+}
+
+/** §2.13's own series wording, so the refusal names a band the projection's
+ * foreign-tag details name the same way. */
+function bandSeries(band: DeclaredBand): string {
+  return band.minor === undefined
+    ? `major ${String(band.major)}`
+    : `major ${String(band.major)}, minor ${String(band.minor)}`;
+}
+
+/**
+ * The declared bands are pairwise disjoint (§2.1, D67, issue #272): §2.13's
+ * projection admits a tag into every line whose band contains it, so two
+ * overlapping bands let both lines claim the same recorded birth — while
+ * D64's law is that the bootstrap records the birth of exactly one line.
+ * One violation per overlapping pair, in input order (the earlier index
+ * ascending, the later index ascending within it), on the later line's
+ * field, both lines and both bands named — the duplicate-id posture,
+ * collected with every other violation. A band-absent line is not a band:
+ * its single-line namespace admits every admissible tag (§2.13) and joins
+ * no comparison, so the unbanded line beside banded maintenance lines stays
+ * legal.
+ */
+function checkBandDisjointness(lines: readonly unknown[], out: InputViolation[]): void {
+  for (const [i, entry] of lines.entries()) {
+    if (!isObject(entry)) continue;
+    const first = declaredBandOf(entry);
+    if (first === undefined) continue;
+    for (const [j, otherEntry] of lines.entries()) {
+      if (j <= i || !isObject(otherEntry)) continue;
+      const second = declaredBandOf(otherEntry);
+      if (second === undefined) continue;
+      if (!bandsOverlap(first, second)) continue;
+      out.push({
+        field: `lines[${String(j)}].versionBand`,
+        problem:
+          `overlaps line ${JSON.stringify(entry.id)}'s band (${bandSeries(first)}) — ` +
+          `line ${JSON.stringify(otherEntry.id)}'s band (${bandSeries(second)}) shares that version space, ` +
+          "and both lines' histories would admit the same recorded birth, while the bootstrap " +
+          "records the birth of exactly one line (D64); give the lines disjoint version bands",
+      });
     }
   }
 }
