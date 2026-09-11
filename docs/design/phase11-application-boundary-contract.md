@@ -281,6 +281,23 @@ hooks, artifacts)` then `start`; a plan already carried by the
    the recorded steps exactly as `classifyResume` reads them (phase 5
    §2.3).
 
+**The validate stage's evidence names its derivation (#269).** The walk
+records the plan's preconditions as the plan's own recorded content —
+the planning boundary derived them from the closed input world it
+planned over — and every passed precondition guard row carries
+`plan-recorded` as its detail, never a bare hold no check derived. The
+walk re-observes nothing at validate: the read seams stay unwired
+([§2.3](#23-the-wiring-the-port-inventory) — their consumer is the
+adapter, not the boundary), so the stage has no world to re-prove
+against. A `holds: false` observation — the shape a world-side delta
+would arrive in — is the kernel door's `blocked(precondition-delta)`
+(phase 4 §2.5, E-04), and the walk stops on it in order; today no
+boundary path produces one — a world-side delta is refused upstream at
+planning (the released-version replay, phase 2 §2.9; #263) or
+downstream at the tag door's own CAS (phase 8 §2.3). A world-read port
+that would let validate re-prove is a boundary amendment — §2.3's
+wiring row moves first — never a stage's quiet upgrade.
+
 The boundary invents no step, no order, no retry, no clock: every move
 above cites the kernel or a landed phase contract. A walk that mutates
 before its claim, or appends a completion before its start, is wrong

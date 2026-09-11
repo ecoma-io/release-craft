@@ -123,6 +123,15 @@ const firstUnrecordedArtifact = (
   return missing === undefined ? null : missing.id;
 };
 
+/** The durable detail a non-re-proved hold carries on its passed guard row
+ * (#269), per derivation token — the closed vocabulary on
+ * `PreconditionObservation.derivation`. A token with no entry records no
+ * detail, byte-identical to the pre-#269 shape. */
+const DERIVATION_DETAILS: Partial<Record<"plan-recorded", string>> = {
+  "plan-recorded":
+    "plan-recorded: the hold is the plan's own recorded precondition content, derived at planning from the closed input world — the walk re-observed nothing (phase 11 §2.5)",
+};
+
 /** The guard rows an advancing record carries (§2.6: "what was checked,
  * with results"). Optional details are omitted, never `undefined`-filled.
  * The publish row appears only when the attempt declares artifact steps —
@@ -149,13 +158,22 @@ const guardList = (
   }
   if (stepKey === "validate") {
     for (const observation of preconditions) {
+      // A passed row carries the observation's derivation when the hold was
+      // not re-proved (#269): the durable evidence names where the hold
+      // came from, so a plan-recorded hold can never read as a world
+      // re-observation. A failed row carries its cause, as before.
+      const detail = observation.holds
+        ? observation.derivation === undefined
+          ? undefined
+          : DERIVATION_DETAILS[observation.derivation]
+        : observation.cause;
       guards.push(
-        observation.cause === undefined || observation.holds
+        detail === undefined
           ? { guard: `precondition:${observation.precondition}`, passed: observation.holds }
           : {
               guard: `precondition:${observation.precondition}`,
-              passed: false,
-              detail: observation.cause,
+              passed: observation.holds,
+              detail,
             },
       );
     }

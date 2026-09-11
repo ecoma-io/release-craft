@@ -310,11 +310,15 @@ export function walkStages(
     if (liveState(ctx) !== "executing") {
       return stage;
     }
+    // The plan-recorded hold, named as such (#269): the same derivation the
+    // boundary's walk records, so the replay vertical's evidence shape is
+    // the boundary's own.
     const preconditions =
       stage === "validate"
         ? ctx.planLine.preconditions.map((row) => ({
             precondition: JSON.stringify(row),
             holds: true,
+            derivation: "plan-recorded" as const,
           }))
         : undefined;
     if (stage !== skipStartFor) {

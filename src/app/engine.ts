@@ -126,7 +126,7 @@ const plannedTagOf = (planLine: PlanLine): string | null =>
  * content inputs" (issue #195): the plan stage digests the whole plan line
  * (the attempt opens over it), claim the scope the boundary derives,
  * prepare and commit the change set they land, validate the preconditions
- * it re-proves, the tag stages the minted tag they bind, and the channel
+ * it records (#269), the tag stages the minted tag they bind, and the channel
  * stage the planned moves it executes — each keyed to the line and the
  * stage, so two stages over one line never collide. Attempt identity stays
  * out on purpose: the same declared content under any attempt hashes
@@ -398,14 +398,26 @@ const walk = (ctx: WalkContext, from: StepKey): WalkStop | null => {
     if (ctx.attempt.state !== "executing") {
       return { kind: "stage", stepKey: stage };
     }
-    // `validate` re-proves the plan's preconditions (E-04): the boundary
-    // re-proves the recorded plan content itself — the observations ride
-    // exactly as the fixtures drive them.
+    // `validate` records the plan's preconditions as the plan's own
+    // recorded content (#269): every row rides with the hold the planning
+    // boundary derived it with — the plan names `tag-absent` for each tag
+    // it mints, over the closed input world it planned from — and names its
+    // derivation (`plan-recorded`) on the record, never a bare literal. The
+    // walk re-observes nothing: the read seams stay unwired (phase 11
+    // contract §2.3 — their consumer is the adapter, not the boundary), so
+    // the stage has no world to re-prove against. The kernel door still
+    // classifies a `holds: false` row as E-04's `blocked(precondition-delta)`
+    // and the walk stops on it in order; today no boundary path produces
+    // one — a world-side delta is refused upstream at planning (the
+    // released-version replay, #263) or downstream at the mint door's own
+    // CAS, and the honest bound is the issue's decided posture until a
+    // world-read port is a reviewed boundary amendment.
     const preconditions =
       stage === "validate"
         ? ctx.planLine.preconditions.map((row) => ({
             precondition: JSON.stringify(row),
             holds: true,
+            derivation: "plan-recorded" as const,
           }))
         : undefined;
     const recorded = ctx.ports.ledger.step(ctx.handle.attemptId, stage);
