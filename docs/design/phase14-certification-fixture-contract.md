@@ -752,8 +752,19 @@ The never-does inventory, each row with its enforcement:
 - **No environment, clock, or randomness reads.** Recorded `COMMITTED_AT`,
   the binding's fixed commit identity, counter tokens; the one random value
   meets the projection rule ([§4.3](#43-the-generation-mechanism)), never a
-  live read. Enforcement: the isolation probe below, the layers' own
-  mechanism inherited.
+  live read. The process transport CONSTRUCTS the subprocess's environment
+  instead of inheriting it — the invocation script's two-name outer line
+  (phase 13 §4) mirrored: exactly `PATH` and `HOME`, an allowlist never a
+  blocklist, the one ambient read riding the binding's own floor
+  (`hermeticGitEnv()`) — so no worker ambient (`NODE_OPTIONS`, locale
+  variables, agent markers, `GIT_*` context) reaches the built bin and the
+  recorded bytes cannot move with the machine. Enforcement: the isolation
+  probe below, the layers' own mechanism inherited; the constructed key set
+  is pinned in the fixture's census, the spawn-to-construction coupling
+  beside it, and the hostile-ambient behavioral leg in the guard suite
+  outside the fixture (`test/certification-env.test.ts` — the guard that
+  plants a hostile ambient cannot itself live under the probe's
+  no-environment-read scan, which judges the suites too).
 - **No `src/` imports past the barrels.** The fixture's own modules import
   the package barrel (`src/index.ts`) and the adapter barrel
   (`src/adapters/git/index.js`) only — the boundary's own law ("the barrels

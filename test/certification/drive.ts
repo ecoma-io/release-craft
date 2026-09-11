@@ -28,7 +28,8 @@
 
 import { spawnSync } from "node:child_process";
 import { Buffer } from "node:buffer";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
@@ -54,6 +55,7 @@ import {
   GitChannelStore,
   GitClaimStore,
   GitLedger,
+  hermeticGitEnv,
   openGitBinding,
   openGitRun,
   type GitRun,
@@ -92,18 +94,50 @@ export interface CliResult {
   readonly stderr: string;
 }
 
+/**
+ * The child's constructed environment — the invocation script's outer line
+ * (phase 13 §4, `action/invoke.mjs`) mirrored: exactly two names, `PATH`
+ * (the ambient one, so `node` and `git` resolve) and `HOME` (a fresh empty
+ * directory). Allowlist, never blocklist — the same policy sentence the
+ * script's own header states, because the fixture certifies the process
+ * envelope the script builds: an ambient `NODE_OPTIONS`, locale variable,
+ * agent marker, or `GIT_*` value reaches nothing past this line, where the
+ * old wholesale inheritance carried all of it into the child.
+ *
+ * The fixture's own modules still read no environment (phase 14 §8's law,
+ * the isolation probe): the one ambient read this construction performs
+ * rides the binding's own floor (`hermeticGitEnv()` — exported, per its
+ * docstring, for exactly this "fixture spawns as hermetic as the binding's
+ * own" purpose, and already the git fixture's spawn floor in
+ * `temp-repo.ts`), from which exactly `PATH` is carried.
+ */
+export const runBinEnv = (home: string): NodeJS.ProcessEnv => ({
+  PATH: hermeticGitEnv().PATH ?? "",
+  HOME: home,
+});
+
 /** One child-process invocation of the built bin. `input` feeds stdin (the
- * `--world -` spelling); the child's environment is never touched (§8: the
- * fixture reads no environment). */
+ * `--world -` spelling); the child's environment is CONSTRUCTED, never
+ * inherited (`runBinEnv` — the invocation script's two-name allowlist), so
+ * the envelope bytes cannot move with the worker's ambient. The fresh
+ * `HOME` is removed with the invocation: the CLI writes nothing (its own
+ * §4 law, pinned in the CLI suite's static scan), so the directory is
+ * empty by construction when it goes. */
 export const runBin = (args: readonly string[], options: { input?: string } = {}): CliResult => {
-  const result = spawnSync(process.execPath, [CLI_BIN, ...args], {
-    encoding: "utf8",
-    ...(options.input === undefined ? {} : { input: options.input }),
-  });
-  if (result.error !== undefined) {
-    throw new Error(`the fixture's CLI process failed to spawn: ${String(result.error)}`);
+  const home = mkdtempSync(join(tmpdir(), "release-craft-home-"));
+  try {
+    const result = spawnSync(process.execPath, [CLI_BIN, ...args], {
+      encoding: "utf8",
+      env: runBinEnv(home),
+      ...(options.input === undefined ? {} : { input: options.input }),
+    });
+    if (result.error !== undefined) {
+      throw new Error(`the fixture's CLI process failed to spawn: ${String(result.error)}`);
+    }
+    return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
-  return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
 };
 
 // ---------------------------------------------------------------------------
