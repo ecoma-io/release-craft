@@ -217,6 +217,20 @@ materialization. This repository's own CI installs keep their scripts: a
 checkout IS a git repository, and the hooks `prepare` wires there are
 wanted.
 
+The executed fixture for this leg (`test/action/provisioning.test.ts`, the
+materialization shape rebuilt under the tmpdir) installs with one
+fixture-only flag on top: `--prefer-offline` — "skip staleness checks for
+cached data, but request missing data from the server" (pnpm 11.25's own
+flag documentation, the version the fixture's installs run under). A frozen
+lockfile fixes the resolution graph, but a bare install still validates its
+cached metadata against the registry before acting on it; the flag drops
+that check, so a registry outage or a rate-limited runner cannot turn the
+determinism fixture into a network test. It is a staleness-check removal,
+not an offline guarantee — a genuinely cold store still requests its
+missing tarballs — and the composite's run line is unchanged: the flag
+keeps the fixture hermetic; it changes nothing about what the Action
+provisions.
+
 The file-keyed mechanism is decided against, and the reason is a platform
 fact, verified against the actions' sources at the pins this repository's
 CI carries today (and identical from `setup-node` v4.0.0 through the pinned

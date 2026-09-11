@@ -121,8 +121,30 @@ const INSTALL_ENV: NodeJS.ProcessEnv = Object.fromEntries(
   Object.entries(hermeticGitEnv()).filter(([key]) => !(key in AGENT_MARKERS)),
 );
 
+/**
+ * The fixture's install argv. The composite's own line is `install
+ * --frozen-lockfile --ignore-scripts` (phase 13 §2.2); the fixture adds one
+ * fixture-only flag — `--prefer-offline`, "skip staleness checks for cached
+ * data, but request missing data from the server" (pnpm 11.25's own flag
+ * documentation, the version this fixture's installs run under). A frozen
+ * lockfile fixes the resolution graph, but a bare install still validates
+ * its cached metadata against the registry before acting on it; the flag
+ * drops that check, so a registry outage or a rate-limited runner cannot
+ * turn this determinism fixture into a network test. It narrows the network
+ * surface to exactly what the store lacks — a genuinely cold store still
+ * requests its missing tarballs from the server, so the flag is a
+ * staleness-check removal, not an offline guarantee. Factored as a function
+ * so the exact argv is pinnable below, both legs.
+ */
+const installArgs = (extraArgs: readonly string[]): readonly string[] => [
+  "install",
+  "--frozen-lockfile",
+  "--prefer-offline",
+  ...extraArgs,
+];
+
 const install = (dir: string, extraArgs: readonly string[]) =>
-  spawnSync("pnpm", ["install", "--frozen-lockfile", ...extraArgs], {
+  spawnSync("pnpm", installArgs(extraArgs), {
     cwd: dir,
     encoding: "utf8",
     env: INSTALL_ENV,
@@ -191,6 +213,19 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
             "AI_AGENT",
           ]),
         );
+        // The offline floor, pinned as exact argv on both legs that act on
+        // it: the unflagged (defect) leg and the scripts-free (composite)
+        // leg. A silently dropped `--prefer-offline` would turn this
+        // determinism fixture back into a network test (the metadata
+        // staleness check returns), and any added flag would change what
+        // the legs prove without review — only an exact match passes.
+        expect(installArgs([])).toStrictEqual(["install", "--frozen-lockfile", "--prefer-offline"]);
+        expect(installArgs(["--ignore-scripts"])).toStrictEqual([
+          "install",
+          "--frozen-lockfile",
+          "--prefer-offline",
+          "--ignore-scripts",
+        ]);
         expect(
           scriptsRun.status,
           `the unflagged install exited 0 — the materialization shape no longer reproduces the defect:\n${scriptsRun.stdout}${scriptsRun.stderr}`,
@@ -226,7 +261,7 @@ describe("fixture 1 — the provisioning installs in the non-git materialization
       // the tree's shape alone; this leg reproduces the composition fault on
       // demand so the mechanism can never silently regress (#154).
       withMaterialization((leaked) => {
-        const leakedRun = spawnSync("pnpm", ["install", "--frozen-lockfile"], {
+        const leakedRun = spawnSync("pnpm", installArgs([]), {
           cwd: leaked,
           encoding: "utf8",
           env: { ...INSTALL_ENV, GIT_DIR: join(REPO_ROOT, ".git") },
