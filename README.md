@@ -40,6 +40,28 @@ invariants, complexity budget, built on the
 in [`release-model.md`](docs/design/release-model.md); older work in
 [#1](https://github.com/ecoma-io/release-craft/issues/1).
 
+## Using release-craft
+
+The consumer path — install, first release, Action wiring, and the engine's
+vocabulary — lives in [`docs/adopters.md`](docs/adopters.md); every command
+transcript and both world-document examples on that page are machine-checked
+against the engine by the suite. The shape of adoption:
+
+1. **Declare a world** — one JSON document stating your release policy, your
+   repository's observed history, and your release lines. The CLI validates
+   its shape and reads nothing else: declared, not discovered.
+2. **Plan, and expect the first refusal** — a line with no recorded release
+   stops as a `blocked` decision until you record the first version: the
+   first version is the operator's call, never the planner's invention.
+3. **Run the release** — the `git` assembly mints the tag and records the
+   walk (claims, ledger) in your repository.
+4. **Wire the Action** — `uses: ecoma-io/release-craft@<full-sha>`, pinned
+   by SHA like every Action this organisation runs.
+
+There is no npm package yet: the CLI is built from a clone of this
+repository. The Quickstart below is the contributor path — building and
+gating this codebase.
+
 ## What is in the tree today
 
 | Layer            | Where                                                                                                                                                  | What guarantees it                                                                                                                                                                                                     |
