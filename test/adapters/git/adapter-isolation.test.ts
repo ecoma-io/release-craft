@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -12,8 +12,9 @@ import { describe, expect, it } from "vitest";
  * - the binding consumes, never re-owns: every import under
  *   `src/adapters/git` is a Node built-in, the execution barrel
  *   ("@ecoma-io/release-craft/execution"), the planner barrel
- *   ("@ecoma-io/release-craft/planner"), or a relative sibling
- *   ("./…"). Engine internals beyond the barrel, test tooling, and
+ *   ("@ecoma-io/release-craft/planner"), or a relative sibling — judged
+ *   by the target it resolves to, never by its prefix (#188). Engine
+ *   internals beyond the barrel, test tooling, and
  *   provider packages are all outside the allowlist.
  *
  * The subject is the layer, not a module list: each scan walks its
@@ -40,10 +41,12 @@ interface Violation {
   readonly detail: string;
 }
 
-/** Every source file of a layer, relative and sorted, for stable reports. */
+/** Every source file of a layer, relative and sorted, for stable reports.
+ * The walk matches every TypeScript module spelling (.ts/.tsx/.mts/.cts),
+ * so a new extension inherits the gate instead of escaping it. */
 function layerFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /\.[cm]?tsx?$/.test(name))
     .sort();
 }
 
@@ -64,24 +67,49 @@ function engineReachViolations(file: string, text: string): Violation[] {
 }
 
 /**
+ * Whether one relative specifier, resolved from `file` (a layer-relative
+ * path), stays inside the binding layer. The law judges the resolved
+ * target, not the spelling (#188): "./git-run.js" is a sibling, while
+ * "./../execution/kernel.js" is a cross-project import wearing the sibling
+ * prefix.
+ */
+function resolvesInsideLayer(file: string, specifier: string): boolean {
+  const resolved = posix.normalize(posix.join(posix.dirname(file), specifier));
+  return resolved !== ".." && !resolved.startsWith("../");
+}
+
+/**
  * Every import specifier a binding file names — static `from "…"`
- * clauses and side-effect `import "…"` statements alike. Dynamic
- * `import(…)` is banned outright: a computed specifier is exactly how an
- * import scan gets bypassed. The allowlist is the layer's diet: Node
- * built-ins (the no-runtime-dependency house rule keeps git on node's
+ * clauses and side-effect `import "…"` statements alike, in both quote
+ * spellings with whitespace optional (a scanner blind to `from'…'` or
+ * `from"…"` depends on a formatter for its sight; a keyword preceded by a
+ * word character, a quote, or a hyphen is a word in prose or an object
+ * literal, not an import). The specifier is one token without whitespace,
+ * so a quote that closes a string value ("…recompute from") cannot open
+ * one. A relative specifier is judged by the target
+ * it resolves to: one that stays inside src/adapters/git is a sibling;
+ * one that escapes it is a cross-project import and must name a barrel.
+ * Dynamic `import(…)` is banned outright: a computed specifier is exactly
+ * how an import scan gets bypassed. The allowlist is the layer's diet:
+ * Node built-ins (the no-runtime-dependency house rule keeps git on node's
  * own child_process), the package barrel's ports, the planner barrel's
  * canonicalJson, and the binding's own siblings.
  */
 function bindingImportViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
+    if (specifier.startsWith("./") || specifier.startsWith("../")) {
+      if (resolvesInsideLayer(file, specifier)) continue;
+      violations.push({
+        file,
+        detail: `imports "${specifier}" — a relative specifier that resolves outside src/adapters/git is a cross-project import and must name a barrel`,
+      });
+      continue;
+    }
     const allowed =
-      specifier.startsWith("node:") ||
-      specifier === ENGINE_BARREL ||
-      specifier === PLANNER_BARREL ||
-      specifier.startsWith("./");
+      specifier.startsWith("node:") || specifier === ENGINE_BARREL || specifier === PLANNER_BARREL;
     if (!allowed) violations.push({ file, detail: `imports "${specifier}"` });
   }
   if (/\bimport\s*\(/.test(text)) {
@@ -135,7 +163,36 @@ describe("the git binding is an isolated layer", () => {
         "rogue.ts",
         'import { requestStep } from "../../execution/kernel.js";\n',
       ).map((violation) => `src/adapters/git/${violation.file} ${violation.detail}`),
-    ).toEqual(['src/adapters/git/rogue.ts imports "../../execution/kernel.js"']);
+    ).toEqual([
+      'src/adapters/git/rogue.ts imports "../../execution/kernel.js" — a relative specifier that resolves outside src/adapters/git is a cross-project import and must name a barrel',
+    ]);
+    // The sibling prefix is not a pass: the target decides (#188).
+    expect(
+      bindingImportViolations(
+        "rogue.ts",
+        'import { requestStep } from "./../execution/kernel.js";\n',
+      ).map((violation) => `src/adapters/git/${violation.file} ${violation.detail}`),
+    ).toEqual([
+      'src/adapters/git/rogue.ts imports "./../execution/kernel.js" — a relative specifier that resolves outside src/adapters/git is a cross-project import and must name a barrel',
+    ]);
+    expect(
+      bindingImportViolations("git-run.ts", 'import { spawnSync } from "node:child_process";\n'),
+    ).toEqual([]);
+    // Single quotes, and no whitespace before the specifier: both are
+    // import spellings the scanner must see.
+    expect(
+      bindingImportViolations(
+        "rogue.ts",
+        "import { requestStep } from '@ecoma-io/release-craft/__internal__/execution/kernel.js';\n",
+      ).map((violation) => `src/adapters/git/${violation.file} ${violation.detail}`),
+    ).toEqual([
+      'src/adapters/git/rogue.ts imports "@ecoma-io/release-craft/__internal__/execution/kernel.js"',
+    ]);
+    expect(
+      bindingImportViolations("rogue.ts", 'import x from"@ecoma-io/release-craft";\n').map(
+        (violation) => `src/adapters/git/${violation.file} ${violation.detail}`,
+      ),
+    ).toEqual(['src/adapters/git/rogue.ts imports "@ecoma-io/release-craft"']);
     expect(
       bindingImportViolations(
         "clean.ts",

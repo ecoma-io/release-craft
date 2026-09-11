@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import * as surface from "../../src/index.js";
@@ -59,10 +59,12 @@ interface Violation {
   readonly detail: string;
 }
 
-/** Every planner source file, sorted, so violations report in stable order. */
+/** Every planner source file, sorted, so violations report in stable order.
+ * The walk matches every TypeScript module spelling (.ts/.tsx/.mts/.cts),
+ * so a new extension inherits the gate instead of escaping it. */
 function plannerFiles(): string[] {
   return readdirSync(PLANNER_DIR, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /\.[cm]?tsx?$/.test(name))
     .sort();
 }
 
@@ -79,18 +81,50 @@ function render(violations: readonly Violation[]): string[] {
 }
 
 /**
+ * Whether one relative specifier, resolved from `file` (a layer-relative
+ * path), stays inside the planner layer. The layer's files are flat today,
+ * so every real `../` already leaves the layer — but the law judges the
+ * resolved target, not the spelling (#188): a nested module importing
+ * `../sibling.js` re-enters the layer and stays local, while `../app/…`
+ * escapes it into another project and must name a barrel instead. The
+ * `resolved !== ".."` half guards the bare `..` spelling, which normalizes
+ * to a parent reference without a trailing separator.
+ */
+function resolvesInsideLayer(file: string, specifier: string): boolean {
+  const resolved = posix.normalize(posix.join(posix.dirname(file), specifier));
+  return resolved !== ".." && !resolved.startsWith("../");
+}
+
+/**
  * Every import specifier a planner file names — static `from "…"` clauses
- * and side-effect `import "…"` statements alike. Dynamic `import(…)` is
- * not a specifier form to allow-list: it is banned outright, because a
- * computed specifier is exactly how an import scan gets bypassed.
+ * and side-effect `import "…"` statements alike, in both quote spellings
+ * with whitespace optional (a scanner blind to `from'…'` or `from"…"`
+ * depends on a formatter for its sight). A keyword preceded by a word
+ * character, a quote, or a hyphen is a word inside prose or an object
+ * literal — `kind: "import"`, `"promoted-from"` — not an import, and the
+ * pattern refuses it. The specifier is one token without whitespace, so a
+ * quote that closes a string value ("…recompute from") cannot open one.
+ * A relative specifier is judged by
+ * the target it resolves to: one that stays inside src/planner is a
+ * same-project sibling; one that escapes it is a cross-project import
+ * wearing a relative spelling and must name a barrel (ADR-0001 §8).
+ * Dynamic `import(…)` is not a specifier form to allow-list: it is banned
+ * outright, because a computed specifier is exactly how an import scan
+ * gets bypassed.
  */
 function importViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
-    const withinLayer = specifier.startsWith("./") || specifier.startsWith("../");
-    if (withinLayer) continue;
+    if (specifier.startsWith("./") || specifier.startsWith("../")) {
+      if (resolvesInsideLayer(file, specifier)) continue;
+      violations.push({
+        file,
+        detail: `imports "${specifier}" — a relative specifier that resolves outside src/planner is a cross-project import and must name a barrel`,
+      });
+      continue;
+    }
     if (specifier === KERNEL_BARREL) continue;
     if (specifier === ONLY_BUILTIN && file === ONLY_BUILTIN_FILE) continue;
     violations.push({ file, detail: `imports "${specifier}"` });
@@ -253,6 +287,47 @@ describe("contract §4 A3 — the planner is an isolated layer", () => {
       violations,
       'the planner imports nothing outside src/planner and the kernel barrel "@ecoma-io/release-craft/domain" — the single permitted Node built-in is "node:crypto" in identity.ts (§2.11: hashing is pure computation)',
     ).toEqual([]);
+  });
+
+  it("the gate bites: a relative edge that resolves outside the layer is cross-project (#188)", () => {
+    // The planted vector: before the resolution, every "../" spelling was
+    // skipped as within-layer, so this cross-project import read as local.
+    expect(
+      render(importViolations("rogue.ts", 'import { engine } from "../app/engine.js";\n')),
+    ).toEqual([
+      'src/planner/rogue.ts imports "../app/engine.js" — a relative specifier that resolves outside src/planner is a cross-project import and must name a barrel',
+    ]);
+    // A "./" spelling escapes just the same when it normalizes outward.
+    expect(
+      render(importViolations("rogue.ts", 'import { kernel } from "./../execution/kernel.js";\n')),
+    ).toEqual([
+      'src/planner/rogue.ts imports "./../execution/kernel.js" — a relative specifier that resolves outside src/planner is a cross-project import and must name a barrel',
+    ]);
+    // Same-project relative imports stay local — the flat layer's own
+    // spelling first…
+    expect(render(importViolations("plan.ts", 'import { decide } from "./decide.js";\n'))).toEqual(
+      [],
+    );
+    // …and a nested module climbing back into the layer stays local: the
+    // law is the resolved target, never the "../" prefix.
+    expect(
+      render(importViolations("nested/rogue.ts", 'import { decide } from "../decide.js";\n')),
+    ).toEqual([]);
+  });
+
+  it("the gate bites: the quote and whitespace spellings are import spellings", () => {
+    // Single quotes: prettier normalizes them away, the scanner must not
+    // depend on a formatter for its sight (review round 1, minor 2).
+    expect(
+      render(importViolations("rogue.ts", "import { engine } from '../app/engine.js';\n")),
+    ).toEqual([
+      'src/planner/rogue.ts imports "../app/engine.js" — a relative specifier that resolves outside src/planner is a cross-project import and must name a barrel',
+    ]);
+    // No whitespace before the specifier — seen and classified, here as the
+    // local sibling it resolves to.
+    expect(render(importViolations("plan.ts", 'import { decide }from"./decide.js";\n'))).toEqual(
+      [],
+    );
   });
 
   it("names no clock, no randomness, no process, no environment (invariant 2, statically)", () => {

@@ -9,8 +9,8 @@
  * the contract. Tests import the kernel through this barrel and nothing
  * deeper (§5); the domain kernel is reached, when needed, through its own
  * barrel (`@ecoma-io/release-craft/domain`), and the planner's public
- * surface through `../planner/index.js` — the two imports the isolation
- * gate allows this layer (§2.11, §2.12).
+ * surface through its own barrel (`@ecoma-io/release-craft/planner`) —
+ * the two imports the isolation gate allows this layer (§2.11, §2.12).
  */
 export * from "./adopt.js";
 export * from "./artifacts.js";

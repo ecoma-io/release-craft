@@ -200,6 +200,15 @@ referenced the prefix would fail to resolve loudly. Whether a cross-project
 import names a barrel or an internal module is the one thing the tags cannot
 see; that barrel-seam rule stays with the scanner suites.)
 
+(Amended 2026-09-11, issue #188: the scanner half of the seam is closed on
+every consumer layer — closed allow-list suites for `cli` and
+`adapters-github` joined the planner, execution, app, and adapters-git
+suites, so a legal-tag-pair deep import is a scanner finding and not a
+pass — and every import scanner judges a relative specifier by the target
+it resolves to, never by its `../` or `./` prefix, so a relative edge that
+leaves the layer is a cross-project import under the same barrel law
+whichever spelling it wears.)
+
 ### 9. Tests are external consumers; the kernel project has no test files
 
 The kernel's contract suite is [`test/version.test.ts`](../../test/version.test.ts)

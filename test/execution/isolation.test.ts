@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import * as surface from "../../src/index.js";
@@ -36,10 +36,12 @@ interface Violation {
   readonly detail: string;
 }
 
-/** Every execution source file, sorted, so violations report in stable order. */
+/** Every execution source file, sorted, so violations report in stable order.
+ * The walk matches every TypeScript module spelling (.ts/.tsx/.mts/.cts),
+ * so a new extension inherits the gate instead of escaping it. */
 function executionFiles(): string[] {
   return readdirSync(EXECUTION_DIR, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => /\.[cm]?tsx?$/.test(name))
     .sort();
 }
 
@@ -56,17 +58,44 @@ function render(violations: readonly Violation[]): string[] {
 }
 
 /**
+ * Whether one relative specifier, resolved from `file` (a layer-relative
+ * path), stays inside the execution layer. The law judges the resolved
+ * target, not the spelling (#188): "./attempt.js" is a sibling, while
+ * "./../planner/plan.js" is a cross-project import wearing the sibling
+ * prefix.
+ */
+function resolvesInsideLayer(file: string, specifier: string): boolean {
+  const resolved = posix.normalize(posix.join(posix.dirname(file), specifier));
+  return resolved !== ".." && !resolved.startsWith("../");
+}
+
+/**
  * Every import specifier an execution file names — static `from "…"`
- * clauses and side-effect `import "…"` statements alike. Dynamic `import(…)`
- * is banned outright: a computed specifier is exactly how an import scan
- * gets bypassed.
+ * clauses and side-effect `import "…"` statements alike, in both quote
+ * spellings with whitespace optional (a scanner blind to `from'…'` or
+ * `from"…"` depends on a formatter for its sight; a keyword preceded by a
+ * word character, a quote, or a hyphen is a word in prose or an object
+ * literal, not an import). The specifier is one token without whitespace,
+ * so a quote that closes a string value ("…recompute from") cannot open
+ * one. A relative specifier is judged by the target
+ * it resolves to: one that stays inside src/execution is a sibling; one
+ * that escapes it is a cross-project import and must name a barrel.
+ * Dynamic `import(…)` is banned outright: a computed specifier is exactly
+ * how an import scan gets bypassed.
  */
 function importViolations(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
-  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s+"([^"]+)"/g)) {
-    const specifier = match[1];
+  for (const match of text.matchAll(/(?<![\w'"-])(?:\bfrom|\bimport)\s*(['"])([^'"\s]+)\1/g)) {
+    const specifier = match[2];
     if (specifier === undefined) continue;
-    if (specifier.startsWith("./")) continue;
+    if (specifier.startsWith("./") || specifier.startsWith("../")) {
+      if (resolvesInsideLayer(file, specifier)) continue;
+      violations.push({
+        file,
+        detail: `imports "${specifier}" — a relative specifier that resolves outside src/execution is a cross-project import and must name a barrel`,
+      });
+      continue;
+    }
     if (specifier === PLANNER_BARREL) continue;
     if (specifier === ONLY_BUILTIN && file === ONLY_BUILTIN_FILE) continue;
     violations.push({ file, detail: `imports "${specifier}"` });
@@ -143,6 +172,30 @@ describe("the execution kernel is an isolated layer", () => {
     expect(
       render(importViolations("rogue.ts", 'const m = await import("./sneaky.js");\n')),
     ).toEqual(["src/execution/rogue.ts performs a dynamic import()"]);
+    // The sibling prefix is not a pass: the target decides (#188).
+    expect(
+      render(importViolations("rogue.ts", 'import { plan } from "./../planner/plan.js";\n')),
+    ).toEqual([
+      'src/execution/rogue.ts imports "./../planner/plan.js" — a relative specifier that resolves outside src/execution is a cross-project import and must name a barrel',
+    ]);
+    expect(
+      render(importViolations("kernel.ts", 'import { decide } from "./decide.js";\n')),
+    ).toEqual([]);
+    // Single quotes, and no whitespace before the specifier: both are
+    // import spellings the scanner must see.
+    expect(
+      render(
+        importViolations(
+          "rogue.ts",
+          "import { plan } from '@ecoma-io/release-craft/__internal__/planner/plan.js';\n",
+        ),
+      ),
+    ).toEqual([
+      'src/execution/rogue.ts imports "@ecoma-io/release-craft/__internal__/planner/plan.js"',
+    ]);
+    expect(render(importViolations("rogue.ts", 'import x from"node:fs";\n'))).toEqual([
+      'src/execution/rogue.ts imports "node:fs"',
+    ]);
     expect(render(sideEffectViolations("rogue.ts", "const stamp = Date.now();\n"))).toEqual([
       "src/execution/rogue.ts names Date.now — clock read",
     ]);
