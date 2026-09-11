@@ -204,9 +204,10 @@ see; that barrel-seam rule stays with the scanner suites.)
 every consumer layer — closed allow-list suites for `cli` and
 `adapters-github` joined the planner, execution, app, and adapters-git
 suites, so a legal-tag-pair deep import is a scanner finding and not a
-pass — and the planner suite judges a relative specifier by the target it
-resolves to, so a relative edge that leaves the layer is a cross-project
-import under the same barrel law.)
+pass — and every import scanner judges a relative specifier by the target
+it resolves to, never by its `../` or `./` prefix, so a relative edge that
+leaves the layer is a cross-project import under the same barrel law
+whichever spelling it wears.)
 
 ### 9. Tests are external consumers; the kernel project has no test files
 
