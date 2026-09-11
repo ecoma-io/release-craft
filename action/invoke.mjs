@@ -5,9 +5,13 @@
 //
 // Its whole job is the projection the contract assigns it (invariant 2.10 at
 // the automation layer): action inputs in, one command out, the verdict
-// rendered. It performs zero validation of its own — the closed grammar is
-// the validation, and a value the grammar refuses surfaces as the CLI's exit
-// 64 with the synopsis, annotated. Concretely, in order:
+// rendered. It performs zero validation of VALUES — the closed grammar is
+// the values' validation, and a value the grammar refuses surfaces as the
+// CLI's exit 64 with the synopsis, annotated. The one validation it owns is
+// the declared input KEY inventory (§2.3, as amended by #191): the runner
+// passes undeclared `with:` keys through as unknown `INPUT_` names, so a
+// misspelled key would otherwise run silently on the declared default.
+// Concretely, in order:
 //
 //   1. project the inputs into the built bin's argv, in §2.7's exact order —
 //      `run --assembly git --repo … --tag-namespace … --max-retries …
@@ -39,11 +43,12 @@
 //
 // This program is the outer line, so it may read the runner's environment —
 // it reads exactly two names (`PATH`, `RUNNER_TEMP`) to build the child's
-// allowlist, and names no `INPUT_*` variable: the composite's step
-// interpolates the declared inputs into this program's argv through the
-// step's own `env:` block (reviewed metadata, one shell-quoted word each),
-// which is the one channel the contract allows. Everything else arrives as
-// argv below.
+// allowlist, plus the runner-injected `INPUT_*` KEY NAMES for the one
+// undeclared-key refusal §2.3 owns (names only, never a value: the
+// composite's step interpolates the declared inputs into this program's
+// argv through the step's own `env:` block (reviewed metadata, one
+// shell-quoted word each), which is the one channel a value may ride).
+// Everything else arrives as argv below.
 //
 // Exit codes: 0 the conclusion is success · 1 failure (a stop-band verdict,
 // a fault, a no-verdict row, or this program's own pre-invocation fault —
@@ -148,6 +153,59 @@ function parseProtocol(argv) {
     }
   }
   return values;
+}
+
+/**
+ * The action metadata's declared input keys (phase 13 contract §2.3's
+ * table, verbatim) — the closed inventory the composite maps onto this
+ * argv protocol (`working-directory` rides the step's own cwd and reaches
+ * no flag here). The runner injects every `with:` key — declared or not —
+ * as an `INPUT_<NAME>` environment variable into this step (documented
+ * runner behavior), so a misspelled key (`intent:` for `intents:`)
+ * arrives as an unknown ambient name while the declared input's default
+ * silently takes over: the consumer's intent never arrives and nothing
+ * says so. The fail-loud law (§2.3 as amended): an unknown name is the
+ * pre-invocation fault it is — this program names the key and the
+ * declared set instead of running on a default the consumer never chose.
+ * Widening this set is a reviewed change paired with `action.yml`, never
+ * an ambient permission.
+ *
+ * @type {ReadonlySet<string>}
+ */
+const DECLARED_INPUTS = new Set([
+  "world",
+  "line",
+  "actor",
+  "tag-namespaces",
+  "intents",
+  "repo",
+  "max-retries",
+  "working-directory",
+]);
+
+/**
+ * The runner-injected input names the declared inventory does not name,
+ * decoded and sorted: the `INPUT_` prefix stripped, the remainder
+ * lower-cased (the runner upper-cases names and folds spaces to
+ * underscores; a hyphen is not folded, so `max_retries` does not decode
+ * to the declared `max-retries` — it is refused, which is the point).
+ * Names only: the values in `env` are never read here.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string[]}
+ */
+function undeclaredInputKeys(env) {
+  const keys = [];
+  for (const name of Object.keys(env)) {
+    if (!name.startsWith("INPUT_")) {
+      continue;
+    }
+    const key = name.slice("INPUT_".length).toLowerCase();
+    if (key.length > 0 && !DECLARED_INPUTS.has(key)) {
+      keys.push(key);
+    }
+  }
+  return keys.sort();
 }
 
 /**
@@ -369,6 +427,22 @@ function invoke(values) {
 }
 
 try {
+  const undeclared = undeclaredInputKeys(process.env);
+  if (undeclared.length > 0) {
+    // A pre-invocation fault on the invocation's own declared surface: the
+    // bin is never spawned, nothing is annotated, no output is written
+    // (§3.2's no-verdict row, parenthetical) — the failing step's log and
+    // conclusion are the evidence.
+    throw new Error(
+      `undeclared action input "${undeclared[0]}" — the declared inputs are ` +
+        `${[...DECLARED_INPUTS].join(", ")}; the runner passes undeclared ` +
+        "`with:` keys through, so a misspelled key would silently run on " +
+        "the default" +
+        (undeclared.length > 1
+          ? ` (and ${undeclared.length - 1} more: ${undeclared.slice(1).join(", ")})`
+          : ""),
+    );
+  }
   process.exitCode = invoke(parseProtocol(process.argv.slice(2)));
 } catch (error) {
   // A pre-invocation fault in this program's own protocol: the failing

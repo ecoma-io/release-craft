@@ -16,6 +16,11 @@
 #     grammar row (`GRAMMAR.run` in src/cli/grammar.ts) or is refused; the
 #     closed grammar is the validation, the metadata is not the enforcement
 #     layer;
+#   - the input KEY inventory is closed in the invoke program too (§2.3 as
+#     amended by #191): the runner passes undeclared `with:` keys through, so
+#     a misspelled key would run silently on the declared default — the
+#     script reads the injected `INPUT_*` key names (never a value) and
+#     refuses an unknown one loudly instead;
 #   - `--assembly git` is pinned (§2.6): a memory run in CI is a walk whose
 #     every record evaporates with the runner;
 #   - no token input, no secret, no checkout (§2.8) — the mint is a local
@@ -121,10 +126,18 @@ runs:
     # — the invocation (§2.7, §4) — the one step past the outer hermeticity
     # line. The declared inputs enter as argv through this step's `env:` block
     # (reviewed metadata, one shell-quoted word per expansion — the runner's
-    # own `INPUT_*` injection is never read) and the script constructs the
-    # child's allowlisted environment, captures the envelope, writes the
-    # `outcome` output through the preserving write, annotates per the
-    # conclusion table, and exits with the conclusion. `GITHUB_OUTPUT` is
+    # own `INPUT_*` injection is never read for a VALUE) and the script
+    # constructs the child's allowlisted environment, captures the envelope,
+    # writes the `outcome` output through the preserving write, annotates per
+    # the conclusion table, and exits with the conclusion. One read of the
+    # injection is owned, not avoided (§2.3 as amended by #191): the script
+    # compares the injected `INPUT_*` KEY NAMES against the declared input
+    # inventory, because the runner passes undeclared `with:` keys through —
+    # a misspelled key (`intent:` for `intents:`) would otherwise arrive as
+    # nothing and the default silently take over. An unknown name is the
+    # pre-invocation fault naming the key and the declared set; a declared
+    # name changes nothing, and no value is ever read from the channel.
+    # `GITHUB_OUTPUT` is
     # written by this outer shell only; the child sees no `GITHUB_*` at all.
     # The step's cwd is the declared `working-directory` input — a declared
     # runner fact resolved by the runner into reviewed metadata — and the

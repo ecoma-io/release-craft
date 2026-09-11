@@ -545,6 +545,56 @@ describe("fixture: the planted ambient layer ends at the outer hermeticity line"
 });
 
 // ---------------------------------------------------------------------------
+// §2.3 as amended (#191) — the declared input inventory is closed
+// ---------------------------------------------------------------------------
+
+describe("fixture: an undeclared input key is refused, a declared name changes nothing", () => {
+  it("an unknown INPUT_ name is a pre-invocation fault naming the key and the declared set", () => {
+    withScratchDir((scratch) => {
+      const bin = join(scratch, "argv-echo.mjs");
+      writeFileSync(bin, ARGV_ECHO_BIN);
+      // The runner injects every `with:` key as INPUT_<NAME> — declared or
+      // not. `intent` is the classic typo of `intents`; planted here the
+      // way the runner would plant it.
+      const drive = runInvoke(baseInputs({ bin }), {
+        env: { PATH: process.env.PATH ?? "", INPUT_INTENT: "release-anyway" },
+      });
+      expect(drive.status).toBe(1);
+      // The pre-invocation fault posture: no annotation, no output written,
+      // the bin never spawned — the step log is the evidence.
+      expect(drive.stdout.toString("utf8")).toBe("");
+      expect(drive.stderr.toString("utf8")).toContain('undeclared action input "intent"');
+      expect(drive.stderr.toString("utf8")).toContain(
+        "world, line, actor, tag-namespaces, intents, repo, max-retries, working-directory",
+      );
+      expect(drive.outputs).toHaveLength(0);
+    });
+  });
+
+  it("a declared INPUT_ name — including one that reaches no flag — changes nothing", () => {
+    withScratchDir((scratch) => {
+      const bin = join(scratch, "argv-echo.mjs");
+      writeFileSync(bin, ARGV_ECHO_BIN);
+      const drive = runInvoke(baseInputs({ bin }), {
+        env: {
+          PATH: process.env.PATH ?? "",
+          INPUT_INTENTS: "release-anyway",
+          "INPUT_WORKING-DIRECTORY": "/somewhere",
+          "INPUT_TAG-NAMESPACES": "v",
+        },
+      });
+      // The echo bin's stdout is no envelope, so the script still concludes
+      // no-verdict — but the pipeline ran: the relay rode, the output was
+      // written, and the fault never fired.
+      const replayed = replayOutcome(drive.outputs);
+      expect(replayed).toContain('"argv"');
+      expect(drive.stderr.toString("utf8")).toBe("");
+      expect(drive.stderr.toString("utf8")).not.toContain("undeclared action input");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // §6 obligation 7 — determinism
 // ---------------------------------------------------------------------------
 
