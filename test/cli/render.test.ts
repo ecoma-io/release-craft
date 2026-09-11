@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import { exitCodeFor } from "@ecoma-io/release-craft/__internal__/cli/exit-codes.js";
 import { renderHuman, renderJson } from "@ecoma-io/release-craft/__internal__/cli/render.js";
-import type { Observation, RunOutcome } from "../../src/index.js";
+import type { Observation, PlanningInput, RunOutcome } from "../../src/index.js";
 import { betaIntent, docBytes, memoryDoc, runCli } from "./harness.js";
 
 const HANDLE = {
@@ -161,5 +161,95 @@ describe("§3.1 — the human spelling through the built bin", () => {
     expect(lines).toContain("tag 5.0.0-beta.1");
     expect(lines.some((line) => line.startsWith("attempt attempt_sha256:"))).toBe(true);
     expect(child.stderr).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §3.1 as amended (#191) — the plan door's stop-shaped decision records ride
+// the human text. A blocked or refused line contributes no plan line (D18),
+// so without these rows the door exits 0 and the human text names nothing
+// while `--json`'s `decisions[]` carries the operator's next move.
+// ---------------------------------------------------------------------------
+
+/** A one-line world whose pending fix demands a bootstrap decision the
+ * document does not record (S-02's shape), or whose line is frozen — the
+ * two decision records a `planned` outcome can carry with `lines: []`. */
+const decisionWorld = (lifecycle: "active" | "frozen"): PlanningInput => ({
+  policy: {
+    digest: "render-decision-digest",
+    bumpMappingId: "default",
+    selfReferenceNamespace: "self:",
+    prereleaseLadder: ["alpha", "beta", "rc"],
+    prereleaseSeed: "1",
+    pre10Dampening: true,
+    tagFormats: {},
+  },
+  repository: {
+    commits: [
+      {
+        sha: "r1",
+        message: "chore: branch for the line",
+        committedAt: "2026-01-01T00:00:00Z",
+        parents: [],
+        containingRefs: ["main"],
+      },
+      {
+        sha: "r2",
+        message: "fix: the first pending fix",
+        committedAt: "2026-01-02T00:00:00Z",
+        parents: ["r1"],
+        containingRefs: ["main"],
+      },
+    ],
+    refs: [{ name: "main", head: "r2" }],
+  },
+  history: { tags: [] },
+  lines: [{ id: "main", feedRef: "main", lifecycle, declared: true }],
+  components: [{ name: "app", manifestVersion: "1.0.0", paths: ["package.json"] }],
+});
+
+describe("§3.1 — the human projection carries the stop-shaped decision records", () => {
+  it("a blocked decision rides its cause and the operator's detail sentence", () => {
+    const result = runCli(["plan", "--assembly", "memory", "--world", "-"], {
+      input: docBytes(decisionWorld("active")),
+    });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    const lines = result.stdout.trimEnd().split("\n");
+    expect(lines[0]).toBe("planned");
+    expect(lines).toContain("decision main blocked bootstrap-required");
+    expect(lines).toContain(
+      "detail the evaluated range starts at line birth, pending changes present, " +
+        "and no recorded bootstrap decision — the first version is the operator's call (S-02)",
+    );
+    // The decision records read last, like the stopping step in runLines.
+    expect(lines[lines.length - 1]?.startsWith("detail ")).toBe(true);
+  });
+
+  it("a refused decision rides its cause and detail the same way", () => {
+    const result = runCli(["plan", "--assembly", "memory", "--world", "-"], {
+      input: docBytes(decisionWorld("frozen")),
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("decision main refused line-frozen");
+    expect(result.stdout).toContain('detail line "main" is frozen');
+  });
+
+  it("the machine document is unchanged: --json still renders the value verbatim", () => {
+    const result = runCli(["plan", "--assembly", "memory", "--world", "-", "--json"], {
+      input: docBytes(decisionWorld("active")),
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout.trimEnd().split("\n")).toHaveLength(1);
+    const parsed = JSON.parse(result.stdout) as {
+      kind: string;
+      decisions: { kind: string; cause: string; detail: string }[];
+    };
+    expect(parsed.kind).toBe("planned");
+    expect(parsed.decisions[0]).toMatchObject({
+      kind: "blocked",
+      cause: "bootstrap-required",
+    });
+    expect(parsed.decisions[0]?.detail).toContain("the operator's call (S-02)");
   });
 });

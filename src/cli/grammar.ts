@@ -130,3 +130,27 @@ export const usageText = (): string =>
     "  assembly flags: --repo <path> --tag-namespace <ns> (git only, repeatable)",
     "                  --max-retries <n> (default 0)",
   ].join("\n");
+
+/** The help spellings — the whole-process question, answered in the
+ * command position before the grammar dispatches (§2.2). Deliberately in
+ * NO command's inventory: the inventories stay closed
+ * (`test/cli/grammar.test.ts` pins `help`/`h` absent), so `run --help`
+ * remains the usage fault that prints the same synopsis; only the
+ * whole-process question is answered, on stdout, exit 0. */
+export const HELP_FLAGS: readonly string[] = ["--help", "-h"];
+
+/** The help text (§2.2): the fault synopsis — `usageText`, reused, never
+ * duplicated — plus the one block the synopsis omits, the intent
+ * spellings (§2.2's five rows, the same list the intent parser's own
+ * fault names). Built from the synopsis so a grammar row cannot drift
+ * from help: there is one grammar text, and this is its whole rendering. */
+export const helpText = (): string =>
+  [
+    usageText(),
+    "",
+    "  intents (--intent, repeatable):",
+    "    release | release-anyway | prerelease:<stream>:<lineId>",
+    "    release-as:<version> | promote:<lineId>",
+    "",
+    "  help: release-craft --help | -h prints this text and exits 0",
+  ].join("\n");
