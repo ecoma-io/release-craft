@@ -13,12 +13,15 @@
 
 import { describe, expect, it } from "vitest";
 
+import { hermeticGitEnv } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
+import { runBinEnv } from "./drive.js";
 import { TAXONOMY, WALKS } from "./matrix.js";
 import {
   census,
   censusPairs,
   expectedFileDefects,
   expectedFiles,
+  fixtureModules,
   importViolations,
   isolationViolations,
   MANIFEST,
@@ -162,6 +165,35 @@ describe("the manifest's executable laws · the probes over the fixture's own mo
 
   it("no fixture module names a refused input", () => {
     expect(refusalInventoryViolations()).toStrictEqual([]);
+  });
+
+  it("the process transport's constructed environment is exactly the invocation script's two-name allowlist", () => {
+    // The construction (`runBinEnv`, phase 13 §4's outer line mirrored) is
+    // pinned as an exact key set, not a strip list: nothing ambient can
+    // ride along at all, so an ambient `NODE_OPTIONS`, agent marker, locale
+    // variable, or `GIT_*` value is absent by construction — on every
+    // machine, vacuously where this worker's ambient carries none.
+    const env = runBinEnv("/scratch/release-craft-home-pinned");
+    expect(Object.keys(env).sort()).toStrictEqual(["HOME", "PATH"]);
+    expect(env.HOME).toBe("/scratch/release-craft-home-pinned");
+    // The one ambient value carried rides the binding's own floor — the
+    // fixture reads no environment of its own (the probe above), and the
+    // floor's PATH is the ambient PATH untouched (its filter strips only
+    // the leaked git context and GIT_TRACE*).
+    expect(env.PATH).toBe(hermeticGitEnv().PATH ?? "");
+  });
+
+  it("the subprocess consults the constructed environment — the source spelling is coupled to the law", () => {
+    // The structural pin above judges the construction; this one judges
+    // that `runBin` still consults it. The probes are textual by design
+    // (the negative inventory's own style, the CLI hermeticity scan's
+    // self-bite posture): the mutant this bites is the inheritance revert —
+    // deleting the `env` key returns the subprocess to the worker's whole
+    // ambient and removes exactly this spelling. The behavioral plant that
+    // also catches that mutant lives outside the fixture
+    // (`test/certification-env.test.ts`): the isolation probe's
+    // no-ambient-read law cannot apply to the guard that plants one.
+    expect(fixtureModules()["drive.ts"]).toContain("env: runBinEnv(home)");
   });
 
   it("every live or typed row id is produced by a test title in its suite (§5's produced-by law)", () => {
