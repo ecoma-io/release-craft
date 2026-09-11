@@ -132,6 +132,11 @@ const DERIVATION_DETAILS: Partial<Record<"plan-recorded", string>> = {
     "plan-recorded: the hold is the plan's own recorded precondition content, derived at planning from the closed input world — the walk re-observed nothing (phase 11 §2.5)",
 };
 
+/** The closed derivation vocabulary as the door checks it at runtime —
+ * a token outside this set is the named refusal (#269), never a silent
+ * fall-through to a bare hold. */
+const KNOWN_DERIVATIONS: readonly string[] = Object.keys(DERIVATION_DETAILS);
+
 /** The guard rows an advancing record carries (§2.6: "what was checked,
  * with results"). Optional details are omitted, never `undefined`-filled.
  * The publish row appears only when the attempt declares artifact steps —
@@ -320,7 +325,25 @@ export const requestStep = (
     }
   }
   if (request.stepKey === "validate") {
-    // `validate` re-proves the plan's preconditions (E-04, E-06): any
+    // The closed derivation vocabulary, checked at the door (#269): a
+    // `holds: true` row naming a derivation outside the vocabulary cannot
+    // be recorded honestly — a foreign token falling through guardList
+    // would land a bare unevaluated hold on the durable record,
+    // byte-identical to the fabrication this vocabulary exists to close.
+    // The door refuses loudly (a returned outcome naming the token);
+    // nothing appends.
+    const foreign = (request.preconditions ?? []).find(
+      (observation) =>
+        observation.derivation !== undefined && !KNOWN_DERIVATIONS.includes(observation.derivation),
+    );
+    if (foreign !== undefined) {
+      return {
+        kind: "refused",
+        stepKey: request.stepKey,
+        detail: `precondition-derivation-unknown: ${JSON.stringify(foreign.derivation)} is outside the closed derivation vocabulary (${KNOWN_DERIVATIONS.join(", ")}) — the hold cannot be recorded honestly (#269)`,
+      };
+    }
+    // `validate` records the plan's preconditions (E-04, E-06): any
     // failed observation suspends the attempt — blocked(cause), the cause
     // recorded verbatim, nothing consumed.
     const failed = (request.preconditions ?? []).find((observation) => !observation.holds);

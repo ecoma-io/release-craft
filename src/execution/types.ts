@@ -614,7 +614,9 @@ export interface ExternalSatisfaction {
  * verbatim (E-04's `precondition-delta`, E-06's `unattributed-state`,
  * PR-03's `validation`). */
 export interface PreconditionObservation {
-  /** What was re-proved — the plan's own precondition, verbatim. */
+  /** The plan's own precondition, verbatim — a re-proof the executing
+   * side performed when no `derivation` names the row, or the plan's own
+   * recorded content carried under a `derivation` (#269). */
   readonly precondition: string;
   readonly holds: boolean;
   /** The recorded cause when `holds` is false; defaults to E-04's
