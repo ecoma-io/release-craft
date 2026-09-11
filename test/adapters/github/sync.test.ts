@@ -5,7 +5,7 @@
  * diverged remote is refused — and the refusal classes arrive as report
  * rows, never exceptions.
  *
- * Since #177 (§2.9; D54) the origin the fixture configures is the
+ * Since #177 (§2.9; D55) the origin the fixture configures is the
  * credentials' own repository URL — the identity agreement the factory
  * now refuses to open without — and the bare repository the sync
  * transports against stands behind that URL through the origin shim

@@ -2,7 +2,7 @@
  * The assembled adapter (the Phase 9 contract §2.6; ADR-0010 decision 2
  * as amended by #65): the factory composes the merged units behind the
  * §2.6 barrel, each door routed to its own unit, the injected transport
- * the only HTTP the adapter ever speaks. Since #177 (§2.9; D54) the
+ * the only HTTP the adapter ever speaks. Since #177 (§2.9; D55) the
  * factory also owns the open-time identity agreement: it refuses to open
  * unless the binding's origin and the credentials name the same
  * repository — the pins here execute the issue's repro (the same-named

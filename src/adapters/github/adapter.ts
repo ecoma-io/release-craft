@@ -13,7 +13,7 @@
  * of the two disciplines this layer records.
  *
  * The factory owns one check of its own, the open-time identity
- * agreement (§2.9; #177; D54): the sync transports against the binding's
+ * agreement (§2.9; #177; D55): the sync transports against the binding's
  * `origin` while the API doors address `credentials.owner/repo` — two
  * remote identities nothing compared, so a credential for a fork passed
  * every classification while the two halves of the adapter spoke to two
@@ -45,7 +45,7 @@ import { originIdentityFault } from "./remote-identity.js";
 import { GitRemoteSync } from "./sync.js";
 
 /**
- * The open-time identity agreement (§2.9; #177; D54): reads the binding's
+ * The open-time identity agreement (§2.9; #177; D55): reads the binding's
  * configured origin — the effective URL the sync itself pushes through —
  * and throws a `GitFaultError` naming both identities unless it names the
  * credentials' repository. The refusal is thrown, not returned: decision
@@ -78,7 +78,7 @@ const assertOriginAgreement = (binding: GitBinding, credentials: GitHubCredentia
  * binding's own repository for the git-level sync (ADR-0010 decision
  * 3); the API doors compare and publish against the credentials'
  * owner/repo — and the factory refuses to open at all unless the origin
- * and the credentials name that same repository (§2.9; #177; D54).
+ * and the credentials name that same repository (§2.9; #177; D55).
  */
 export const openGitHubAdapter = (
   binding: GitBinding,

@@ -13,7 +13,7 @@
  *   repository (the mint runs inside the reused run driver), and the
  *   adapter's synchronization — the git-path unit — pushes the recorded refs
  *   to a real bare `origin` the fixture stands up beside the repo. Since
- *   #177 (§2.9; D54) the configured origin is the credentials' repository
+ *   #177 (§2.9; D55) the configured origin is the credentials' repository
  *   URL — the identity agreement the factory refuses to open without — and
  *   the bare repository stands behind that URL through a `git` PATH shim
  *   (the house pattern: every argv delegates to the real git except
@@ -384,7 +384,7 @@ export function withGitHubVertical(name: string, fn: (state: GitHubVerticalState
       spawn(["init", "--bare", "--quiet", origin], origin);
       // The remote is configured under the credentials' repository URL —
       // the identity the adapter's open-time agreement reads (§2.9; #177;
-      // D54) — with the bare repository standing behind it through the
+      // D55) — with the bare repository standing behind it through the
       // shim's map.
       spawn(["-C", repo, "remote", "add", "origin", ORIGIN_URL]);
       mapOriginTo(origin);

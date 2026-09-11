@@ -1,6 +1,6 @@
 /**
  * The origin shim — the `git` PATH shim behind the credentials' repository
- * URL (the Phase 9 contract §2.9; #177; D54).
+ * URL (the Phase 9 contract §2.9; #177; D55).
  *
  * The composed adapter's open-time identity agreement reads `origin` the
  * way the sync transports it, so a fixture whose sync must land in a local

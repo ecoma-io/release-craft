@@ -1,6 +1,6 @@
 /**
  * The origin-identity parser's own pins (the Phase 9 contract §2.9;
- * #177; D54): which origin URL spelling reads as which repository
+ * #177; D55): which origin URL spelling reads as which repository
  * identity, and which read no github.com repository at all. This suite
  * is the one deliberate exception to the barrel-only rule alongside the
  * failure classifier's (`remote-git.test.ts`): the URL grammar is a pure
