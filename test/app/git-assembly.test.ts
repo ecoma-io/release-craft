@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { assembleGitBinding } from "../../src/index.js";
 import { withTempRepo } from "../adapters/git/temp-repo.js";
-import { liveWorld, matrixHooks } from "../vertical/matrix.js";
+import { COMMITTED_AT, liveWorld, matrixHooks, runInput } from "../vertical/matrix.js";
 import { naming, openGitBinding, openGitState } from "../vertical/matrix-git.js";
 import { beta, fullDeclaration, runRequest } from "./harness.js";
 
@@ -67,6 +67,57 @@ describe("§2.2 — assembleGitBinding over an opened binding", () => {
         expect(outcome.handle).toBeNull();
         expect(outcome.drives).toStrictEqual([]);
         // Nothing minted, nothing recorded: the refusal preceded the walk.
+        expect(state.binding.refs.tags()).toStrictEqual([]);
+      });
+    },
+  );
+
+  it(
+    "an unchanged re-dispatch over the released head blocks at the planning boundary — the repository is untouched (#263)",
+    { timeout: 60_000 },
+    () => {
+      withTempRepo("app-git-replay-263", (repo) => {
+        const state = openGitState(repo);
+        const engine = assembleGitBinding(state.binding, { maxRetries: 2 });
+        const head = state.lineHeads.main;
+        if (head === undefined) {
+          throw new Error("fixture broken: no recorded head for main");
+        }
+        // The hosted close-world shape (#263): the world observes the
+        // released tag under its full git refname at the unchanged head,
+        // the recorded bootstrap that birthed the line rides the closed
+        // input, and a release demand re-arrives. The planner admits the
+        // refname-spelled tag (§2.13's normalization), the line's recorded
+        // pointer IS the head, and §2.9 refuses the replay before any
+        // attempt opens.
+        const base = runInput(liveWorld(), "main", [{ kind: "release" }]);
+        const input = {
+          ...base,
+          repository: {
+            commits: base.repository.commits.map((candidate) =>
+              candidate.sha === "m5" ? { ...candidate, sha: head } : candidate,
+            ),
+            refs: base.repository.refs.map((ref) => (ref.name === "main" ? { ...ref, head } : ref)),
+          },
+          history: { tags: [...base.history.tags, { name: "refs/tags/5.0.0", commit: head }] },
+          bootstrap: { version: "5.0.0", who: "the operator", when: COMMITTED_AT },
+        };
+        const outcome = engine.run({
+          ...runRequest(liveWorld(), "main", [{ kind: "release" }], fullDeclaration()),
+          input,
+          targets: { main: head },
+        });
+        expect(outcome.kind).toBe("blocked");
+        if (outcome.kind !== "blocked") {
+          throw new Error("expected a blocked outcome");
+        }
+        expect(outcome.cause).toContain("released-version-observed");
+        expect(outcome.cause).toContain("refs/tags/5.0.0");
+        expect(outcome.planId).not.toBeNull();
+        expect(outcome.handle).toBeNull();
+        expect(outcome.drives).toStrictEqual([]);
+        // No second attempt, no mint: the repository carries no new tag,
+        // and the planned tag never reached the binding's real door.
         expect(state.binding.refs.tags()).toStrictEqual([]);
       });
     },

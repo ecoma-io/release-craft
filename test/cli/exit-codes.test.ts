@@ -8,11 +8,14 @@
  * stdout stays empty) and never as a `refused` outcome.
  *
  * The rows a one-shot CLI process cannot reach — satisfied-externally,
- * resolved, abandoned, blocked, failed, stale, escalate, and the two
- * observation kinds' statuses — are pinned against the exit-codes module
- * itself, whose `Record` is exhaustive over the outcome unions: a new kind
- * fails to compile, and this suite fails if the number drifts. The
- * renderer suite pins those rows' stdout half.
+ * resolved, abandoned, failed, stale, escalate, and the two observation
+ * kinds' statuses — are pinned against the exit-codes module itself, whose
+ * `Record` is exhaustive over the outcome unions: a new kind fails to
+ * compile, and this suite fails if the number drifts. The renderer suite
+ * pins those rows' stdout half. `blocked` left that list in #263: the
+ * released-version replay makes a planning-boundary block reachable
+ * through the pure process grammar, and its row is driven through the
+ * built bin below.
  */
 
 import { readFileSync } from "node:fs";
@@ -25,6 +28,7 @@ import {
   EXIT_USAGE,
 } from "@ecoma-io/release-craft/__internal__/cli/exit-codes.js";
 import { RECORDED_EXIT_TABLE } from "../certification/exit-table.js";
+import { COMMITTED_AT, liveWorld, runInput } from "../vertical/matrix.js";
 import {
   betaIntent,
   cliJson,
@@ -126,6 +130,54 @@ describe("§3.2 — the rows the process surface can reach, through the built bi
     expect(second.status).toBe(10);
     expect(second.stderr).toBe("");
     expect(cliJson(second)).toMatchObject({ kind: "refused" });
+  });
+
+  it("blocked → exit 12, kind blocked — the planning boundary's own record, in both transports (#263)", () => {
+    // The hosted replay (#263): the world observes the released tag under
+    // its full git refname at main's unchanged head, the recorded
+    // bootstrap rides the document, and the document's release demand
+    // re-arrives. The plan blocks the line; the process renders the
+    // boundary's own blocked record and exits 12.
+    const world = liveWorld();
+    world.tags.push({ name: "refs/tags/5.0.0", commit: "m5" });
+    const doc = docBytes({
+      ...runInput(world, "main", [{ kind: "release" }]),
+      bootstrap: { version: "5.0.0", who: "the operator", when: COMMITTED_AT },
+    });
+    const args = [
+      "run",
+      "--assembly",
+      "memory",
+      "--world",
+      "-",
+      "--actor",
+      "automation",
+      "--line",
+      "main",
+    ];
+    const jsonRun = runCli([...args, "--json"], { input: doc });
+    expect(jsonRun.status).toBe(12);
+    expect(jsonRun.stderr).toBe("");
+    const envelope = cliJson(jsonRun) as {
+      kind: string;
+      cause: string;
+      handle: unknown;
+      drives: unknown[];
+    };
+    expect(envelope.kind).toBe("blocked");
+    expect(envelope.cause).toContain("released-version-observed");
+    expect(envelope.cause).toContain("refs/tags/5.0.0");
+    expect(envelope.handle).toBeNull();
+    expect(envelope.drives).toStrictEqual([]);
+    // The human transcript carries the same record verbatim — the cause
+    // line is the projection, never a re-translation.
+    const human = runCli(args, { input: doc });
+    expect(human.status).toBe(12);
+    expect(human.stderr).toBe("");
+    expect(human.stdout).toContain("blocked\n");
+    expect(human.stdout).toContain("plan ");
+    expect(human.stdout).toContain("cause released-version-observed: ");
+    expect(human.stdout).toContain("refs/tags/5.0.0");
   });
 
   it(
