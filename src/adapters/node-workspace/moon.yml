@@ -1,0 +1,47 @@
+# The adapters-node-workspace project — Node workspace graph detection
+# (issue #205).
+#
+# This adapter reads workspace manifests (pnpm `packages:`, npm/yarn
+# `workspaces:`) and member package.json files to produce a detected
+# workspace graph — declared components and dependency edges — plus the
+# conversion to `ComponentMeta[]` that feeds `planPropagation` and the
+# updater.
+#
+# The adapter reaches the planner barrel (`../../planner/index.js` —
+# `ComponentMeta`, `ComponentDependency` types for `toComponentMeta`)
+# and the domain kernel alias.  No app, cli, or adapters-github imports
+# is legal here — adapters compose inward, never toward the surface.
+#
+# Task roster:
+#   - no `build` task: emitted as part of release-craft:build
+#   - `arch` runs once per workspace (release-craft:arch)
+id: adapters-node-workspace
+language: typescript
+# Depends on the planner (for ComponentMeta/ComponentDependency types
+# used in `toComponentMeta`) and the domain kernel alias.
+dependsOn:
+  - core-domain
+  - planner
+fileGroups:
+  sources:
+    - "**/*"
+tags:
+  - type-adapters-node-workspace
+tasks:
+  lint:
+    command: eslint . --max-warnings 0
+    inputs:
+      - "**/*"
+      - "/eslint.config.mjs"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"
+  typecheck:
+    command: tsc -p tsconfig.json
+    inputs:
+      - "**/*"
+      - "project://core-domain?group=sources"
+      - "project://planner?group=sources"
+      - "/tsconfig.json"
+      - "/package.json"
+      - "/pnpm-lock.yaml"

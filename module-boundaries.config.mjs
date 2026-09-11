@@ -29,6 +29,7 @@
  *   app               →  execution/planner/adapters-git ✅  the boundary composes the layers
  *   adapters-git      →  execution/planner ✅  the binding reaches the layers it implements
  *   adapters-github   →  adapters-git      ✅  the GitHub adapter reaches only the git binding
+ *   adapters-nodews   →  planner/domain   ✅  the workspace detector reaches the planner types
  *   cli               →  app/execution/planner/adapters-git ✅  the CLI composes the layers it renders —
  *                                             never the package front door
  *   release-craft     →  every layer       ✅  the package shell re-exports the layers below
@@ -54,6 +55,7 @@ export const depConstraints = [
       "type-cli",
       "type-adapters-git",
       "type-adapters-github",
+      "type-adapters-node-workspace",
     ],
   },
 
@@ -126,6 +128,14 @@ export const depConstraints = [
   {
     sourceTag: "type-adapters-github",
     onlyDependOnLibsWithTags: ["type-domain", "type-adapters-git"],
+  },
+
+  // The node-workspace adapter reaches the layers it implements (planner,
+  // domain) — never app, never cli, never the other adapters (adapters
+  // compose inward, never toward the surface or sideways).
+  {
+    sourceTag: "type-adapters-node-workspace",
+    onlyDependOnLibsWithTags: ["type-domain", "type-planner"],
   },
 
   // The repository gates (scripts/) are standalone: they may never import the

@@ -53,6 +53,10 @@
     "./adapters/github": {
       "types": "./dist/src/adapters/github/index.d.ts",
       "default": "./dist/src/adapters/github/index.js"
+    },
+    "./adapters/node-workspace": {
+      "types": "./dist/src/adapters/node-workspace/index.d.ts",
+      "default": "./dist/src/adapters/node-workspace/index.js"
     }
   },
   "packageManager": "pnpm@11.25.0",

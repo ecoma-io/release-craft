@@ -59,6 +59,12 @@ export default defineConfig({
         find: "@ecoma-io/release-craft/adapters/github",
         replacement: fileURLToPath(new URL("./src/adapters/github/index.ts", import.meta.url)),
       },
+      {
+        find: "@ecoma-io/release-craft/adapters/node-workspace",
+        replacement: fileURLToPath(
+          new URL("./src/adapters/node-workspace/index.ts", import.meta.url),
+        ),
+      },
     ],
   },
   test: {
