@@ -118,7 +118,7 @@ Three workflows, three different questions — none is a god workflow:
   finalized PR description — the gate born from #6, which merged with a
   "(To be finalized)" body and an untouched checklist.
 
-Three workflows sit outside this layering — none is a governance gate, and
+Four workflows sit outside this layering — none is a governance gate, and
 none appears in any gate's `needs:`; all are held to the same
 `check:workflows` posture as the three above. `triage.yml` (#101) labels
 issues and pull requests from a model verdict. `review.yml` (#214) reviews
@@ -129,7 +129,11 @@ one judged `workflow_dispatch` of the released Action over this
 repository, capturing the four certification classes (phase 14 §7) and
 judging in-job every class the captured material settles mechanically;
 the rows no machine can settle print as NOT ASSERTED, never a waived
-pass.
+pass. `self-release.yml` (#259) is the real leg beside that rehearsal —
+the same judged dispatch, plus the caller-side publish that carries the
+run's local mint to origin under `contents: write` and the origin
+verification that fails the job when the run's claims are not origin's
+state (phase 14 §7, decision-log D63).
 
 The three layers rest on GitHub rulesets on `main`: pull requests only, the
 required checks above, linear history, up-to-date branches, resolved
