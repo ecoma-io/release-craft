@@ -340,10 +340,12 @@ RefRead`, the recorded refs' read-only enumeration — `claims()`
   commit: the peeled commit for an annotated tag, the ref's own target
   for a lightweight one). Pure `for-each-ref` reads: no write, no `HEAD`
   resolution, no working-tree state (the mint door's discipline, read
-  side). The adapter's transport-level git (`ls-remote`, `push`) runs
+  side). The adapter's transport-level git (`ls-remote`, `push`, and the
+  open-time origin read §2.9 adds) runs
   against exactly this repository — structural, not conventional —
   through its own transport runner (`remote-git.ts`), which carries no
-  substrate probe, deliberately: `ls-remote` and `push` perform no
+  substrate probe, deliberately: `ls-remote`, `push` and the origin read
+  perform no
   recorded-history walks and no recorded-content reads — the operations
   the guard exists for — and git fails loudly, in its own transport
   vocabulary, on a shape it cannot transport (phase 8 §2.7 guards the
@@ -500,6 +502,27 @@ of a repository identity and does not refuse a same-host match.
   github.com, warn and continue): the check would be a no-op for
   exactly the origins most likely to be wrong; fail-closed is the
   point.
+
+The check's recorded residuals — behaviors it does not have, stated so
+the record carries them (the round-1 review's fold):
+
+- **Percent-encoded path segments read literally, so a percent-encoded
+  spelling of the agreeing repository false-refuses.** The comparison is
+  plain text over the decoded-what-URL-gives-us path; a `%72elease-craft`
+  segment is not the credentials' `release-craft` and refuses. The
+  refusal is loud and names both identities — the operator fixes the
+  origin's spelling; nothing degrades quietly.
+- **A query or fragment rides the origin unjudged.** The grammar reads
+  the path, not `?query` or `#fragment`; an origin carrying them opens
+  when its path identity agrees, and whatever git's transport then does
+  with the suffix faults loudly at use — the agreement never mistakes
+  the decoration for part of the identity.
+- **The no-origin tolerance reads every nonzero exit, not just a clean
+  absence.** The origin read failing for a corrupt or not-a-repository
+  binding takes the same opens path as a genuinely absent origin; the
+  doors then fault loudly at use — the binding's own substrate rules
+  refuse such a repository before or at the first door, so the
+  tolerance changes when the loud fault arrives, never whether.
 
 ## 3. Laws
 

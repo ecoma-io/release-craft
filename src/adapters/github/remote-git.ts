@@ -1,7 +1,9 @@
 /**
  * The adapter's transport-level git (the Phase 9 contract §2.7): the
  * `ls-remote` and `push` the remote synchronization runs against the
- * binding's own repository — `-C binding.repo` is the structural tie, so
+ * binding's own repository, plus the open-time origin read
+ * (`remote get-url origin`, §2.9) the identity agreement runs at factory
+ * open — `-C binding.repo` is the structural tie, so
  * the pushed objects can only come from the binding's repository. The
  * invocation is node's own `spawnSync` (the no-runtime-dependency house
  * rule), synchronous like every door.
@@ -60,7 +62,9 @@ export interface RemoteGitOutcome {
 }
 
 /** The adapter's git runner: one opened repository (the binding's), one
- *  credential in the child environment, `ls-remote` and `push` only. */
+ *  credential in the child environment, `ls-remote` and `push` for the
+ *  sync and the open-time origin read (`remote get-url origin`) for the
+ *  identity agreement — and nothing else. */
 export type RemoteGitRun = (args: readonly string[]) => RemoteGitOutcome;
 
 /** Node attaches the errno to a spawn failure as an ad-hoc `code`
