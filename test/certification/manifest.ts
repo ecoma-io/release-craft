@@ -50,6 +50,9 @@ export const FIXTURE_DIR = import.meta.dirname;
 export const ASSEMBLIES = [
   "A-memory",
   "A-git",
+  // git-15's posture: one declared world driven through BOTH engines — the
+  // assembly a pairing cell names, not a fourth engine.
+  "A-git + A-memory",
   "A-cross-process",
   "the repository itself",
 ] as const;
@@ -525,13 +528,13 @@ export const MANIFEST: readonly ManifestRow[] = [
     kind: "posture",
     walk: null,
     windows: [],
-    assembly: "A-git",
+    assembly: "A-git + A-memory",
     transports: ["boundary"],
     classes: ["ledger projections"],
     expectedFiles: [],
     provenance: [
       "phase 14 §3.3",
-      "phase 14 §4.3 (the projection is the only delta between the two assemblies — proven, not cited: one declared world through both assemblies, the git ledger's projected records equal to the memory ledger's in append order, the identity chain's sha256 literals committed in the cell, the attempt id standing as the repository's own ledger ref)",
+      "phase 14 §4.3 (the projection is the only delta between the two assemblies — proven, not cited: one declared world through both assemblies, the git ledger's projected records equal to the memory ledger's in append order, the identity chain's sha256 literals committed in the cell, the attempt id standing as the repository's own ledger ref; each side's claim token reads as CLAIM by the recorded rule — the one value allowed to differ, so a second random value in the git path can only false-red the pairing, never pass it silently)",
       "#186 (the pairing the provenance rows used to cite, made executable)",
     ],
     status: "live",
