@@ -36,6 +36,13 @@ export { rebuildLineState } from "./state.js";
 export { planTargets, planStreams, formatTag } from "./plan.js";
 export { plannedChannelTransitions } from "./channels.js";
 export { planPropagation } from "./propagate.js";
+export { renderChangelog, InvalidChangelogInputError } from "./changelog.js";
+export type {
+  ChangelogEntry,
+  ChangelogInput,
+  ChangelogSection,
+  ChangelogVersion,
+} from "./changelog.js";
 export { canonicalJson, planFingerprint, inputsFingerprint } from "./identity.js";
 export { plan } from "./assemble.js";
 
