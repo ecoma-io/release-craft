@@ -423,9 +423,13 @@ Stated plainly, so no page implies a capability:
   `scripts/dogfood/close-world.mjs` is a working example of a caller-side
   observer — and it is caller-side tooling for that slice, explicitly not the
   product surface ([phase 12 §7](design/phase12-cli-contract.md#7-the-other-slices)).
-- **One hosted consumer exists.** The Action's one certified hosted run is
-  this repository's own self-dogfood dispatch; broader adoption is exactly
-  what this page exists to enable, and no other deployment is claimed.
+- **Two hosted consumers exist, both this repository's own.** The Action's
+  one certified hosted run is the read-only self-dogfood dispatch; the
+  self-release workflow (`self-release.yml`, #259) is the real leg beside
+  it — the same dispatch shape plus a caller-side publish of the run's
+  local mint and an origin verification — and its first live mint is the
+  next step of its own campaign. Broader adoption is exactly what this
+  page exists to enable, and no other deployment is claimed.
 - **One line per Action step.** The Action drives the `run` door with exactly
   one `line`; a multi-line repository runs one step per line.
 - **The plan door is a process, not a service.** Every invocation is one

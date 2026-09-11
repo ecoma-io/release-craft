@@ -108,7 +108,7 @@ Three workflows, three questions, no god workflow:
   files · package · workflows · action metadata · docs · PR description) +
   the PR title.
 
-Three workflows sit outside the three governance layers, none in any
+Four workflows sit outside the three governance layers, none in any
 gate's `needs:`; `check:workflows` still scans each like every other
 workflow file. `triage.yml` — the action-agents dogfood run (#101) — and
 `review.yml` — the same sibling's `review` action (#214), in its
@@ -118,7 +118,10 @@ certification: one judged `workflow_dispatch` of this repository's own
 released Action over this repository (phase 14 §7) — it captures the four
 certification classes and judges in-job every class the captured material
 settles mechanically, printing the rows no machine can settle as NOT
-ASSERTED rather than waiving them.
+ASSERTED rather than waiving them. `self-release.yml` (#259) is the real
+leg beside it: the same judged dispatch plus the caller-side publish and
+origin verification — the repository's release minted on origin through
+its own Action (phase 14 §7, decision-log D63).
 
 When you add a job, add it to its gate's `needs:` — the gates tighten only
 through that list, visibly, in review.

@@ -764,6 +764,43 @@ closes it). A green judge therefore means "certified" for the declared
 posture exactly this far: every mechanically available row holds, and
 every row left to a human is named.
 
+**The self-release surface — the second hosted consumer, beside this
+read-only rehearsal** (issue #259, decision-log D63). `dogfood.yml` is
+deliberately read-only: `permissions: contents: read`, no persisted
+credentials, and zero remote writes proven by hashing `git ls-remote`
+before and after — because "published" through the Action means the walk
+completed and the tag exists in the runner's copy (phase 13 §2.8's
+decided-empty token journey), not that anything left the runner.
+`self-release.yml` is the real leg beside it, and it grows nothing on the
+Action itself: the same `workflow_dispatch`-only trigger, the same
+caller-side world closure, the same pinned Action at a full SHA, the same
+in-job judgment — plus the two steps the dogfood refuses by design. The
+publish step (`scripts/dogfood/publish-mint.mjs`) carries the run's local
+mint to origin: the credential is the workflow's own, step-scoped through
+`env:` and spent through the inline credential helper of the github
+adapter's own class (`remote-git.ts` — child-scoped, never persisted to
+config or disk, never ambient, never an argument, never a URL), and the
+authority to push is the envelope's rendered kind — a `published`
+verdict's exact `(refname, sha)` pairs ride origin in one atomic,
+no-force push; any other verdict pushes nothing. The origin leg
+(`scripts/dogfood/verify-origin.mjs`) reads origin back against the run's
+claims: a published verdict must find every minted pair present on
+origin, the tag among them, with origin itself cross-checked as the
+dispatching repository; any other verdict — or an envelope that never
+arrived — must find origin byte-identical to its before-state. A missing
+tag or ref fails the job — the green-but-unminted silent failure this leg
+exists to catch. The dispatch declares its expected kind (`expect-kind`,
+demanded, no default) and the judge's degraded posture judges a stop-band
+dispatch exactly as the boundary above declares: the conclusion row
+asserted, what no machine inside the job can settle named NOT ASSERTED,
+never waived. One honest shape is declared rather than discovered later:
+a fresh checkout never re-fetches the claim namespace (phase 13 §2.9), so
+a same-tag re-dispatch is expected to land `blocked` (the tag-absent
+precondition), not `denied`; the first live dispatch observes and pins
+the real kind. And one honest limit, the same one D59 records for the
+judge step: the workflow's first hosted execution is still ahead — no
+live dispatch was driven from #259's PR.
+
 ## 8. What the fixture never does
 
 The never-does inventory, each row with its enforcement:
