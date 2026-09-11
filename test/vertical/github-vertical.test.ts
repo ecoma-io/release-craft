@@ -42,7 +42,6 @@ import {
   type ClaimDenied,
   type HookEffect,
 } from "../../src/index.js";
-import { openGitHubAdapter } from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
 import {
   claimRegisterRefFor,
   GitFaultError,
@@ -77,6 +76,7 @@ import {
   CHANGELOG_PATH,
   credentials,
   DIVERGENT_BODY,
+  openGitHubAdapter,
   OUT_OF_BAND_SHA,
   OUT_OF_BAND_TAG,
   openFakeRemote,

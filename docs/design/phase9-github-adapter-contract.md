@@ -297,7 +297,11 @@ interface GitHubCredentials {
 Credentials are supplied at `openGitHubAdapter`, never ambient, never
 stored by the adapter beyond the opened instance's lifetime. Token
 expiry mid-operation returns `refused(reason: "auth-expired")` — the
-adapter does not refresh tokens.
+adapter does not refresh tokens. The shape is closed — token, owner,
+repo, no host — so the only repository an expressible credential
+addresses is a path on github.com; that closed shape is what the
+open-time identity agreement (§2.9) compares the binding's origin
+against.
 
 ### 2.6 The barrel
 
@@ -336,10 +340,12 @@ RefRead`, the recorded refs' read-only enumeration — `claims()`
   commit: the peeled commit for an annotated tag, the ref's own target
   for a lightweight one). Pure `for-each-ref` reads: no write, no `HEAD`
   resolution, no working-tree state (the mint door's discipline, read
-  side). The adapter's transport-level git (`ls-remote`, `push`) runs
+  side). The adapter's transport-level git (`ls-remote`, `push`, and the
+  open-time origin read §2.9 adds) runs
   against exactly this repository — structural, not conventional —
   through its own transport runner (`remote-git.ts`), which carries no
-  substrate probe, deliberately: `ls-remote` and `push` perform no
+  substrate probe, deliberately: `ls-remote`, `push` and the origin read
+  perform no
   recorded-history walks and no recorded-content reads — the operations
   the guard exists for — and git fails loudly, in its own transport
   vocabulary, on a shape it cannot transport (phase 8 §2.7 guards the
@@ -416,6 +422,107 @@ global (invariant 6), so the derivation matches at most one claim.
   the file absent from the recorded tree, is `refused(reason:
 "changelog-unrecorded")` (§2.3 gains the reason): a release never
   publishes bytes the binding did not record.
+
+### 2.9 The open-time identity agreement (#177)
+
+The composed adapter speaks to two remote identities: the
+synchronization transports git-level against the binding's `origin`
+(ADR-0010 decision 3), while the API doors address the repository the
+§2.5 credentials name — `owner/repo` on github.com. Before #177 nothing
+compared them, so a credential for a fork (or any same-named repository
+the token can write) passed every classification, the synchronization
+pushed to one repository while the API doors published and verified
+against another, and every `verified` outcome was true of a remote that
+is not the binding's — the silent-divergence law's (§3) blind spot at
+the composition root itself.
+
+The factory therefore refuses to open unless the two identities agree.
+At `openGitHubAdapter` — the one point every door crosses, and the only
+place the check can stand without living inside the publication and
+reconciliation units (their interiors are contract §2.3/§2.4
+territory) — it reads the origin through the same transport runner the
+synchronization uses (`git remote get-url origin`), which is the
+**effective** URL: the string git itself rewrites `insteadOf`
+configuration into, the exact address the sync's `ls-remote`/`push`
+transport against. One source of truth, shared with the sync; a remote
+configured under an alias and a remote configured under the canonical
+URL are indistinguishable to the check, deliberately.
+
+The origin URL is parsed by **git's own grammar, not an invented one**
+— the "GIT URLS" section of git's `Documentation/urls.adoc`: the URL
+forms `ssh://[<user>@]<host>[:<port>]/<path>`, `git://`, `http[s]://`
+and `ftp[s]://`; the scp-like `[<user>@]<host>:/<path>` form, which
+the section's own recognition rule confines — "This syntax is only
+recognized if there are no slashes before the first colon"; and the
+local forms `/path/to/repo.git/` and `file:///path/to/repo.git/`
+(plus the remote-helper `<transport>::<address>` colon form). The
+parsed identity is normalized to host + owner + repo: one trailing
+`.git` stripped (GitHub refuses repository names ending in `.git`, so
+one strip cannot eat a real name), surrounding slashes trimmed, and
+the comparison is case-insensitive across host, owner and repo — a
+differently cased spelling of the same repository is the same
+repository. Exactly two path segments read as an identity; anything
+else does not.
+
+**Fail-closed is the check's whole point.** An origin that cannot be
+_proven_ to name the credentials' repository refuses the open: local
+paths, `file:` URLs, the ssh `~` home expansions, paths of any depth
+other than `owner/repo`, remote-helper forms, unknown schemes,
+malformed URLs, and the empty string. Likewise any origin on a host
+other than `github.com` — GitHub Enterprise origins included — because
+the §2.5 credential shape carries no host: the only repository any
+expressible credential addresses is a path on github.com, and an
+origin elsewhere names a repository no expressible credential can be
+the same as. GitHub Enterprise support is the credential type's
+amendment to make (a host field on `GitHubCredentials`, compared the
+same way), never this check's guess; the same holds for GitHub's own
+ssh-over-443 alias (`ssh.github.com`), which the hostless credential
+cannot vouch for. A port qualification (`github.com:8443`) is not part
+of a repository identity and does not refuse a same-host match.
+
+- **The refusal is the environmental fault, thrown** —
+  `GitFaultError` at open, naming both identities (the origin's and
+  the credentials') and the remedy — not a new outcome class:
+  decision 7's classes are remote-operation outcomes, and no door has
+  run; the fault is the repository's own misconfiguration, the same
+  family as the sync door's missing-origin fault (§2.2). It is loud:
+  no warning, no degradation, no publish-elsewhere.
+- **A repository with no origin configured opens.** Only one identity
+  exists (the credentials'), the API doors are consistent with it, and
+  the missing origin stays the sync door's own environmental fault at
+  use time — moved no earlier than the evidence exists.
+- **Rejected — the check in each door:** fragmented four ways, silent
+  for the doors that forget, and inside units whose interiors this
+  contract assigns elsewhere.
+- **Rejected — comparing only at sync time:** the API doors would keep
+  publishing and verifying against the credentials' repository while
+  the sync refuses — the divergence half-fixed, and still silent for
+  every caller that never syncs.
+- **Rejected — rejecting unknown URL shapes leniently** (assume
+  github.com, warn and continue): the check would be a no-op for
+  exactly the origins most likely to be wrong; fail-closed is the
+  point.
+
+The check's recorded residuals — behaviors it does not have, stated so
+the record carries them (the round-1 review's fold):
+
+- **Percent-encoded path segments read literally, so a percent-encoded
+  spelling of the agreeing repository false-refuses.** The comparison is
+  plain text over the decoded-what-URL-gives-us path; a `%72elease-craft`
+  segment is not the credentials' `release-craft` and refuses. The
+  refusal is loud and names both identities — the operator fixes the
+  origin's spelling; nothing degrades quietly.
+- **A query or fragment rides the origin unjudged.** The grammar reads
+  the path, not `?query` or `#fragment`; an origin carrying them opens
+  when its path identity agrees, and whatever git's transport then does
+  with the suffix faults loudly at use — the agreement never mistakes
+  the decoration for part of the identity.
+- **The no-origin tolerance reads every nonzero exit, not just a clean
+  absence.** The origin read failing for a corrupt or not-a-repository
+  binding takes the same opens path as a genuinely absent origin; the
+  doors then fault loudly at use — the binding's own substrate rules
+  refuse such a repository before or at the first door, so the
+  tolerance changes when the loud fault arrives, never whether.
 
 ## 3. Laws
 
@@ -567,3 +674,17 @@ The phase's named scenarios:
     every door returns its failure value when the transport throws: the
     guarded boundary converts the escape into status 0 (a read:
     `transport-failure`; the create: `ambiguous`).
+24. **Open-time identity agreement** (issue #177, D55, §2.9) — the
+    factory refuses to open (`GitFaultError`, naming both identities)
+    whenever the binding's origin and the credentials name different
+    repositories: the issue's repro (a same-named fork the token can
+    write), a different repository on the same owner, and every other
+    host (GitHub Enterprise origins, the ssh-over-443 alias). Every
+    spelling of the agreeing origin opens with no false refusal —
+    `https`/`scp`-like/`ssh://`, with and without `.git`, with and
+    without a trailing slash, userinfo and ports, and case variants —
+    and an origin no git grammar reads as a github.com repository (a
+    local path, `file:`, a `~` expansion, a remote-helper form, a
+    malformed URL) refuses the same loud way. A repository with no
+    origin opens, and the sync's own environmental fault stands at use
+    time.

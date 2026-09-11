@@ -4,7 +4,23 @@
  * brought up to the binding's recorded state, a retry is a no-op, a
  * diverged remote is refused — and the refusal classes arrive as report
  * rows, never exceptions.
+ *
+ * Since #177 (§2.9; D55) the origin the fixture configures is the
+ * credentials' own repository URL — the identity agreement the factory
+ * now refuses to open without — and the bare repository the sync
+ * transports against stands behind that URL through the origin shim
+ * (`origin-shim.ts`, the house `git` shim pattern: every argv delegates
+ * to the real git except `ls-remote`/`push` of the mapped URL, which the
+ * shim re-points with an environment `insteadOf` rule). Every test here
+ * therefore pins the same-identity path end to end: the composed adapter
+ * opens, the sync door transports git-level, and the injected transport
+ * is never reached.
  */
+
+// The origin shim must sit on PATH before the github barrel evaluates
+// (the adapter's transport git freezes its child environment at barrel
+// load) — the shim helper is this file's first import, plain ESM order.
+import { mapOriginTo, ORIGIN_URL } from "./origin-shim.js";
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -29,6 +45,8 @@ import {
   type GitTagNaming,
 } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
 import type { Claim, ClaimDenied, ClaimScope } from "../../../src/index.js";
+
+// --- the fixture ---------------------------------------------------------
 
 /**
  * The fixture is self-contained (the binding's test tree stays the
@@ -79,13 +97,18 @@ const asClaim = (outcome: Claim | ClaimDenied): Claim => {
 
 /** What the remote holds for one ref, peeled (`^{}` resolves an annotated
  *  tag to its commit; a lightweight tag or blob ref names itself). */
-const remoteObject = (origin: string, ref: string): string => {
-  return spawnGit(["--git-dir", origin, "rev-parse", `${ref}^{}`]).trim();
+const remoteObject = (mirror: string, ref: string): string => {
+  return spawnGit(["--git-dir", mirror, "rev-parse", `${ref}^{}`]).trim();
 };
 
 interface SyncRepo {
   readonly repo: string;
-  readonly origin: string;
+  /** The URL `origin` is configured under — the identity the adapter's
+   *  open-time agreement reads (§2.9); it names the credentials'
+   *  repository. */
+  readonly originUrl: string;
+  /** The bare repository standing behind the URL — the shim's mirror. */
+  readonly mirror: string;
   readonly git: GitRun;
   binding(): GitBinding;
   sync(): SyncReport;
@@ -96,20 +119,22 @@ interface SyncRepo {
 const withSyncRepo = (name: string, fn: (fixture: SyncRepo) => void): void => {
   const root = mkdtempSync(join(tmpdir(), `release-craft-github-sync-${name}-`));
   const repo = join(root, "repo");
-  const origin = join(root, "origin.git");
+  const mirror = join(root, "origin.git");
   try {
     spawnGit(["init", "--quiet", repo]);
-    spawnGit(["init", "--bare", "--quiet", origin]);
+    spawnGit(["init", "--bare", "--quiet", mirror]);
     spawnGit(["-C", repo, "config", "user.name", "release-craft"]);
     spawnGit(["-C", repo, "config", "user.email", "adapter@release-craft.local"]);
     spawnGit(["-C", repo, "config", "commit.gpgsign", "false"]);
     spawnGit(["-C", repo, "commit", "--allow-empty", "-m", "release-craft: root"]);
-    spawnGit(["-C", repo, "remote", "add", "origin", origin]);
+    spawnGit(["-C", repo, "remote", "add", "origin", ORIGIN_URL]);
+    mapOriginTo(mirror);
     const git = openGitRun(repo);
     let opened: GitBinding | undefined;
     fn({
       repo,
-      origin,
+      originUrl: ORIGIN_URL,
+      mirror,
       git,
       binding() {
         opened ??= openGitBinding({ repo, tagNaming: naming });
@@ -174,8 +199,8 @@ describe("the remote synchronization (§2.2 rows 1–3, 7–9)", () => {
       ]);
       // The remote holds what the binding recorded: the claim ref at the
       // record's blob, the tag at its commit (peeled).
-      expect(remoteObject(fixture.origin, rows[0]?.ref ?? "")).toBe(rows[0]?.target);
-      expect(remoteObject(fixture.origin, rows[1]?.ref ?? "")).toBe(target);
+      expect(remoteObject(fixture.mirror, rows[0]?.ref ?? "")).toBe(rows[0]?.target);
+      expect(remoteObject(fixture.mirror, rows[1]?.ref ?? "")).toBe(target);
     });
   });
 
@@ -183,12 +208,12 @@ describe("the remote synchronization (§2.2 rows 1–3, 7–9)", () => {
     withSyncRepo("idempotent", (fixture) => {
       const { rows } = recordOne(fixture);
       fixture.sync();
-      const before = remoteObject(fixture.origin, rows[1]?.ref ?? "");
+      const before = remoteObject(fixture.mirror, rows[1]?.ref ?? "");
 
       const report = fixture.sync();
 
       expect(report.refs).toEqual(rows.map((row) => ({ ...row, outcome: { state: "skipped" } })));
-      expect(remoteObject(fixture.origin, rows[1]?.ref ?? "")).toBe(before);
+      expect(remoteObject(fixture.mirror, rows[1]?.ref ?? "")).toBe(before);
     });
   });
 
@@ -203,7 +228,7 @@ describe("the remote synchronization (§2.2 rows 1–3, 7–9)", () => {
         fixture.repo,
         "push",
         "--quiet",
-        fixture.origin,
+        fixture.mirror,
         `${other}:refs/tags/v1.2.3`,
       ]);
       const { rows } = recordOne(fixture);
@@ -218,14 +243,16 @@ describe("the remote synchronization (§2.2 rows 1–3, 7–9)", () => {
         reason: "already-pushed-different-target",
       });
       // The refusal is a report, not a write: the remote keeps its tag.
-      expect(remoteObject(fixture.origin, rows[1]?.ref ?? "")).toBe(other.trim());
+      expect(remoteObject(fixture.mirror, rows[1]?.ref ?? "")).toBe(other.trim());
     });
   });
 
   it("reports every ref transport-failed when the origin is unreachable (R-07)", () => {
     withSyncRepo("unreachable", (fixture) => {
       const { rows } = recordOne(fixture);
-      spawnGit(["-C", fixture.repo, "remote", "set-url", "origin", "https://127.0.0.1:9/x.git"]);
+      // The mirror the URL points at vanishes: the listing fails with
+      // git's own stderr for a remote that cannot be read, hermetically.
+      mapOriginTo(join(fixture.repo, "vanish.git"));
 
       const report = fixture.sync();
 
