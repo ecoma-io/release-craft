@@ -378,6 +378,69 @@ describe("M-03 through the door — cherry-picks across lines release all three 
 });
 
 // ---------------------------------------------------------------------------
+// M-03's same-line leg — the origin F and its cherry-pick F′ BOTH pending on
+// one line: extraction resolves the same one identity the cross-line success
+// path above rides, so the line's pending set carries that identity twice,
+// and the kernel's construction door refuses the change set. The refusal is
+// a classified record (§2.9), never an exception — fail closed, nothing
+// minted, the duplicate left inside the un-released span for the operator to
+// resolve. A coverage pin of the loud path exactly as it stands; #197
+// ---------------------------------------------------------------------------
+
+function m03SameLineInput(): PlanningInput {
+  return buildInput({
+    digest: DIGEST_M03,
+    lines: [{ ...line("main", "main", { major: 2 }), publishes: "app" }],
+    commits: [
+      commit("m03-c3", "chore: cut 2.3.0", { containingRefs: ["main"] }),
+      commit("m03-f", "fix(parser): handle empty input", {
+        parents: ["m03-c3"],
+        containingRefs: ["main"],
+      }),
+      commit("m03-f2", cherryOf("m03-f"), { parents: ["m03-f"], containingRefs: ["main"] }),
+    ],
+    refs: [ref("main", "m03-f2")],
+    tags: [tag("2.3.0", "m03-c3")],
+    components: [component("app", "2.3.0")],
+    intents: [{ kind: "release" }],
+  });
+}
+
+describe("M-03 through the door — the origin and its cherry-pick on ONE line refuse with the kernel-rejection record", () => {
+  it("refuses main's release as refused/kernel-rejection naming the duplicated identity, minting nothing", () => {
+    const outcome = plan(m03SameLineInput());
+    // The negative outcome is a record, never an exception (§2.9): the pass
+    // completes, and the refusal is main's classified decision — cause
+    // kernel-rejection, the fail-closed reading of a change set the kernel
+    // cannot construct because one identity arrives as two members.
+    expect(outcome.kind).toBe("planned");
+    const decision = decisionFor(outcome, "main");
+    expect(decision.kind).toBe("refused");
+    if (decision.kind !== "refused") {
+      throw new Error("fixture broken: expected a refused record");
+    }
+    expect(decision.cause).toBe("kernel-rejection");
+    // The duplicate-identity cause reaches the consumer: the shared change id
+    // (the origin commit the cherry-pick inherited) and the kernel's own rule
+    // are named in the record's detail.
+    expect(decision.detail).toContain("m03-f");
+    expect(decision.detail).toContain("one identity is one member");
+    // Recoverability: nothing minted — the refused line contributes no plan
+    // line (no tag, no release entry) — and the record's evaluated range is
+    // the un-released span that keeps both commits pending, so repairing the
+    // duplicate and re-planning is an ordinary pass.
+    expect(decision.range).toEqual({ lineId: "main", releasedUpTo: "m03-c3", head: "m03-f2" });
+    expect(plannedOf(outcome).plan.lines).toEqual([]);
+    expect(plannedOf(outcome).decisions).toHaveLength(1);
+    // The identity machinery itself is the legal cherry-pick chain (M-03's
+    // success path): extraction surfaces NO conflict — the refusal is the
+    // kernel's identity-uniqueness door downstream, never M-05's surfaced
+    // conflict shape.
+    expect(plannedOf(outcome).plan.explanation.conflicts).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // M-04 (G-6) — clean backport: main must not move. F′ is released on 1.9
 // while F is still pending for main's own next release (F rides the
 // maintainer's pre-merge ref; main's feed head is still the 2.3.0 cut) —

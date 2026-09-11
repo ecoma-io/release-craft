@@ -274,6 +274,20 @@ Line state (released pointer, stream states) is rebuilt from tags at plan
 time; any manifest-declared version is a projection whose drift is surfaced,
 never consumed as truth (S-03).
 
+**Known phase-2 limit (recorded by #197).** A tag whose prerelease suffix does
+not compose the kernel's minting shape `target-identifier.sequence` — a lone
+identifier (`1.5.0-alpha`) or a non-numeric tail — rebuilds no stream key, yet
+the version still counts for the line's released pointer — and, through the
+pointer, for the stable target the in-flight rules compute; it never enters
+`stableBase`, which admits only suffix-less releases. The frozen `LineState`
+carries no field that would surface such streamless admissible tags, so the
+pointer/decision asymmetry they create is silent at this layer: a consumer
+sees the pointer move with no stream state to explain it. This is a recorded
+limit, not silent data loss — the tag remains in the line's admissible history
+and the asymmetry is deterministic — and surfacing it is a `LineState` shape
+revision deliberately deferred out of Phase 2 (`src/planner/state.ts` cites
+this section).
+
 ### 2.14 Plan determinism
 
 All nondeterministic facts are inputs (§2.1–2.2). The planner contains no
