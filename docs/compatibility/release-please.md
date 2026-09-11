@@ -38,16 +38,19 @@ release-please does it, and `UNKNOWN` is a confession with a name, not a shrug.
 Two reference systems share the letter-D namespace and must not be confused: row
 references like `A5`, `D6`, `I3` are coordinates inside the section tables below,
 while `decision D1`–`D7` are the numbered open decisions listed in
-[Open decisions](#open-decisions). A `GAP` row may carry either; a decision-only
-row becomes a filed issue once its decision lands.
+[Open decisions](#open-decisions). Amendments may also cite repo-wide decision-log
+rows as evidence coordinates — `decision D66` and its successors, numbered in the
+[decision log](../design/decision-log.md) — a third namespace, distinct from both of
+these. A `GAP` row may carry either; a decision-only row becomes a filed issue once
+its decision lands.
 
 Dogfood statuses: `none` — no recorded run; `self` — the engine's own repository releases
 through its own Action (the [self-dogfood PR #141] and its re-pins); `shadow` — a
-recorded release-please-vs-release-craft comparison run. One shadow run has been
-recorded — the quiet-line run over ecoma-io/archkeep ([#271]; recorded as decision D66
-in the [decision log](../design/decision-log.md)) — and the fields it covers are stored
-in the issue. The full field list a shadow run must compare is defined
-[below](#the-shadow-comparison-fields).
+recorded release-please-vs-release-craft comparison run. One decision-level shadow
+comparison has been recorded — the quiet-line run over ecoma-io/archkeep ([#271];
+recorded as decision D66 in the [decision log](../design/decision-log.md)). The subset
+class it uses, and the full field list the canonical complete run must compare, are
+defined [below](#the-shadow-comparison-fields).
 
 ## A. Commit signals
 
@@ -176,6 +179,11 @@ document's canonical definition:
 repository sha · commit range · selected changes · release decision · decision reason ·
 version · release line · prerelease stream · channel · tag · changelog · release notes ·
 package/component · dependency propagation · final outcome.
+
+A decision-level subset run — release decision, decision reason, version, tag, final
+outcome — is recorded evidence rows may cite and a `shadow` dogfood cell may rest on;
+the quiet-line archkeep comparison ([#271]) is that class. The full-field comparison
+above remains the canonical complete form.
 
 ## Open decisions
 
