@@ -9,7 +9,7 @@ name: Triage
 # diff, and it flips only after the kit's first-run checklist passes at this
 # posture.
 #
-# The action ref is pinned to the commit the `v0.11.2` tag points at, with
+# The action ref is pinned to the commit the `v0.12.1` tag points at, with
 # the version kept as the trailing comment — the tag ref itself would fail
 # `check:workflows`, which requires a full 40-character commit SHA on every
 # `uses:`. Same released bytes, immovable.
@@ -44,7 +44,7 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: ecoma-io/action-agents/triage@97f294f439ee9dd12f60a1a723469f6dcdf9c93f # v0.12.0
+      - uses: ecoma-io/action-agents/triage@2f0e18a8e1ea5bdfa8fc690057ca1bbdfaa4f3a4 # v0.12.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-url: ${{ secrets.ECOMA_LLM_BASE_URL }}
