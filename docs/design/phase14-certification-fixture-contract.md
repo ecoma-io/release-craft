@@ -794,10 +794,21 @@ demanded, no default) and the judge's degraded posture judges a stop-band
 dispatch exactly as the boundary above declares: the conclusion row
 asserted, what no machine inside the job can settle named NOT ASSERTED,
 never waived. One honest shape is declared rather than discovered later:
-a fresh checkout never re-fetches the claim namespace (phase 13 §2.9), so
-a same-tag re-dispatch is expected to land `blocked` (the tag-absent
-precondition), not `denied`; the first live dispatch observes and pins
-the real kind. And one honest limit, the same one D59 records for the
+a same-tag re-dispatch lands `blocked` (exit 12) at the planning boundary,
+not `denied` (exit 11, the holder named — the same-ref-space shape a
+two-checkout race produces). This is now the shape the product renders,
+not a prediction: #263 amended the planner's recorded-state law (phase 2
+§2.13) so the world's own observed tag — the full `refs/tags/` refname
+spelling included — is admitted into the line's history, and a dispatch
+whose release version the world already observes refuses as the
+`released-version-observed` `blocked` record before any attempt opens: no
+claim, no mint, no second attempt. The first live dispatches (#259's
+campaign, runs 34597572065 and 34597897169) are the runs the amendment
+answers — rendered under the law as it stood, they re-planned the recorded
+bootstrap version and re-minted the existing tag, and only the caller-side
+partial-mint refusal stopped origin; the docs above declared the `blocked`
+expectation before that fix existed, and #263 made the product agree with
+the declaration. And one honest limit, the same one D59 records for the
 judge step: the workflow's first hosted execution is still ahead — no
 live dispatch was driven from #259's PR.
 

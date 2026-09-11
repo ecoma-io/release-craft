@@ -512,6 +512,20 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     handle: AttemptHandle | null,
   ): RunOutcome => ({ kind: "refused", detail, planId, handle, drives: [] });
 
+  /** The planning boundary's own `blocked` record surfaced as the run
+   * outcome (#263; phase 11 §2.5 step 1): no attempt exists, so the handle
+   * is null and nothing executed. The cause carries the decision's cause
+   * token and its detail sentence, so the operator reads the world's
+   * answer — which tag, which version, which head — never a protocol
+   * fault. */
+  const blockedOutcome = (cause: string, planId: string): RunOutcome => ({
+    kind: "blocked",
+    cause,
+    planId,
+    handle: null,
+    drives: [],
+  });
+
   /** §2.7's carried-entry door: unknown plan refused naming the handle; a
    * foreign attempt id refused fail-closed. */
   const carriedEntry = (
@@ -768,6 +782,17 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     const lineId = request.lineIds[0];
     if (lineId === undefined) {
       return refusedOutcome("the request names no line id to execute", planId, null);
+    }
+    // §2.5 step 1's other stop (#263): a planning decision of kind
+    // `blocked` for the executed line IS the run outcome. The plan carries
+    // no line for it — the record is the posture: the attempt never opens,
+    // the claim never acquires, nothing mints, no second attempt is taken.
+    // A walk-time `blocked` resolves through `.resolve` and resumes; a
+    // planning-boundary block has no loop to resolve — the world's release
+    // state answers it (phase 11 §2.8's row, #263).
+    const decision = planning.decisions.find((candidate) => candidate.lineId === lineId);
+    if (decision !== undefined && decision.kind === "blocked") {
+      return blockedOutcome(`${decision.cause}: ${decision.detail}`, planId);
     }
     const planLine = assembled.lines.find((candidate) => candidate.lineId === lineId);
     if (planLine === undefined) {

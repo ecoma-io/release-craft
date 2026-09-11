@@ -28,15 +28,33 @@
  * `prerelease` demand for the line is subsumed by the promotion (D38) and
  * named in the record; a `release-anyway` over a quiet line is the
  * `forced` record — never a routine release; a `release-as` demand the
- * kernel grammar cannot parse refuses regardless of the runway. Thereafter:
- * `refused` on the remaining
+ * kernel grammar cannot parse refuses regardless of the runway.
+ * Thereafter: `refused` on the remaining
  * operator contradiction (§2.9, S-01: an explicit `release-as` demand
- * against a runway with nothing release-worthy), then the declared
+ * against a runway with nothing release-worthy); `blocked` on a
+ * `release-as` demand naming a version the line's own history already
+ * observes — the replay the recorded state refuses (§2.9 as amended,
+ * #263); then the declared
  * withhold rules (D18 decision 3, PL-07): matching release-triggering
  * changes defer — the release range pins below the earliest withheld
  * commit when a release-worthy prefix survives there, and a line left with
  * nothing release-worthy yields the `withheld` record (`policy-filter`)
- * instead of a mint. Otherwise the recorded no-op with the ignored commits
+ * instead of a mint; then `blocked` on the released-version replay — a
+ * release-shaped pass over the fully released range of a line whose birth
+ * the recorded state carries (the §2.1 bootstrap decision): the latest
+ * admitted tag sits at the feed-ref head, so the dispatch would re-plan
+ * the version the world already observes, and the record refuses it
+ * (#263). The recorded bootstrap is the discriminator: a line claims the
+ * run's recorded birth when its own projected history admits the birth
+ * version — that line was born through the tool and owns its release
+ * identity (§2.13, #197 — one identity is one member), so a re-demanded
+ * release over its released head is the replay; a line whose history
+ * predates the tool carries no recorded birth, and its quiet released head
+ * stays the recorded no-op (M-01's `main`, M-07's quiet line, S-05's
+ * maintenance line). An admissible prerelease
+ * demand keeps the ladder's no-op-plus-streams posture, and a passive pass
+ * stays the recorded no-op. Otherwise the recorded no-op with
+ * the ignored commits
  * enumerated in input order (§2.9, PL-06) or the `release` record whose
  * kernel change set is constructed through `ChangeSet.of` — a kernel
  * construction rejection surfaces as a `refused` record and is never
@@ -52,7 +70,9 @@
  * never emitted here: `blocked`/`stale-plan` (staleness is recognized
  * against a stored plan, §2.10). `withheld`/`policy-filter` is produced
  * here since D18 decision 3 made the line's withhold rules planning input;
- * the remaining `refused` causes are produced upstream by `attribute.ts`.
+ * the `blocked` causes produced here are `bootstrap-required` (S-02) and —
+ * since #263 — `released-version-observed`; the remaining `refused` causes
+ * are produced upstream by `attribute.ts`.
  *
  * Pure and deterministic (invariant 2): no clock, environment, randomness,
  * filesystem, or network; every enumeration stays in input order (E-10).
@@ -69,9 +89,13 @@ import {
 
 import { loadTagHistory } from "./history.js";
 import { InvalidPlanningInputError } from "./input.js";
+import { isStreamAllowed } from "./plan.js";
 import type {
+  AdmissibleTag,
+  BootstrapDecision,
   BumpMapping,
   DecideLine,
+  LineConfig,
   LineDecision,
   LineRange,
   OperatorIntent,
@@ -186,6 +210,76 @@ export function pointerFor(lineId: string, input: PlanningInput): Version | unde
   const history = projected.lines.find((entry) => entry.lineId === lineId);
   const latest = history?.tags[history.tags.length - 1];
   return latest?.version;
+}
+
+/**
+ * The line's projected §2.13 history, over the same input the decisions
+ * read. Both #263 records consult it — the replay record names the tag the
+ * world observes at the head, and the release-as record names the tag that
+ * already carries the demanded version — so both name the SAME projection
+ * the recorded state was rebuilt from, never a second source of truth
+ * (invariant 6).
+ */
+function projectedHistoryFor(lineId: string, input: PlanningInput): readonly AdmissibleTag[] {
+  const projected = loadTagHistory(input.history.tags, input.lines, input.policy);
+  return projected.lines.find((entry) => entry.lineId === lineId)?.tags ?? [];
+}
+
+/**
+ * The recorded §2.1 bootstrap decision when it is THIS line's birth
+ * (#263), else `undefined`: the bootstrap is run-level input with no line
+ * id, so the line claims it by identity — the line's projected history
+ * admits a tag whose version IS the recorded birth version (kernel
+ * identity: `compare === 0`, so build metadata cannot forge a second
+ * member). The bootstrap records the birth of exactly one line; a line
+ * whose history carries that version is the line whose birth was recorded.
+ * A line whose history predates the tool carries no matching birth and
+ * never claims it — M-01's `main`, M-07's quiet line, and S-05's
+ * maintenance line keep their recorded no-op. An unparseable recorded
+ * version claims no line: the input door (§2.6 normalize) refuses it as
+ * `bootstrap.version` before a decision reads it, so a hand-built input
+ * that skipped the door gets the caller contract error the door would have
+ * raised, captured here as data.
+ */
+function recordedBirthOf(lineId: string, input: PlanningInput): BootstrapDecision | undefined {
+  const bootstrap = input.bootstrap;
+  if (bootstrap === undefined) {
+    return undefined;
+  }
+  let birth: Version;
+  try {
+    birth = Version.parse(bootstrap.version);
+  } catch (error) {
+    if (!(error instanceof InvalidVersionError)) {
+      throw error;
+    }
+    return undefined;
+  }
+  const claimed = projectedHistoryFor(lineId, input).some(
+    (tag) => tag.version.compare(birth) === 0,
+  );
+  return claimed ? bootstrap : undefined;
+}
+
+/**
+ * Whether an admissible `prerelease` demand rides for the line (§2.8's
+ * predicate, D18): such a demand mints the NEXT version's next sequence —
+ * a new identity, never a re-release — so the released head keeps its
+ * no-op-plus-streams posture and the replay record does not stand.
+ */
+function hasAdmissibleStreamDemand(
+  intents: readonly OperatorIntent[],
+  lineConfig: LineConfig | undefined,
+): boolean {
+  if (lineConfig === undefined) {
+    return false;
+  }
+  return intents.some(
+    (intent) =>
+      intent.kind === "prerelease" &&
+      intent.lineId === lineConfig.id &&
+      isStreamAllowed(lineConfig, intent.stream),
+  );
 }
 
 /**
@@ -465,7 +559,32 @@ export const decideLine: DecideLine = (line, input, range) => {
     };
   }
 
-  // Precedence 8 — the line's declared withhold rules (D18 decision 3,
+  // Precedence 8 — the release-as replay (#263): a well-formed demand that
+  // names a version the line's own history already observes — an admitted
+  // in-ancestry tag's version (§2.13) — is the re-release the recorded
+  // state refuses, regardless of the runway behind it: one identity is one
+  // member. The target override would otherwise materialize in the plan's
+  // targets (namedTag) and mint a tag the world already carries. The
+  // quiet-runway contradiction above keeps its more specific record; this
+  // gate judges the demand against the world, not the runway.
+  if (releaseAs !== undefined && bump !== undefined) {
+    const demanded = Version.parse(releaseAs.version);
+    const observed = projectedHistoryFor(line.lineId, input).find(
+      (tag) => tag.version.compare(demanded) === 0,
+    );
+    if (observed !== undefined) {
+      return {
+        kind: "blocked",
+        cause: "released-version-observed",
+        lineId: line.lineId,
+        range,
+        policyDigest: input.policy.digest,
+        detail: `operator demanded release-as ${demanded.toString()}, but the world already observes tag "${observed.name}" (version ${observed.version.toString()}) within line "${line.lineId}"'s ancestry at ${observed.commit} — re-releasing an observed version is the replay the recorded state refuses (§2.13, #263)`,
+      };
+    }
+  }
+
+  // Precedence 9 — the line's declared withhold rules (D18 decision 3,
   // PL-07, §2.9): matching release-triggering changes defer, never delete —
   // the first matching rule in declared order supplies the reason (E-10).
   // The release range pins below the earliest withheld commit (the first in
@@ -529,7 +648,61 @@ export const decideLine: DecideLine = (line, input, range) => {
     }
   }
 
-  // Precedence 9 — the recorded no-op (§2.9, PL-06, S-01): with no
+  // Precedence 10 — the released-version replay record (§2.9 as amended,
+  // #263): a release-shaped pass over the fully released range of the line
+  // whose birth the recorded state carries. The line's evaluated range is
+  // fully released — the latest admitted tag's commit IS the feed-ref head
+  // (§2.13 admitted the world's observed tag, the refname spelling
+  // included) — and the pass demands a release the world already carries:
+  // the pending span is empty by construction (the range's bounds
+  // coincide), so no bump resolved and the dispatch would re-plan the
+  // observed version. The recorded §2.1 bootstrap decision is the
+  // discriminator (one identity is one member, §2.13/#197): the line whose
+  // history carries the recorded birth version is the line born through
+  // the tool, so a re-demanded release over its released head is the
+  // replay and the record blocks naming the observed tag, before any
+  // attempt opens; a line whose history predates the tool carries no
+  // recorded birth, and its quiet released head stays the recorded no-op
+  // below — the maintenance posture M-01's `main`, M-07's quiet line, and
+  // S-05's maintenance line pin. The other demand shapes keep their own
+  // records: an admissible prerelease demand is the ladder continuing over
+  // a released head — the NEXT version's sequence, a new identity, never a
+  // re-release — so it falls through to the no-op whose targets still plan
+  // the demanded streams; and the explicit-override records above already
+  // stood. A passive pass (no release intent) stays the recorded no-op
+  // below: nothing was demanded, so nothing is refused.
+  const recordedBirth = recordedBirthOf(line.lineId, input);
+  if (
+    recordedBirth !== undefined &&
+    range.releasedUpTo !== null &&
+    range.releasedUpTo === range.head &&
+    intents.some((intent) => intent.kind === "release") &&
+    !hasAdmissibleStreamDemand(intents, lineConfig)
+  ) {
+    const latest = projectedHistoryFor(line.lineId, input).at(-1);
+    if (latest === undefined) {
+      // The range names a released bound the projection does not carry —
+      // the range and the history disagree, a caller contract violation
+      // surfaced the way the other stages surface theirs.
+      throw new InvalidPlanningInputError([
+        {
+          field: `lines.${line.lineId}`,
+          problem:
+            "the evaluated range names a release bound the projected history does not carry — supply deriveRanges' ranges and loadTagHistory's projection over the same input",
+        },
+      ]);
+    }
+    return {
+      kind: "blocked",
+      cause: "released-version-observed",
+      lineId: line.lineId,
+      range,
+      policyDigest: input.policy.digest,
+      detail: `the world observes tag "${latest.name}" (version ${latest.version.toString()}) at line "${line.lineId}"'s head ${range.head}, and the line's recorded birth (${recordedBirth.version}, recorded by ${recordedBirth.who} at ${recordedBirth.when}) is already the world's — the re-dispatch refuses instead of re-planning the released version: one identity is one member, no claim, no mint, no second attempt (§2.13, #263)`,
+    };
+  }
+
+  // Precedence 11 — the recorded no-op (§2.9, PL-06, S-01): with no
   // release-worthy commit, every pending entry was excluded by policy, so
   // the `ignored` enumeration is the whole pending set, in input order —
   // recorded, never silently dropped. The empty group mints nothing.
@@ -550,7 +723,7 @@ export const decideLine: DecideLine = (line, input, range) => {
     };
   }
 
-  // Precedence 10 — the release (§2.7, §2.9): the contributing commits are
+  // Precedence 12 — the release (§2.7, §2.9): the contributing commits are
   // the release-triggering ones, and the kernel change set is constructed
   // through `ChangeSet.of`. Pending entries are change-classified by
   // attribution (§2.4), so the `change` narrowing below is defensive only,

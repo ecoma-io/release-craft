@@ -239,7 +239,26 @@ decision: a release decision's content still flows to the stream.
   (S-01's "release 1.0.2 now" against a chore-only runway);
 - `blocked`: unmet preconditions — bootstrap required without a recorded
   decision (S-02), stale plan detected under a changed world (PL-08, E-04,
-  E-11);
+  E-11), and — since #263 — the released-version replay: cause
+  `released-version-observed` when a release-shaped pass meets the fully
+  released evaluated range of the line whose birth the recorded state
+  carries — the line's projected history admits a tag whose version IS the
+  recorded bootstrap's version (the line claims the run-level bootstrap by
+  identity; §2.13, #197), the latest admitted tag's commit IS the feed-ref
+  head, so the dispatch would re-plan the version the world already
+  observes — or when a `release-as` demand names a version an admitted tag
+  already observes. The detail names the observed tag, its version, the
+  head, and the recorded birth. A line whose history predates the tool
+  carries no recorded birth and never claims one: its quiet released head
+  stays the recorded no-op under the same demand (the maintenance posture
+  M-01's `main`, M-07's quiet line, and S-05's maintenance line pin). A
+  passive pass (no release demand) stays the recorded no-op: nothing was
+  demanded, so nothing is refused. The operator's explicit override records
+  keep their precedence (`release-anyway` over a quiet line is still the
+  `forced` record; the promotion and operator-contradiction refusals fire
+  first), and an admissible `prerelease` demand keeps the
+  no-op-plus-streams posture — the ladder continues over a released head by
+  minting the NEXT version's sequence, which is not a re-release;
 - every record carries cause, evaluated range, and the policy digest that
   produced it (invariant 4; amendment A1);
 - kernel construction rejections (`InvalidChangeSetError` and kin) surface
@@ -309,7 +328,11 @@ data), never silent exclusion (PL-04's posture).
 `TagObservation[]` is the sole release-history truth (invariant 6; S-03, S-05,
 M-02, M-07). Normalization: tag names are parsed to `Version` through the
 kernel's grammar (no `v` prefixes; per-component tag formats are declared
-input configuration — fork 11's naming knob). Admissibility: a tag joins a
+input configuration — fork 11's naming knob); a name may arrive spelled as
+the full git refname the observer saw — the world closures declare
+`refs/tags/0.1.0`, not `0.1.0` — so a leading `refs/tags/` prefix is
+stripped before the parse (#263's normalization), and the admitted entry
+keeps the name the world declared, verbatim. Admissibility: a tag joins a
 line's history only when its normalized version falls in that line's
 declared version band (`LineConfig.versionBand`, D15 — major, optionally
 minor; absent admits every admissible tag); foreign or unattributable tags are
@@ -317,7 +340,19 @@ excluded from history **and surfaced** in the plan's explanation data (E-06
 conservatism — adoption without attribution is refused at planning time).
 Line state (released pointer, stream states) is rebuilt from tags at plan
 time; any manifest-declared version is a projection whose drift is surfaced,
-never consumed as truth (S-03).
+never consumed as truth (S-03). Because the rebuilt state is the world's own
+observed tags, an observed tag whose version equals a version the pass would
+plan is the release already having happened — §2.9's `blocked`
+`released-version-observed` record refuses the replay. The recorded
+bootstrap is the identity anchor: the line whose projected history admits
+the recorded birth version is the line born through the tool, and a
+re-demanded release over its released head is the replay of that birth —
+one identity is one member (#197). A tag whose version lies outside the
+line's band is foreign to that line and never anchors its replay, whatever
+commit it sits on (issue #263: before the normalization the hosted world's
+refname-spelled tag surfaced foreign, the rebuilt pointer stayed null, the
+recorded bootstrap version re-planned, and the walk re-minted the existing
+tag; the planner never re-plans a released version).
 
 **Known phase-2 limit (recorded by #197).** A tag whose prerelease suffix does
 not compose the kernel's minting shape `target-identifier.sequence` — a lone

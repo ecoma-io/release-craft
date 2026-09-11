@@ -418,9 +418,12 @@ export interface TagHistoryResult {
 }
 
 /** `history.ts` — projects `TagObservation[]` onto the declared lines
- * (§2.13): parses names through the kernel's grammar, admits a tag into a
- * line's history when its version falls in that line's namespace per the
- * declared configuration, surfaces the rest as foreign. Deterministic. */
+ * (§2.13): parses names through the kernel's grammar (a leading
+ * `refs/tags/` refname prefix stripped first — #263's normalization; the
+ * observed spelling is how the world closures declare tags), admits a tag
+ * into a line's history when its version falls in that line's namespace
+ * per the declared configuration, and surfaces the rest as foreign.
+ * Deterministic. */
 export type LoadTagHistory = (
   tags: readonly TagObservation[],
   lines: readonly LineConfig[],
@@ -509,7 +512,13 @@ export type LineDecision =
     } & RecordBase)
   | ({
       readonly kind: "blocked";
-      readonly cause: "bootstrap-required" | "stale-plan";
+      readonly cause:
+        | "bootstrap-required"
+        | "stale-plan"
+        // §2.9 as amended (#263): the released-version replay — the
+        // evaluated range is fully released (or a release-as demand names
+        // an observed version) and the pass mints nothing for the line.
+        | "released-version-observed";
     } & RecordBase);
 
 /** `decide.ts` — turns one line's attribution into its §2.9 decision:

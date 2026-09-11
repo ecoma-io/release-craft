@@ -100,6 +100,37 @@ describe("loadTagHistory — §2.13 projection (D15, ADR-0003 decision 16)", () 
     expect(admitted.version.major).toBe(1);
   });
 
+  it("strips a leading refs/tags/ refname before the parse and admits the tag under its declared name (#263)", () => {
+    // The world closures declare observed tags under their full git
+    // refnames (`refs/tags/0.1.0`); before the normalization such a tag
+    // surfaced foreign and the line's recorded state never saw its own
+    // release (#263's hosted shape). The admitted entry keeps the name the
+    // world declared, verbatim — the explanation data quotes the world,
+    // never a rewrite — and the `v`-prefix ban is unchanged.
+    const result = loadTagHistory(
+      [tag("refs/tags/0.1.0", "sha-a"), tag("v0.2.0", "sha-b")],
+      [line("main", "feed/0")],
+      policy(),
+    );
+
+    const main = historyById(result, "main");
+    expect(namesOf(main.tags)).toEqual(["refs/tags/0.1.0"]);
+    const admitted = main.tags[0];
+    if (admitted === undefined) {
+      throw new Error("fixture broken: expected the refname-spelled tag admitted");
+    }
+    expect(admitted.version.toString()).toBe("0.1.0");
+    expect(foreignNamed(main, "v0.2.0").detail).toContain("the kernel's version grammar refused");
+    expect(foreignNamed(main, "v0.2.0").detail).toContain("v0.2.0");
+  });
+
+  it("bounds the range at the refname-spelled tag the world declares — the recorded state honors it (#263)", () => {
+    const lines = [line("main", "feed/0")];
+    const history = loadTagHistory([tag("refs/tags/0.1.0", "sha-a")], lines, policy());
+    const ranges = deriveRanges(history, [ref("feed/0", "sha-head")], lines);
+    expect(ranges).toEqual([{ lineId: "main", releasedUpTo: "sha-a", head: "sha-head" }]);
+  });
+
   it("admits band-equal tags and surfaces out-of-band ones, naming the line and band they failed", () => {
     const lines = [
       line("maint-1", "feed/1", { major: 1 }),

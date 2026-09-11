@@ -17,6 +17,7 @@ import {
   stageContentFingerprint,
   MemoryAttemptRegister,
   plan,
+  type OperatorIntent,
   type RunDeclarations,
   type RunOutcome,
 } from "../../src/index.js";
@@ -161,6 +162,60 @@ describe("§2.8 — refused: the planner's refusal, a malformed request, a forei
     expect(outcome.detail).toContain("assembles no line");
     expect(outcome.detail).toContain("main");
     expect(outcome.planId).not.toBeNull();
+  });
+});
+
+describe("§2.8 as amended (#263) — the planning boundary's own blocked record", () => {
+  /** The hosted replay (#263), over the matrix world: the world observes
+   * the released tag under its full git refname at main's unchanged head
+   * — the line's precedence-max tag, so the recorded state's pointer IS
+   * the head — the recorded bootstrap that birthed the line rides the
+   * closed input, and a release demand re-arrives. The planner admits the
+   * refname-spelled tag into the line's recorded state (§2.13's
+   * normalization), the line claims its recorded birth, and the pass is
+   * the replay §2.9 refuses. */
+  const replayRequest = (): ReturnType<typeof runRequest> => {
+    const world = liveWorld();
+    world.tags.push({ name: "refs/tags/5.0.0", commit: "m5" });
+    const intents: readonly OperatorIntent[] = [{ kind: "release" }];
+    const input = {
+      ...runInput(world, "main", intents),
+      bootstrap: { version: "5.0.0", who: "the operator", when: COMMITTED_AT },
+    };
+    return { ...runRequest(world, "main", intents), input };
+  };
+
+  it("a released-version replay blocks at the planning boundary — plan named, handle null, nothing executed, nothing written", () => {
+    const { engine, stores } = freshAssembly();
+    const outcome = engine.run(replayRequest());
+    expect(outcome.kind).toBe("blocked");
+    if (outcome.kind !== "blocked") {
+      throw new Error("expected a blocked outcome");
+    }
+    // The record composes the decision's cause with its detail: the cause
+    // names the replay, the detail names the observed tag, version, head,
+    // and the recorded birth it would re-execute.
+    expect(outcome.cause).toContain("released-version-observed");
+    expect(outcome.cause).toContain("refs/tags/5.0.0");
+    expect(outcome.cause).toContain("m5");
+    expect(outcome.planId).not.toBeNull();
+    expect(outcome.handle).toBeNull();
+    expect(outcome.drives).toStrictEqual([]);
+    // No attempt ever opened: the register never allocated the plan's
+    // first ordinal — so no claim was acquired, no ledger record written,
+    // and no mint taken. The re-dispatch takes no second attempt.
+    const planId = outcome.planId;
+    if (planId === null) {
+      throw new Error("expected the blocked outcome to name the plan");
+    }
+    expect(stores.register.nextOrdinal(planId)).toBe(1);
+  });
+
+  it("the replay is stable: a second identical request blocks again with the identical record", () => {
+    const { engine } = freshAssembly();
+    const first = engine.run(replayRequest());
+    const second = engine.run(replayRequest());
+    expect(second).toStrictEqual(first);
   });
 });
 

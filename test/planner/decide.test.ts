@@ -514,6 +514,206 @@ describe("decideLine — D17(4)(5) intent routing", () => {
   });
 });
 
+describe("decideLine — §2.9 as amended (#263): the released-version replay", () => {
+  // The hosted shape of runs 34597572065 / 34597897169, at the decision
+  // level: the world observes the release under its full git refname at
+  // the line's head, the recorded bootstrap that birthed the line is in
+  // the input, and a release demand re-arrives over the unchanged head.
+  const replayTags = [{ name: "refs/tags/0.1.0", commit: "sha-head" }];
+  const replayBootstrap = { version: "0.1.0", who: "the operator", when: COMMITTED_AT };
+  const releasedRange = (): LineRange => ({
+    lineId: "main",
+    releasedUpTo: "sha-head",
+    head: "sha-head",
+  });
+
+  it("blocks the unchanged re-dispatch over a released head as the released-version replay (#263)", () => {
+    const evaluated = releasedRange();
+    const decision = decideLine(
+      attribution("main", [], []),
+      planInput({
+        intents: [{ kind: "release" }],
+        bootstrap: replayBootstrap,
+        tags: replayTags,
+        lines: [activeLine],
+      }),
+      evaluated,
+    );
+
+    expect(decision.kind).toBe("blocked");
+    if (decision.kind !== "blocked") {
+      throw new Error("expected a blocked record");
+    }
+    expect(decision.cause).toBe("released-version-observed");
+    // The record names the observed tag, its version, the head it sits at,
+    // and the recorded birth it would re-execute.
+    expect(decision.detail).toContain("refs/tags/0.1.0");
+    expect(decision.detail).toContain("0.1.0");
+    expect(decision.detail).toContain("sha-head");
+    expect(decision.detail).toContain("0.1.0, recorded by the operator");
+    // Range and digest travel verbatim — same value, not a copy.
+    expect(decision.range).toBe(evaluated);
+    expect(decision.policyDigest).toBe(POLICY_DIGEST);
+  });
+
+  it("keeps the recorded no-op when the same released head carries no release demand (#263)", () => {
+    const decision = decideLine(
+      attribution("main", [], []),
+      planInput({ bootstrap: replayBootstrap, tags: replayTags, lines: [activeLine] }),
+      releasedRange(),
+    );
+
+    expect(decision.kind).toBe("no-op");
+    if (decision.kind !== "no-op") {
+      throw new Error("expected a no-op record");
+    }
+    expect(decision.cause).toBe("no-release-worthy-changes");
+  });
+
+  it("releases the next version when the observed tag sits at an older commit and release-worthy work is pending (#263)", () => {
+    const pending = [parsed("sha-fix-1", "fix", "chg:f1")];
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:f1"]),
+      planInput({
+        intents: [{ kind: "release" }],
+        bootstrap: replayBootstrap,
+        tags: [{ name: "refs/tags/0.1.0", commit: "sha-old" }],
+        lines: [activeLine],
+      }),
+      { lineId: "main", releasedUpTo: "sha-old", head: "sha-head" },
+    );
+
+    expect(decision.kind).toBe("release");
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    expect(decision.bump).toBe("patch");
+  });
+
+  it("keeps the recorded no-op when a release demand finds nothing pending since the release (#263)", () => {
+    // The birth tag is admitted and the head has moved, but only by
+    // non-release-triggering commits: the bounds differ, so the replay
+    // record does not stand and the chore-only runway stays the no-op.
+    const pending = [parsed("sha-chore-1", "chore", "chg:c1")];
+
+    const decision = decideLine(
+      attribution("main", pending, []),
+      planInput({
+        intents: [{ kind: "release" }],
+        bootstrap: replayBootstrap,
+        tags: [{ name: "refs/tags/0.1.0", commit: "sha-old" }],
+        lines: [activeLine],
+      }),
+      { lineId: "main", releasedUpTo: "sha-old", head: "sha-head" },
+    );
+
+    expect(decision.kind).toBe("no-op");
+    if (decision.kind !== "no-op") {
+      throw new Error("expected a no-op record");
+    }
+    expect(decision.cause).toBe("no-release-worthy-changes");
+  });
+
+  it("does not claim a recorded birth the line's own band keeps foreign — a quiet released head stays a no-op (#263)", () => {
+    // The maintenance posture (S-05): the run's recorded bootstrap names
+    // the sibling 0.x line's birth; this line's declared band excludes
+    // that version, so the line claims no birth and its fully released
+    // head stays the recorded no-op even under the release demand.
+    const bandedLine: LineConfig = {
+      id: "main",
+      feedRef: "main",
+      lifecycle: "active",
+      declared: true,
+      versionBand: { major: 2 },
+    };
+
+    const decision = decideLine(
+      attribution("main", [], []),
+      planInput({
+        intents: [{ kind: "release" }],
+        bootstrap: replayBootstrap,
+        tags: [
+          { name: "refs/tags/0.1.0", commit: "sha-head" },
+          { name: "2.3.0", commit: "sha-head" },
+        ],
+        lines: [bandedLine],
+      }),
+      releasedRange(),
+    );
+
+    expect(decision.kind).toBe("no-op");
+    if (decision.kind !== "no-op") {
+      throw new Error("expected a no-op record");
+    }
+    expect(decision.cause).toBe("no-release-worthy-changes");
+  });
+
+  it("blocks a release-as demand naming a version the line's history already observes (#263)", () => {
+    const pending = [parsed("sha-fix-1", "fix", "chg:f1")];
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:f1"]),
+      planInput({
+        intents: [{ kind: "release-as", version: "0.1.0" }],
+        tags: [{ name: "refs/tags/0.1.0", commit: "sha-old" }],
+        lines: [activeLine],
+      }),
+      { lineId: "main", releasedUpTo: "sha-old", head: "sha-head" },
+    );
+
+    expect(decision.kind).toBe("blocked");
+    if (decision.kind !== "blocked") {
+      throw new Error("expected a blocked record");
+    }
+    expect(decision.cause).toBe("released-version-observed");
+    expect(decision.detail).toContain("release-as 0.1.0");
+    expect(decision.detail).toContain("refs/tags/0.1.0");
+  });
+
+  it("honors a release-as demand naming a version the history does not observe (#263)", () => {
+    const pending = [parsed("sha-fix-1", "fix", "chg:f1")];
+
+    const decision = decideLine(
+      attribution("main", pending, ["chg:f1"]),
+      planInput({
+        intents: [{ kind: "release-as", version: "0.2.0" }],
+        tags: [{ name: "refs/tags/0.1.0", commit: "sha-old" }],
+        lines: [activeLine],
+      }),
+      { lineId: "main", releasedUpTo: "sha-old", head: "sha-head" },
+    );
+
+    expect(decision.kind).toBe("release");
+    if (decision.kind !== "release") {
+      throw new Error("expected a release record");
+    }
+    expect(decision.bump).toBe("patch");
+  });
+
+  it("keeps the ladder's no-op posture when an admissible prerelease demand rides over the released head (#263)", () => {
+    // The prerelease demand mints the NEXT version's next sequence — a new
+    // identity, never a re-release — so the released head keeps its
+    // no-op-plus-streams posture and the replay record does not stand.
+    const decision = decideLine(
+      attribution("main", [], []),
+      planInput({
+        intents: [{ kind: "prerelease", stream: "beta", lineId: "main" }],
+        bootstrap: replayBootstrap,
+        tags: replayTags,
+        lines: [activeLine],
+      }),
+      releasedRange(),
+    );
+
+    expect(decision.kind).toBe("no-op");
+    if (decision.kind !== "no-op") {
+      throw new Error("expected a no-op record");
+    }
+    expect(decision.cause).toBe("no-release-worthy-changes");
+  });
+});
+
 describe("decideLine — D18 line policy (lifecycle, withhold)", () => {
   it("refuses a frozen line's release-shaped planning with cause line-frozen, regardless of pending release-worthy changes (D18 decision 2)", () => {
     const pending = [parsed("sha-fix-1", "fix", "chg:f1"), parsed("sha-feat-1", "feat", "chg:f2")];

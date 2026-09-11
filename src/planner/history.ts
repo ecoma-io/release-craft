@@ -5,7 +5,9 @@
  *
  * `TagObservation[]` is the sole release-history truth (invariant 6, S-03):
  * every tag name is parsed through the kernel's grammar (`Version.parse` —
- * strict SemVer 2.0.0, the only door into a `Version`), and a parsed tag
+ * strict SemVer 2.0.0, the only door into a `Version`; a leading
+ * `refs/tags/` refname prefix strips first — #263's normalization, the
+ * spelling the world closures declare), and a parsed tag
  * joins a line's history exactly when its version falls in that line's
  * declared `versionBand` (D15): band equality on the major series,
  * optionally the minor series; an absent band — the single-line repo —
@@ -96,6 +98,21 @@ function byPrecedenceThenName(a: AdmissibleTag, b: AdmissibleTag): number {
 }
 
 /**
+ * §2.13's name normalization (#263): the bare kernel-grammar input for an
+ * observed tag name. An observer may declare the tag under its full git
+ * refname — the world closures do (`refs/tags/0.1.0`) — so a leading
+ * `refs/tags/` prefix strips before the parse; every other name passes
+ * through untouched, and the kernel's own rejections (`v` prefixes
+ * included) are unchanged. The admitted entry keeps the name the world
+ * declared, verbatim: the explanation data quotes the world, never a
+ * rewrite.
+ */
+function parseableName(name: string): string {
+  const REFS_TAGS = "refs/tags/";
+  return name.startsWith(REFS_TAGS) ? name.slice(REFS_TAGS.length) : name;
+}
+
+/**
  * The locked §2.13 projection: parse each name once, adjudicate per line,
  * surface what each line kept out. `_policy` is deliberately unread — the
  * projection's truth is the tag observations and the lines' declared bands
@@ -111,7 +128,7 @@ export const loadTagHistory: LoadTagHistory = (tags, lines, _policy) => {
   // bug, not a tag defect, and propagates.
   const parsedTags = tags.map((tag): ParsedTag => {
     try {
-      return { tag, version: Version.parse(tag.name) };
+      return { tag, version: Version.parse(parseableName(tag.name)) };
     } catch (error) {
       if (!(error instanceof InvalidVersionError)) {
         throw error;

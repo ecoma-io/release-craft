@@ -36,9 +36,12 @@ name: self-release
 #   - `scripts/dogfood/judge.mjs` — the four classes over the captured
 #     material. For a `published` dispatch every machine-available row is
 #     asserted. For a stop-band dispatch (the unchanged re-dispatch: the
-#     mint's scope is already owned — `denied`, exit 11, the holder named,
-#     or the tag-absent precondition's `blocked`, exit 12, where the tag
-#     rode origin into a fresh checkout) the judge reuses its declared
+#     release the dispatch would mint is already observed — `blocked`,
+#     exit 12, cause `released-version-observed`, at the planning
+#     boundary, because the planner admits the world's observed tag into
+#     the line's history and refuses the replay (#263); or `denied`,
+#     exit 11, the holder named — the same-ref-space shape a
+#     two-checkout race produces) the judge reuses its declared
 #     degraded posture unchanged: the conclusion row is asserted (a
 #     stop-band kind concludes failure through the conclusion table), and
 #     the exact exit value, the carrying fields, and the ledger projection
