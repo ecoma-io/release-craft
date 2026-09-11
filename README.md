@@ -43,9 +43,12 @@ in [`release-model.md`](docs/design/release-model.md); older work in
 ## Using release-craft
 
 The consumer path — install, first release, Action wiring, and the engine's
-vocabulary — lives in [`docs/adopters.md`](docs/adopters.md); every command
-transcript and both world-document examples on that page are machine-checked
-against the engine by the suite. The shape of adoption:
+vocabulary — lives in [`docs/adopters.md`](docs/adopters.md). The suite
+machine-checks that page's documents and digests against the engine — both
+world-document examples, the quoted refusal, every `plan_sha256:` digest the
+transcripts quote, the run's stop row, and the Action's SHA pins; the command
+transcripts themselves are illustrative, captured on the head the page was
+written at. The shape of adoption:
 
 1. **Declare a world** — one JSON document stating your release policy, your
    repository's observed history, and your release lines. The CLI validates

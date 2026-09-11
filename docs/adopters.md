@@ -125,14 +125,19 @@ with one commit pending and no recorded releases:
 }
 ```
 
-**This page's examples are machine-checked.** The suite
+**This page's documents and digests are machine-checked.** The suite
 (`test/docs/adopters.test.ts`) extracts the world documents on this page and
 drives each through the CLI's own world reader (`readWorldDocument`, the same
 reader the Action's invoke step reaches through `--world`) and the planner's
 memory assembly — the same doors the process surface drives. The quoted
-refusal below is pinned to the engine's own `detail` string, so a planner
-wording change and a stale page fail the same test run. Run it with
-`pnpm test`.
+refusal below is pinned to the engine's own `detail` string; every
+`plan_sha256:` digest quoted in the transcripts is checked against the
+engine's own computed plan identity over this page's world bytes; and the
+run transcript's last row is checked against the engine's own renderer over
+the same world. The transcripts themselves are illustrative — captured once
+on the head this page was written at, not re-executed by the suite — so a
+planner rewording, a stale digest, or a reshaped `PlanningInput` and a stale
+page fail the same test run. Run it with `pnpm test`.
 
 ## The first release — and the refusal you should expect
 
@@ -211,8 +216,12 @@ line main 0.1.0 (tag 0.1.0)
 ## Releasing over a real repository
 
 The `git` assembly records the walk in the repository — claims, ledger, and
-the minted tag are refs someone can read after the process is gone. From the
-repository root, with the world re-declared over the new head:
+the minted tag are refs someone can read after the process is gone. The
+command below walks `--repo .` — the repository you execute it in — so run
+it in a **scratch clone of your repository**, and re-declare the world over
+that clone's new head: a world declaring a head the walked repository does
+not hold faults the mint (exit 70, `the mint target … does not resolve to a
+commit`). With the world re-declared over the new head:
 
 ```sh
 node dist/src/cli/index.js run --assembly git --repo . --tag-namespace "" \
@@ -404,8 +413,11 @@ recorded, never an overwrite
 
 Stated plainly, so no page implies a capability:
 
-- **No npm package.** The engine is consumed by building this repository;
-  the `bin` entry (`release-craft`) resolves after `pnpm build`.
+- **No npm package.** The engine is consumed by building this repository
+  and invoking the built file directly — `node dist/src/cli/index.js`, the
+  path every transcript on this page uses. The `bin` entry (`release-craft`
+  → that path) is declared in `package.json`, but the package is not
+  installed anywhere, so the command name does not resolve.
 - **No world-reader product slice.** The world is declared, not discovered:
   nobody observes your repository for you. The self-dogfood's
   `scripts/dogfood/close-world.mjs` is a working example of a caller-side
