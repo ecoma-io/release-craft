@@ -65,15 +65,6 @@ export default defineConfig({
           new URL("./src/adapters/node-workspace/index.ts", import.meta.url),
         ),
       },
-      // The package root barrel — the one specifier `openReleasePRDriver`
-      // (the Release PR driver's composition root) is exported from. The
-      // anchor keeps the subpath aliases above authoritative: only the bare
-      // name matches here. Declared for the Release-PR E2E harness, the one
-      // non-test consumer of the root barrel the suite executes.
-      {
-        find: /^@ecoma-io\/release-craft$/,
-        replacement: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
-      },
     ],
   },
   test: {

@@ -21,7 +21,6 @@
     "noEmit": true,
     "skipLibCheck": true,
     "paths": {
-      "@ecoma-io/release-craft": ["./src/index.ts"],
       "@ecoma-io/release-craft/domain": ["./core/domain/index.ts"],
       "@ecoma-io/release-craft/planner": ["./src/planner/index.ts"],
       "@ecoma-io/release-craft/execution": ["./src/execution/index.ts"],

@@ -64,11 +64,15 @@
 // release-craft`, onlyTagsConstraintViolation). This harness DRIVES the
 // driver as a consumer (the role `test/release-pr-driver.test.ts` plays in
 // the same project), so it lives in the root project — `type-package`, whose
-// boundary row reaches every layer — and imports the package through the
-// package root barrel, the one composition root `openReleasePRDriver` is
-// exported from. At runtime the self-reference resolves to the built package
-// (`pnpm build` first — the fresh-clone law); under Vitest and tsc the
-// specifier resolves to sources (vitest.config.ts's alias, tsconfig `paths`).
+// boundary row reaches every layer. The imports below are RELATIVE into the
+// built package (`dist/`), for two measured reasons: a project may not
+// import itself by name (archkeep's `noSelfCircularDependencies` refused the
+// bare `@ecoma-io/release-craft` specifier in CI — `release-craft →
+// release-craft`, the one red CI caught and this comment records), and a
+// relative import is that law's own recommendation; and a runtime driver
+// must execute the built package anyway (`pnpm build` first — the
+// fresh-clone law). tsc reads the emitted declarations beside the barrels;
+// the Moon test task builds before the suite runs.
 //
 // Usage: `node e2e/release-pr-e2e.mjs --help`.
 import { spawnSync } from "node:child_process";
@@ -80,10 +84,10 @@ import {
   MemoryRecordSink,
   openReleasePRDriver,
   renderReleasePRProjection,
-} from "@ecoma-io/release-craft";
-import { openGitBinding } from "@ecoma-io/release-craft/adapters/git";
-import { openGitHubAdapter } from "@ecoma-io/release-craft/adapters/github";
-import { plan } from "@ecoma-io/release-craft/planner";
+} from "../dist/src/index.js";
+import { openGitBinding } from "../dist/src/adapters/git/index.js";
+import { openGitHubAdapter } from "../dist/src/adapters/github/index.js";
+import { plan } from "../dist/src/planner/index.js";
 
 /** @typedef {import("@ecoma-io/release-craft/planner").PlanningInput} PlanningInput */
 /** @typedef {import("@ecoma-io/release-craft/planner").PlanningOutcome} PlanningOutcome */
