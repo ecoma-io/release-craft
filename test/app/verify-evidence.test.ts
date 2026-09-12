@@ -36,7 +36,7 @@ describe("#279 — the verify evidence names its derivation", () => {
         guard: "tag-boundary",
         passed: true,
         detail:
-          "the tag boundary stands by the walk's recorded sequence — every prior stage's completion recorded, no world re-observation here; the world's re-check lives at the mint door's create-if-absent CAS (§2.9)",
+          "the tag boundary stands by the walk's recorded sequence — every prior stage's completion recorded, no world re-observation here; where a mint door is wired, its create-if-absent CAS is the world's re-check (§2.9)",
       },
     ]);
   });
