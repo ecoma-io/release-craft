@@ -4,8 +4,9 @@
 # This adapter reads workspace manifests (pnpm `packages:`, npm/yarn
 # `workspaces:`) and member package.json files to produce a detected
 # workspace graph — declared components and dependency edges — plus the
-# conversion to `ComponentMeta[]` that feeds `planPropagation` and the
-# updater.
+# conversion to `ComponentMeta[]`, the planner's declared-component shape
+# (the input type `planPropagation` takes). A public-surface export with
+# no in-repo production caller yet (issue #290).
 #
 # The adapter reaches the planner barrel (`../../planner/index.js` —
 # `ComponentMeta`, `ComponentDependency` types for `toComponentMeta`)
