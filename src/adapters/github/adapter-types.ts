@@ -179,6 +179,116 @@ export interface ReconciliationReport {
   readonly releases: ReleasesListingOutcome;
 }
 
+// ---------------------------------------------------------------------------
+// The Release PR port (issue #309) — the Release PR gate's remote half
+// ---------------------------------------------------------------------------
+
+/**
+ * The deterministic identity of a Release PR: the component that owns the
+ * release, the release line the plan targets, and the branch the PR merges
+ * into. The structural twin of the application layer's `ReleasePRIdentity`
+ * (`src/app/release-pr-types.ts`) — this layer cannot import the app's
+ * interface (the boundary row for `type-adapters-github` admits only the
+ * domain kernel and the git binding's barrel; adapters compose inward,
+ * never toward the surface), so the port's vocabulary is declared here with
+ * identical shapes and the conformance is pinned behaviorally in the unit
+ * suite: the adapter adopts a body the app gate's own render produced.
+ */
+export interface GitHubReleasePRIdentity {
+  /** The component (package) the release applies to. */
+  readonly component: string;
+  /** The release line id (stable, per ADR-0003 invariant 7). */
+  readonly releaseLine: string;
+  /** The branch the PR targets. */
+  readonly targetBranch: string;
+}
+
+/** A file the Release PR proposes to add or modify. The structural twin of
+ *  the app layer's `ReleasePRFile`. */
+export interface GitHubReleasePRFile {
+  /** The file path relative to the repository root. */
+  readonly path: string;
+  /** The file's new content (the release manifest projection). */
+  readonly content: string;
+}
+
+/** A remote pull request discovered by identity search. The structural
+ *  twin of the app layer's `ExistingPR`. */
+export interface GitHubExistingPR {
+  /** The PR's number. */
+  readonly number: number;
+  /** The PR's current title. */
+  readonly title: string;
+  /** The PR's current body. */
+  readonly body: string;
+  /** The PR's head branch name. */
+  readonly headRef: string;
+  /** Whether the PR is a draft. */
+  readonly draft: boolean;
+  /** The PR's labels (for diagnostic output, never used as identity). */
+  readonly labels: readonly string[];
+}
+
+/** The parameters of a create: the projection the gate rendered, plus the
+ *  identity whose head branch the port derives. The structural twin of the
+ *  app `ReleasePRPort.createPR` parameter object. */
+export interface GitHubReleasePRCreateParams {
+  readonly identity: GitHubReleasePRIdentity;
+  readonly title: string;
+  readonly body: string;
+  readonly labels: readonly string[];
+  readonly draft: boolean;
+  readonly files: readonly GitHubReleasePRFile[];
+}
+
+/** The parameters of an update-in-place: the projection plus the PR number
+ *  that identifies which PR to update. The structural twin of the app
+ *  `ReleasePRPort.updatePR` parameter object. */
+export interface GitHubReleasePRUpdateParams {
+  readonly prNumber: number;
+  readonly title: string;
+  readonly body: string;
+  readonly labels: readonly string[];
+  readonly draft: boolean;
+  readonly files: readonly GitHubReleasePRFile[];
+}
+
+/**
+ * The Release PR gate's remote half: discover an existing PR by the
+ * identity claim its body embeds, create the PR from a projection, update
+ * one in place. The structural twin of the app layer's `ReleasePRPort` —
+ * the shape `openReleasePRGate` consumes, injectable at the composition
+ * root (ADR-0010 decision 2).
+ *
+ * The refusal channel is the interface's own: the app port's methods
+ * return `ExistingPR | null` and have no refusal variant, and `null` is
+ * the one answer a refusal may never wear (a `findPR` that answers null
+ * over a truncated listing creates the duplicate PR the issue names; a
+ * `createPR` that answers a PR over a partial create reads as success).
+ * A refused, ambiguous, or partial outcome therefore crosses as the
+ * classified `GitHubReleasePRFault` — the refusal envelope over the gate's
+ * own exception channel, which `openReleasePRGate` already converts into a
+ * recorded `transport-failure` verdict carrying the fault's words. The
+ * classification is real: the fault's fields carry the outcome state, the
+ * W4 refusal reason, and the provider's detail — never a raw transport
+ * exception escaping the port (ADR-0010 decision 7).
+ */
+export interface GitHubReleasePRPort {
+  /** Discover an existing PR matching the given identity, by the claim
+   * marker its body embeds — never by title or label (issue #202 §11.5).
+   * Returns null only when the listing was observed completely and no PR
+   * claims the identity. */
+  findPR(identity: GitHubReleasePRIdentity): GitHubExistingPR | null;
+
+  /** Create a new PR with the given title, body, and labels; draft flag
+   * respected. The head branch is derived from the identity by the port. */
+  createPR(params: GitHubReleasePRCreateParams): GitHubExistingPR;
+
+  /** Update an existing PR's title, body, labels, and projected files in
+   * place. The PR number identifies which PR to update. */
+  updatePR(params: GitHubReleasePRUpdateParams): GitHubExistingPR;
+}
+
 /**
  * The GitHub adapter's surface (contract §2.2). Synchronous — the adapter
  * performs network I/O but returns a value, never a promise or callback,
@@ -189,6 +299,11 @@ export interface GitHubAdapter {
   publishRelease(tag: string): ReleaseOutcome;
   verifyRelease(tag: string): VerificationOutcome;
   reconcile(): ReconciliationReport;
+  /** The Release PR gate's remote half (issue #309): the port the
+   * composition root injects into `openReleasePRGate`. Composed over the
+   * same injected transport and credentials as every other door; its
+   * refusal channel is the `GitHubReleasePRPort` interface's own. */
+  readonly releasePR: GitHubReleasePRPort;
 }
 
 /**
@@ -205,9 +320,16 @@ export interface GitHubTransport {
   request(path: string, init?: GitHubRequestInit): GitHubResponse;
 }
 
-/** The request the transport receives. */
+/** The request the transport receives. The method set is the one the REST
+ * calls this adapter speaks actually need: `GET`/`POST` everywhere, and —
+ * introduced with the Release PR port (issue #309) — the three write verbs
+ * for the calls that have no POST spelling: `PATCH` for a ref update
+ * (`PATCH /git/refs/heads/<branch>`) and a pull request's title/body
+ * update (`PATCH /pulls/<number>`), and `PUT` for the label set replace
+ * (`PUT /issues/<number>/labels`, the issues API that owns pull requests'
+ * labels). The field is optional and every earlier caller is unaffected. */
 export interface GitHubRequestInit {
-  readonly method?: "GET" | "POST";
+  readonly method?: "GET" | "POST" | "PATCH" | "PUT";
   readonly body?: string;
   readonly headers?: Readonly<Record<string, string>>;
 }
