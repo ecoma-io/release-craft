@@ -380,6 +380,76 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
     });
   });
 
+  it("refuses the freeze-window mint naming the recorded takeover (§2.4 item 6; ADR-0011 decision 9)", () => {
+    // A naming that admits prerelease scopes, so the taken lease's own
+    // derived tag is mintable — the freeze window the door closes.
+    const fenceNaming: GitTagNaming = {
+      namespaces: ["v"],
+      tagFor: (scope: ClaimScope): string | null =>
+        scope.kind === "prerelease-sequence" ? `v${scope.target}.${String(scope.sequence)}` : null,
+    };
+    withTempRepo("claims-mint-freeze", (repo, git) => {
+      const store = new GitClaimStore(repo);
+      const mint = GitTagDoor(git, fenceNaming);
+      const holder = asClaim(store.acquire(prerelease(1), "attempt_holder"));
+      const taker = asClaim(store.acquire(prerelease(2), "attempt_taker"));
+      // The holder's lease verifies superseded; the mint the holder's walk
+      // reaches after the takeover answers with the same evidence — the
+      // recorded takeover refuses the mint, naming the taker.
+      expect(store.verify(holder.token).kind).toBe("superseded");
+      const refused = asRefused(
+        mint({
+          attemptId: "attempt_holder",
+          token: holder.token,
+          tag: "v1.3.0-rc.1",
+          target: rootCommit(git),
+        }),
+      );
+      expect(refused.reason).toBe("unclaimed");
+      expect(refused.tag).toBe("v1.3.0-rc.1");
+      expect(refused.detail).toContain("was superseded by attempt attempt_taker");
+      expect(refused.detail).toContain("the recorded takeover refuses the mint");
+      // No tag ref moved.
+      expect(refNames(git, "refs/tags/")).toHaveLength(0);
+      expect(taker.token).not.toBe("");
+    });
+  });
+
+  it("refuses the freeze-window mint beside an unrelated held claim, on the taken lease's derived name (§2.4 item 6)", () => {
+    const fenceNaming: GitTagNaming = {
+      namespaces: ["v"],
+      tagFor: (scope: ClaimScope): string | null => {
+        if (scope.kind === "stable-version") {
+          return `v${scope.version}`;
+        }
+        return scope.kind === "prerelease-sequence"
+          ? `v${scope.target}.${String(scope.sequence)}`
+          : null;
+      },
+    };
+    withTempRepo("claims-mint-freeze-mixed", (repo, git) => {
+      const store = new GitClaimStore(repo);
+      const mint = GitTagDoor(git, fenceNaming);
+      // The holder carries one unrelated held lease (its own record) and
+      // one taken lease; the taken lease's derived tag is the mint the
+      // frozen walk asks for.
+      asClaim(store.acquire(stableVersion("1.2.0"), "attempt_holder"));
+      asClaim(store.acquire(prerelease(1), "attempt_holder"));
+      asClaim(store.acquire(prerelease(2), "attempt_taker"));
+      const refused = asRefused(
+        mint({
+          attemptId: "attempt_holder",
+          token: "claim:none",
+          tag: "v1.3.0-rc.1",
+          target: rootCommit(git),
+        }),
+      );
+      expect(refused.reason).toBe("unclaimed");
+      expect(refused.detail).toContain("was superseded by attempt attempt_taker");
+      expect(refNames(git, "refs/tags/")).toHaveLength(0);
+    });
+  });
+
   it("denies the acquisition of a scope the naming maps to no tag — before git sees it (§2.4)", () => {
     withTempRepo("claims-acquire-door", (repo, git) => {
       const binding = openGitBinding({ repo, tagNaming: naming });

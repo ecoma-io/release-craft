@@ -445,6 +445,17 @@ across invocations with zero grammar change ([§7](#7-the-other-slices)).
   is the one observation a second invocation can meaningfully make, and the
   `run` output carries the handle so a human or script can hold it for the
   doors that will one day accept it across processes.
+- **The takeover fence is observable across two `run` invocations (#227)**:
+  a second process acquiring past a standing lease no longer inherits its
+  authority silently. The landing appends a supersession record to the
+  register naming both holders (phase 4 §2.4 item 6;
+  [ADR-0011](../adr/0011-claim-line-register.md) decision 9), and the
+  passed holder's own walk answers with the fence — `denied` at exit 11
+  naming the taker when its acquisition or an in-walk verification sees the
+  supersession, or the mint door's `refused` at exit 10 naming the takeover
+  when it was frozen between its verify and its mint. Dead-holder recovery
+  is unchanged: the E-08 retry still completes the plan at the next
+  sequence — the takeover it performs is now recorded, not silent.
 - The store-less memory assembly renders the same discipline for channels:
   the observation returns `null` channels when no store is wired (verified:
   the `Observation` attempt row's `channels` field), and the CLI renders
@@ -501,7 +512,7 @@ or the contract broke before any classification.
 | 2    | proceed | `resolved`             | proceed — the recorded resolution re-armed the attempt; `.resume` next                                                                                                                                                                |
 | 3    | proceed | `abandoned`            | proceed — the abort was honored and terminal (E-09)                                                                                                                                                                                   |
 | 10   | stop    | `refused`              | read the detail — it names the owner and the refused door                                                                                                                                                                             |
-| 11   | stop    | `denied`               | another attempt owns the scope (E-07) — the winner is named                                                                                                                                                                           |
+| 11   | stop    | `denied`               | another attempt owns the scope (E-07; a superseded holder's fence rides here too, #227) — the winner is named                                                                                                                         |
 | 12   | stop    | `blocked`              | a guard failed on world state — resolve through `resolve`, then `resume`                                                                                                                                                              |
 | 13   | stop    | `failed`               | a recorded failure stopped the walk — inspect the tail; a later resume re-judges                                                                                                                                                      |
 | 14   | stop    | `conflict`             | same identity, different content or inconsistent evidence (E-02) — a human judges                                                                                                                                                     |
@@ -531,7 +542,11 @@ row → 10.
   act the stop demands.
 - **`denied` (11) is not `conflict` (14).** A denial names a live winner
   (E-07); a conflict names inconsistent evidence a human judges (E-02).
-  The loser path is recorded either way; the next move differs.
+  The loser path is recorded either way; the next move differs. A
+  superseded holder's fence lands in this row too (#227): the rendered
+  `holder` is the taker, and the register's supersession record is the
+  evidence a human reads to confirm the takeover — the exit code answers
+  "another attempt owns the scope", never "the evidence is inconsistent".
 - **`abandoned` (3) is proceed-band** because the door did what the
   operator asked — the abort was honored and the attempt stays terminal
   (E-09). The exit code answers "did the invocation do what it said", not

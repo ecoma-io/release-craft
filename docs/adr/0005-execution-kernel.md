@@ -64,7 +64,10 @@ superseded | abandoned }`, with `executing ⇄ blocked(cause)` suspension.
    protocol is: acquire before any mutation (invariant 11); re-verify
    ownership before every write (E-07's discipline); the store's atomic
    accept is the deterministic collision adjudication — no wall-clock, no
-   arrival-order assumption; same-holder re-acquisition is idempotent; a
+   arrival-order assumption; same-holder re-acquisition is idempotent
+   (one exception, recorded where it is enforced: a superseded record
+   denies with `refusal: "superseded"` —
+   [ADR-0011](0011-claim-line-register.md) decision 9); a
    denied prerelease-sequence acquire retries at the winner's
    `sequence + 1` under declared `maxRetries` policy, then exits with an
    explicit conflict record (E-08). The _physical_ primitive that backs the

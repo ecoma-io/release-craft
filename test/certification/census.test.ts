@@ -103,15 +103,15 @@ describe("the manifest's executable census · earned ∩ refused == ∅", () => 
 });
 
 describe("the manifest's completeness · one row per cell, statuses as recorded", () => {
-  it("holds thirty-five earned rows and eleven refusals, in the recorded statuses", () => {
-    expect(MANIFEST.length).toBe(46);
+  it("holds thirty-six earned rows and eleven refusals, in the recorded statuses", () => {
+    expect(MANIFEST.length).toBe(47);
     const byStatus = (status: string): number =>
       MANIFEST.filter((row) => row.status === status).length;
-    expect(byStatus("live")).toBe(34);
+    expect(byStatus("live")).toBe(35);
     expect(byStatus("typed-row")).toBe(0);
     expect(byStatus("census-only")).toBe(1);
     expect(byStatus("refused")).toBe(11);
-    expect(MANIFEST.filter((row) => row.status !== "refused").length).toBe(35);
+    expect(MANIFEST.filter((row) => row.status !== "refused").length).toBe(36);
   });
 
   it("every cell id is unique and in the fixture's own shape", () => {

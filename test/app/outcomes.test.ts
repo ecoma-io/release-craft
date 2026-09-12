@@ -349,6 +349,123 @@ describe("§2.8 — failed: the claim-lost loser path is a record, never a throw
   });
 });
 
+describe("§2.8 — denied: the takeover fence names the taker (phase 4 §2.4 item 6; ADR-0011 decision 9)", () => {
+  const betaScope = (): Extract<
+    ReturnType<typeof claimScopeForLine>,
+    { kind: "prerelease-sequence" }
+  > => {
+    const assembled = plannedOf(plan(runInput(liveWorld(), "main", [beta]))).plan;
+    const scope = claimScopeForLine(planLineFor(assembled, "main"));
+    if (scope === null || scope.kind !== "prerelease-sequence") {
+      throw new Error("fixture broken: the beta scope is not a prerelease sequence");
+    }
+    return scope;
+  };
+
+  it("a takeover recorded mid-walk renders the holder's stop as denied naming the taker", () => {
+    const stores = freshStores();
+    const engine = assembleMemoryStores(
+      {
+        register: stores.register,
+        ledger: stores.ledger,
+        claims: stores.claims,
+        channels: stores.channels,
+      },
+      { maxRetries: 2 },
+    );
+    const scope = betaScope();
+    const declaration = fullDeclaration();
+    const producers = new Map(declaration.producers ?? []);
+    producers.set("package", (input) => {
+      // The second live process: an acquisition past the holder's standing
+      // lease — the takeover the store records, never a silent inheritance.
+      const takeover = stores.claims.acquire(
+        { ...scope, sequence: scope.sequence + 1 },
+        "attempt_stranger",
+      );
+      if (takeover.kind !== "claim") {
+        throw new Error("fixture broken: the mid-walk takeover was denied");
+      }
+      return {
+        attribution: { attemptId: input.attemptId, actor: "automation" },
+        digest: "digest:package",
+        evidence: "evidence:package",
+      };
+    });
+    const outcome = engine.run(
+      runRequest(liveWorld(), "main", [beta], { ...declaration, producers }),
+    );
+    expect(outcome.kind).toBe("denied");
+    if (outcome.kind !== "denied" || outcome.handle === null) {
+      throw new Error("expected a denied outcome");
+    }
+    expect(outcome.holder).toBe("attempt_stranger");
+    // The fence evidence rides the walk: the stop is the guard's
+    // claim-lost, classified at the boundary by the store's superseded
+    // verdict — a record, never a throw.
+    expect(outcome.drives.at(-1)?.stepKey).toBe("commit");
+    expect(outcome.drives.at(-1)?.outcome.kind).toBe("claim-lost");
+    // The attempt is untouched — the loser path records, it does not move.
+    const observation = engine.observe({ kind: "attempt", handle: outcome.handle });
+    if (observation.kind !== "attempt") {
+      throw new Error("expected an attempt observation");
+    }
+    expect(observation.state).toBe("executing");
+
+    // The superseded holder's resume answers at acquisition: the fence
+    // denies the re-acquisition naming the taker, with no retry base —
+    // the refused holder never re-enters the race its taker won.
+    const resumed = engine.resume(outcome.handle, runRequest(liveWorld(), "main", [beta]));
+    expect(resumed.kind).toBe("denied");
+    if (resumed.kind !== "denied") {
+      throw new Error("expected a denied outcome");
+    }
+    expect(resumed.holder).toBe("attempt_stranger");
+    expect(resumed.drives).toStrictEqual([]);
+  });
+
+  it("dead-holder recovery is unblocked: the E-08 retry past the dead lease lands the recorded takeover and completes", () => {
+    const stores = freshStores();
+    const scope = betaScope();
+    // The dead holder's standing lease: a claim without a living walk.
+    const dead = stores.claims.acquire(scope, "attempt_dead");
+    if (dead.kind !== "claim") {
+      throw new Error("fixture broken: the dead holder's acquire was denied");
+    }
+    const engine = assembleMemoryStores(
+      {
+        register: stores.register,
+        ledger: stores.ledger,
+        claims: stores.claims,
+        channels: stores.channels,
+      },
+      { maxRetries: 1 },
+    );
+    const outcome = engine.run(runRequest(liveWorld(), "main", [beta]));
+    // Recovery completes — and the takeover it performed is on the record,
+    // naming the dead holder beside the superseding claim.
+    expect(outcome.kind).toBe("published");
+    if (outcome.kind !== "published" || outcome.handle === null) {
+      throw new Error("expected a published outcome");
+    }
+    const verdict = stores.claims.verify(dead.token);
+    expect(verdict.kind).toBe("superseded");
+    if (verdict.kind !== "superseded") {
+      throw new Error("expected the fence verdict");
+    }
+    expect(verdict.supersededBy.holder).toBe(outcome.handle.attemptId);
+    expect(verdict.supersededBy.scope).toEqual({ ...scope, sequence: scope.sequence + 1 });
+    // The superseded record stands: a third claim on the exact scope is
+    // still denied by it, so the dead version cannot be re-minted.
+    expect(stores.claims.acquire(scope, "attempt_stranger")).toEqual({
+      kind: "denied",
+      holder: "attempt_dead",
+      scope,
+      holderSequence: scope.sequence,
+    });
+  });
+});
+
 describe("§2.8 — satisfied-externally: ledger-first done-ness never terminalizes", () => {
   it("an external satisfaction at the stopped stage stops the walk, provenance recorded", () => {
     const { engine, stores } = freshAssembly();

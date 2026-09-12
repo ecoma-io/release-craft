@@ -136,6 +136,20 @@ export interface Claim {
   readonly holder: string;
 }
 
+/** One recorded takeover (phase 4 §2.4 item 6; ADR-0011 decision 9): the
+ * passed lease and the claim that passed it, both named exactly. At most one
+ * record per superseded scope — a later takeover passing the same lease
+ * re-lands the record naming the latest taker. The superseded claim's own
+ * record stays in the store: same-scope adjudication keeps denying
+ * non-holders of it, so the superseded version cannot be re-minted by a
+ * third claim. */
+export interface SupersessionRecord {
+  /** The passed lease — scope, token, and holder as recorded. */
+  readonly superseded: Claim;
+  /** The claim that took the scope past it. */
+  readonly supersededBy: Claim;
+}
+
 /** A denial (§2.4): the store's accepted claim wins, and the denial names
  * the holder — the loser detects the winner and exits without corrupting
  * anything (E-07). For a denied `prerelease-sequence` scope the denial
@@ -155,15 +169,22 @@ export interface ClaimDenied {
    * `prerelease-sequence`. Omitted otherwise. */
   readonly holderSequence?: number;
   /** Why the acquisition was denied, when the denial is a policy
-   * refusal rather than a lost race. The one reviewed widening the
-   * phase 8 correction pins; `"namespace"` is its only value today. */
-  readonly refusal?: "namespace";
+   * refusal rather than a lost race. The closed marker set: the
+   * binding's namespace door (`"namespace"`, the phase 8 correction's
+   * reviewed widening) and the takeover fence (`"superseded"`, phase 4
+   * §2.4 item 6 — ADR-0011 decision 9). A refusal-denial carries no
+   * `holderSequence`: it is final at acquisition, never a retry base. */
+  readonly refusal?: "namespace" | "superseded";
 }
 
-/** `verify`'s outcome (§2.3): held — with the claim — or lost. A lost
- * verification is `claim-lost`, the loser path (§2.4, §2.7). */
+/** `verify`'s outcome (§2.3): held — with the claim — lost, or superseded.
+ * A lost verification is `claim-lost`, the loser path (§2.4, §2.7); a
+ * superseded verification is the same loser path with the winner named —
+ * the takeover fence's evidence (phase 4 §2.4 item 6). */
 export type ClaimVerification =
-  { readonly kind: "held"; readonly claim: Claim } | { readonly kind: "lost" };
+  | { readonly kind: "held"; readonly claim: Claim }
+  | { readonly kind: "lost" }
+  | { readonly kind: "superseded"; readonly supersededBy: Claim };
 
 /** The claim store port (§2.3) — the ownership truth. Acquire is atomic
  * (the accept IS the collision adjudication, §2.4); same-holder

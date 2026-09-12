@@ -602,6 +602,22 @@ export const MANIFEST: readonly ManifestRow[] = [
     ],
     status: "live",
   },
+  {
+    id: "x-05",
+    kind: "windowed",
+    walk: "W5",
+    windows: ["I1"],
+    assembly: "A-cross-process",
+    transports: ["CLI"],
+    classes: ["exit codes", "outcome kinds and envelope shapes"],
+    expectedFiles: [],
+    provenance: [
+      "phase 14 §3.5",
+      "phase 4 §2.4 item 6 and ADR-0011 decision 9 (the takeover fence across two live processes: the second run acquires past a suspended holder's standing lease, the register's one CAS append records the supersession naming both holders, and the resumed holder's guard re-read answers denied naming the taker — the durable record read with the fixture's raw git spellings, never the product reader)",
+      "phase 12 §2.7 and §3.2's exit-11 row",
+    ],
+    status: "live",
+  },
 
   // — the Action transport's scenario cells (phase 14 §6) —
   {
