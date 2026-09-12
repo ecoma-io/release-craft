@@ -10,9 +10,15 @@
  * The compatibility bar is release-please's changelog builder
  * (docs/design/release-please-baseline.md §3): `## <version>` headings,
  * `###` sections derived from a declared type→section mapping
- * (`changelog-sections` equivalent), bulleted entries, a dedicated breaking
- * section, and prepend-into-existing or create-fresh updates (§3.1–§3.5).
- * Row 4 of the release-model compatibility matrix adapts that format —
+ * (`changelog-sections` equivalent), bulleted entries, and
+ * prepend-into-existing or create-fresh updates (§3.1–§3.5). One placement
+ * is a declared divergence, not baseline agreement: breaking entries are
+ * hoisted into a dedicated first section, where release-please renders
+ * them within their type's section (§3.4) — classified as a
+ * `POLICY DIFFERENCE` in the compatibility matrix's breaking-placement
+ * row (issue #293); the baseline's `##`-level section-heading observation
+ * versus these `###` sections is the open question [#305]. Row 4 of the
+ * release-model compatibility matrix adapts the format —
  * "same output format, internally owned template", so the template lives
  * here, byte-exact, not in an external preset dependency.
  *
@@ -55,7 +61,10 @@ export interface ChangelogEntry {
   /** The conventional-commit scope, rendered parenthesized when present. */
   readonly scope?: string;
   /** Breaking notes render under the dedicated breaking section, never in
-   * their type's section — release-please's own placement (§3.4). */
+   * their type's section — a declared divergence from release-please,
+   * which renders breaking notes within their section (§3.4); the
+   * dedicated-first placement is the S-05 upgrade-guide posture
+   * (compatibility matrix, breaking-placement row). */
   readonly breaking?: boolean;
   /** The recorded change identity (change id or commit sha). When present
    * together with the declared `repository`, the note carries a commit
