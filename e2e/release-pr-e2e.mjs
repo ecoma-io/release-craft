@@ -64,15 +64,19 @@
 // release-craft`, onlyTagsConstraintViolation). This harness DRIVES the
 // driver as a consumer (the role `test/release-pr-driver.test.ts` plays in
 // the same project), so it lives in the root project — `type-package`, whose
-// boundary row reaches every layer. The imports below are RELATIVE into the
-// built package (`dist/`), for two measured reasons: a project may not
-// import itself by name (archkeep's `noSelfCircularDependencies` refused the
-// bare `@ecoma-io/release-craft` specifier in CI — `release-craft →
-// release-craft`, the one red CI caught and this comment records), and a
-// relative import is that law's own recommendation; and a runtime driver
-// must execute the built package anyway (`pnpm build` first — the
-// fresh-clone law). tsc reads the emitted declarations beside the barrels;
-// the Moon test task builds before the suite runs.
+// boundary row reaches every layer. The imports ride the SUBPATH barrels
+// only — never the package's own root barrel: a project may not import
+// itself by name (archkeep's `noSelfCircularDependencies` refused the bare
+// `@ecoma-io/release-craft` specifier in CI — `release-craft →
+// release-craft`), while the subpath specifiers resolve to the layer
+// projects (types through tsconfig `paths` to sources, tests through the
+// vitest aliases, runtime through the package self-reference to the built
+// barrels — `pnpm build` first, the fresh-clone law). The one symbol the
+// root barrel uniquely carries is `openReleasePRDriver`, and its composition
+// is the single line its docblock exists to standardize:
+// `openReleasePRGate(adapter.releasePR, sink)` — inlined below with that
+// docblock's own words, so the harness wires the gate exactly as the front
+// door does and the CI-measured import law holds.
 //
 // Usage: `node e2e/release-pr-e2e.mjs --help`.
 import { spawnSync } from "node:child_process";
@@ -82,12 +86,12 @@ import { pathToFileURL } from "node:url";
 
 import {
   MemoryRecordSink,
-  openReleasePRDriver,
+  openReleasePRGate,
   renderReleasePRProjection,
-} from "../dist/src/index.js";
-import { openGitBinding } from "../dist/src/adapters/git/index.js";
-import { openGitHubAdapter } from "../dist/src/adapters/github/index.js";
-import { plan } from "../dist/src/planner/index.js";
+} from "@ecoma-io/release-craft/app";
+import { openGitBinding } from "@ecoma-io/release-craft/adapters/git";
+import { openGitHubAdapter } from "@ecoma-io/release-craft/adapters/github";
+import { plan } from "@ecoma-io/release-craft/planner";
 
 /** @typedef {import("@ecoma-io/release-craft/planner").PlanningInput} PlanningInput */
 /** @typedef {import("@ecoma-io/release-craft/planner").PlanningOutcome} PlanningOutcome */
@@ -800,9 +804,9 @@ export const helpText = HELP;
  * bug if it ever fires, since `resolveLegPlan` gates the doors and the legs.
  *
  * @typedef {object} LegContext
- * @property {ReturnType<typeof openReleasePRDriver> | undefined} gate the
+ * @property {ReturnType<typeof openReleasePRGate> | undefined} gate the
  *   gate over the real port, when the real credential was supplied
- * @property {ReturnType<typeof openReleasePRDriver> | undefined} bogusGate
+ * @property {ReturnType<typeof openReleasePRGate> | undefined} bogusGate
  *   the transport-failure leg's canary over the bogus token
  * @property {{ component: string, releaseLine: string, targetBranch: string }} identity
  * @property {ReleasePlan} plan the computed plan
@@ -962,13 +966,13 @@ function run(argv) {
       repo: ownerRepo?.repo ?? "",
       token: token ?? "",
     };
-    context.gate = openReleasePRDriver(
-      openGitHubAdapter(binding(), credentials, buildTransport(credentials.token)),
+    context.gate = openReleasePRGate(
+      openGitHubAdapter(binding(), credentials, buildTransport(credentials.token)).releasePR,
       sink,
     );
   }
   if (runnable.includes("transport-failure")) {
-    context.bogusGate = openReleasePRDriver(
+    context.bogusGate = openReleasePRGate(
       openGitHubAdapter(
         binding(),
         /** @type {GitHubCredentials} */ ({
@@ -977,7 +981,7 @@ function run(argv) {
           token: "release-craft-e2e-invalid-token",
         }),
         buildTransport("release-craft-e2e-invalid-token"),
-      ),
+      ).releasePR,
       // The same sink: the bogus instance's recorded transport-failure
       // verdict belongs in the evidence stream with every other leg's.
       sink,
