@@ -97,7 +97,10 @@ const additionsBlocks = (markdown: string): Record<string, unknown>[] => {
 const memory: AssemblySelection = { assembly: "memory", maxRetries: 0 };
 
 const planDocument = (document: PlanningInput): PlanningOutcome =>
-  selectEngine(memory).plan({ ...document, intents: document.intents ?? [] });
+  // The document verbatim — the same boundary input the entrypoint hands
+  // the engine since #319's fix: absence stays absence, so the digest the
+  // page quotes is the plan door's own, never a fabricated-intents variant.
+  selectEngine(memory).plan(document);
 
 /** The plan identity a planned outcome carries — the `plan_sha256:` digest
  * the plan door renders and the page's transcripts quote. */

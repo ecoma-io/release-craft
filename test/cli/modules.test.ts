@@ -414,6 +414,12 @@ describe("intents — the five spellings and the never-merged overlay", () => {
     expect(overlayIntents(document, flags)).toHaveLength(1);
     expect(overlayIntents(document, [])).toStrictEqual(document);
   });
+
+  it("the overlay passes absence through — a document that omits intents hands the door undefined, never a fabricated [] (#319)", () => {
+    const flags = [{ kind: "promote", lineId: "main" }] as never[];
+    expect(overlayIntents(undefined, [])).toBeUndefined();
+    expect(overlayIntents(undefined, flags)).toStrictEqual(flags);
+  });
 });
 
 describe("targets — derived from the document's refs, the last occurrence winning", () => {

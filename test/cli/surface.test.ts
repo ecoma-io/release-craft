@@ -18,6 +18,9 @@
 
 import { describe, expect, it } from "vitest";
 
+import { plan } from "@ecoma-io/release-craft/planner";
+
+import type { PlanningInput } from "../../src/index.js";
 import {
   betaIntent,
   cliJson,
@@ -577,6 +580,47 @@ describe("§6 obligation 3 — pass-through equality", () => {
       });
     },
   );
+});
+
+describe("the two plan doors fingerprint one world identically (#319)", () => {
+  const withoutIntents = (doc: PlanningInput): PlanningInput => {
+    const copy = { ...doc };
+    delete (copy as { intents?: unknown }).intents;
+    return copy;
+  };
+  const cliPlanIdentity = (doc: PlanningInput): { planId: string; inputs: string } => {
+    const child = runCli(["plan", "--assembly", "memory", "--world", "-", "--json"], {
+      input: docBytes(doc),
+    });
+    expect(child.status).toBe(0);
+    const outcome = cliJson(child) as { plan?: { planId: string; inputsFingerprint: string } };
+    expect(outcome.plan).toBeDefined();
+    return { planId: outcome.plan?.planId ?? "", inputs: outcome.plan?.inputsFingerprint ?? "" };
+  };
+  const seamPlanIdentity = (doc: PlanningInput): { planId: string; inputs: string } => {
+    const outcome = plan(doc);
+    if (outcome.kind !== "planned") {
+      throw new Error(`expected a planned outcome, got "${outcome.kind}"`);
+    }
+    return { planId: outcome.plan.planId, inputs: outcome.plan.inputsFingerprint };
+  };
+
+  it("the built CLI's plan door and the raw planner seam answer byte-identical inputs and plan digests over a world that omits intents AND over the same world declaring `intents: []` — one identity per world, across both doors and both spellings", () => {
+    const declared = memoryDoc("main", []);
+    const absent = withoutIntents(declared);
+    const identities: { planId: string; inputs: string }[] = [];
+    for (const doc of [absent, declared]) {
+      const cli = cliPlanIdentity(doc);
+      const seam = seamPlanIdentity(doc);
+      expect(cli.inputs).toBe(seam.inputs);
+      expect(cli.planId).toBe(seam.planId);
+      identities.push(cli);
+    }
+    // The two spellings of the same world are one world: `intents: []` and
+    // the omitted field carry one inputs digest and one planId everywhere.
+    expect(identities[0]?.planId).toBe(identities[1]?.planId);
+    expect(identities[0]?.inputs).toBe(identities[1]?.inputs);
+  });
 });
 
 describe("§6 obligation 7 — cross-process posture", () => {

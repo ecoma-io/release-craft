@@ -175,10 +175,10 @@ export const directRun = (
 
 export const directPlan = (selection: AssemblySelection, docText: string) => {
   const input = JSON.parse(docText) as PlanningInput;
-  return selectEngine(selection, input.policy.tagFormats).plan({
-    ...input,
-    intents: input.intents ?? [],
-  });
+  // The document verbatim — the same boundary input the entrypoint hands
+  // the engine since #319's fix: absence stays absence, the door fabricates
+  // no `intents` field the world did not declare.
+  return selectEngine(selection, input.policy.tagFormats).plan(input);
 };
 
 export const directResume = (

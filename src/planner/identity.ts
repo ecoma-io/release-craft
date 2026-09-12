@@ -173,8 +173,25 @@ function releaseTriggeringChangesOf(input: PlanningInput): readonly Record<strin
  * the declared channel registry (ADR-0012 decision 2 — worlds differing in
  * declared channels must plan differently), and the extracted
  * release-triggering change set.
+ *
+ * The projection states "no operator intents" in its one canonical form:
+ * an intent list that is absent or empty projects as absence, so an input
+ * that declares `intents: []` and an input that omits the field are one
+ * member of the tuple, not two (#319). §2.11's canonicalization law already
+ * fixes the canonical zero — the serializer "omits object fields whose
+ * value is `undefined` (absent and `undefined` are the same semantic
+ * fact)" — and a projection that let the declared-empty spelling through
+ * would serialize that one semantic fact as two distinct canonical byte
+ * strings, splitting one world into two input fingerprints and two plan
+ * identities over identical content (invariant 2, E-04; the closed tuple's
+ * own law that two implementations cannot ship different fingerprints for
+ * the same plan). The registry of declared channels is deliberately NOT
+ * collapsed the same way: a declared-empty registry is a declaration, not
+ * an absence (D36 — different world, different fingerprint), a meaning no
+ * contract text gives an empty intent list.
  */
 export const inputsFingerprint: InputsFingerprint = (input: PlanningInput): string => {
+  const intents = input.intents;
   const world = {
     policyDigest: input.policy.digest,
     refs: input.repository.refs,
@@ -182,7 +199,7 @@ export const inputsFingerprint: InputsFingerprint = (input: PlanningInput): stri
     lines: input.lines,
     components: input.components,
     bootstrap: input.bootstrap,
-    intents: input.intents,
+    intents: intents !== undefined && intents.length > 0 ? intents : undefined,
     channels: input.channels,
     changes: releaseTriggeringChangesOf(input),
   };
