@@ -2,13 +2,16 @@
  * Node workspace detection — the adapter that reads workspace manifests
  * (pnpm `packages:`, npm/yarn `workspaces:`) and member package.json files
  * to produce the declared workspace graph, plus the trivial conversion to
- * `ComponentMeta[]` that feeds `planPropagation` and the updater.
+ * `ComponentMeta[]`, the planner's declared-component shape — the input
+ * type `planPropagation` takes.
  *
- * This adapter is sugar: a repository with no explicit workspace evidence
- * returns `null`, and hand-declared `ComponentMeta[]` remains the
- * first-class fallback (never suppressed, never overwritten). The output
- * contract is pure data, so the app layer composes `PlanningInput` at
- * merge time without re-detecting anything.
+ * This adapter is a public-surface export with no in-repo production
+ * caller yet: nothing on main wires its output into `planPropagation` or
+ * the updater (issue #290). The contract does not wait for a caller — a
+ * repository with no explicit workspace evidence returns `null`,
+ * hand-declared `ComponentMeta[]` remains the first-class fallback (never
+ * suppressed, never overwritten), and every refusal below is enforced at
+ * this boundary regardless of what consumes the pure data later.
  *
  * Every refusal is loud and names the source file and field: missing or
  * duplicated manifest keys, empty sequences, unsupported glob syntax,

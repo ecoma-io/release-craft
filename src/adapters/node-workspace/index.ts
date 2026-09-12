@@ -1,12 +1,13 @@
 /**
- * Public barrel for the Node workspace adapter — the detected graph
- * description the planner and updater consume as structured input.
+ * Public barrel for the Node workspace adapter — a public-surface export
+ * with no in-repo production caller yet (issue #290): nothing consumes the
+ * detected graph description in this repository today.
  *
  * Detection maps explicit workspace evidence (pnpm `packages:`,
  * npm/yarn `workspaces:`) to a `DetectedWorkspace` object; the
- * `toComponentMeta` conversion then produces `ComponentMeta[]` for the
- * propagation planner, so the app layer composes `PlanningInput` at
- * merge time.
+ * `toComponentMeta` conversion then produces `ComponentMeta[]`, the
+ * planner's declared-component shape, so a caller can compose
+ * `PlanningInput` from it without re-detecting anything.
  *
  * Gate: `check:package` (invariant 1: no runtime dependencies).
  */

@@ -16,6 +16,7 @@ import {
 import {
   WorkspaceDetectionError,
   type DetectedWorkspace,
+  type WorkspaceDependencyKind,
 } from "@ecoma-io/release-craft/__internal__/adapters/node-workspace/types.js";
 import { planPropagation } from "@ecoma-io/release-craft/__internal__/planner/propagate.js";
 import { Version } from "@ecoma-io/release-craft/domain";
@@ -197,6 +198,42 @@ describe("detectNodeWorkspace — external dependency omission", () => {
       expect(detected.members[0]?.edges).toEqual([]);
     });
   });
+
+  // The org's real external spec forms (#286): the audited manifests'
+  // shapes — a pnpm catalog reference, an npm alias, archkeep's bare
+  // `>=21`-style peer range and the ecosystem's lone `~4.13.0` — ride
+  // through detection untouched. None of the names is a member or the
+  // root's name, so none is an edge, none refuses, and the conversion
+  // carries no dependency for the member.
+  it.each([
+    ["react", "catalog:"],
+    ["pkg", "npm:pkg@^1"],
+    ["node", ">=21"],
+    ["some-lib", "~4.13.0"],
+  ])(
+    "detects a member declaring the external peer %s: %s with zero edges and no refusal",
+    (externalName, spec) => {
+      withTempWorkspace("external-shape", (ws) => {
+        addPnpmEvidence(ws);
+        addPackage(ws, "packages/app", "app", "1.0.0", {
+          peerDependencies: { [externalName]: spec },
+        });
+        addPackage(ws, "packages/lib", "lib", "1.0.0");
+
+        const detected = expectDetected(detectNodeWorkspace(ws.root));
+        expect(detected.members.map((m) => m.name)).toEqual(["app", "lib"]);
+        const app = detected.members.find((m) => m.name === "app");
+        expect(app).toBeDefined();
+        if (app === undefined) return;
+        expect(app.edges).toEqual([]);
+
+        const plan = toComponentMeta(detected);
+        const appPlan = plan.find((c) => c.name === "app");
+        expect(appPlan).toBeDefined();
+        expect(appPlan?.dependencies).toBeUndefined();
+      });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -400,6 +437,66 @@ describe("detectNodeWorkspace — D16 grammar refusal", () => {
       expect(refusal.message).toContain(range);
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Member-target grammar refusals across ALL FOUR dependency fields (#286):
+// the declared-unsupported posture needs proof breadth, and the ecosystem's
+// real intra-workspace form is `workspace:*` — declared in every field in
+// the audited org, most often devDependencies — while the refused literals
+// the module docstring names (`latest`, the `workspace:`-prefixed range
+// forms) had no test literal at all. The describe above keeps the
+// dependencies-field trio it already pinned (`workspace:*`, `>=1.0.0`,
+// bare `*`); this matrix covers the remaining cells: every field times
+// every docstring-named literal, plus bare `*` in the three fields that
+// lacked it. The root-named four-field refusals are a different branch
+// (the #285 slice) and are pinned separately above.
+// ---------------------------------------------------------------------------
+
+const MEMBER_TARGET_FIELDS: readonly WorkspaceDependencyKind[] = [
+  "dependencies",
+  "devDependencies",
+  "peerDependencies",
+  "optionalDependencies",
+];
+
+const DOCSTRING_REFUSED_LITERALS: readonly string[] = [
+  "workspace:*",
+  "latest",
+  "workspace:^1.0.0",
+  "workspace:~1.0.0",
+  "workspace:>=1.0.0",
+];
+
+describe("detectNodeWorkspace — member-target grammar refusals across all four fields (#286)", () => {
+  const refusalCases: readonly (readonly [WorkspaceDependencyKind, string])[] = [
+    ...MEMBER_TARGET_FIELDS.flatMap((kind) =>
+      DOCSTRING_REFUSED_LITERALS.map((range) => [kind, range] as const),
+    ),
+    ...MEMBER_TARGET_FIELDS.filter((kind) => kind !== "dependencies").map(
+      (kind) => [kind, "*"] as const,
+    ),
+  ];
+
+  it.each(refusalCases)(
+    "refuses a member-target %s dependency carrying the range %s, naming the declaring file and field",
+    (kind, range) => {
+      withTempWorkspace("refuse-member-target", (ws) => {
+        addPnpmEvidence(ws);
+        addPackage(ws, "packages/lib", "lib", "1.0.0");
+        addPackage(ws, "packages/app", "app", "1.0.0", {
+          [kind]: { lib: range },
+        });
+        const error = capture(() => detectNodeWorkspace(ws.root));
+        expect(error).toBeInstanceOf(WorkspaceDetectionError);
+        const refusal = error as WorkspaceDetectionError;
+        expect(refusal.file).toBe(`${ws.root}/packages/app/package.json`);
+        expect(refusal.field).toBe(`${kind}.lib`);
+        expect(refusal.message).toContain(range);
+        expect(refusal.message).toContain("D16 grammar");
+      });
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -649,6 +746,34 @@ describe("detectNodeWorkspace → planPropagation integration", () => {
       const components = toComponentMeta(detected);
       const plan = planPropagation(components, [release("lib", "1.0.1")]);
       expect(plan.edges).toEqual([{ from: "lib", to: "app", reason: "range-widening" }]);
+    });
+  });
+
+  // The compatibility matrix's workspace-propagation row claims three
+  // things at once — range-widening edges, the topological order, and the
+  // notMoved negative evidence — and its evidence names the planner suites,
+  // whose fixtures are hand-declared. This one run drives the whole claim
+  // from real manifests (#286): a caret member edge propagates, the
+  // devDependencies edge to a third member rides the raw graph but never
+  // the plan (toComponentMeta filters it), and the untouched member carries
+  // negative evidence instead of an edge.
+  it("one real three-member manifest carries the whole propagation claim: the caret edge, the order and the notMoved evidence", () => {
+    withTempWorkspace("prop-real-manifests", (ws) => {
+      addPnpmEvidence(ws);
+      addPackage(ws, "packages/lib", "lib", "1.0.0");
+      addPackage(ws, "packages/tool", "tool", "1.0.0");
+      addPackage(ws, "packages/app", "app", "1.0.0", {
+        dependencies: { lib: "^1.0.0" },
+        devDependencies: { tool: "^1.0.0" },
+      });
+
+      const detected = expectDetected(detectNodeWorkspace(ws.root));
+      const components = toComponentMeta(detected);
+      const plan = planPropagation(components, [release("lib", "2.0.0")]);
+
+      expect(plan.edges).toEqual([{ from: "lib", to: "app", reason: "range-widening" }]);
+      expect(plan.order).toEqual(["lib", "app"]);
+      expect(plan.notMoved).toEqual([{ component: "tool", why: "no-reverse-dependency" }]);
     });
   });
 });
