@@ -815,9 +815,17 @@ answers — rendered under the law as it stood, they re-planned the recorded
 bootstrap version and re-minted the existing tag, and only the caller-side
 partial-mint refusal stopped origin; the docs above declared the `blocked`
 expectation before that fix existed, and #263 made the product agree with
-the declaration. And one honest limit, the same one D59 records for the
-judge step: the workflow's first hosted execution is still ahead — no
-live dispatch was driven from #259's PR.
+the declaration. And one honest limit is retired rather than restated:
+the workflow's first hosted executions are behind it — #259's campaign
+dispatches ran live (the runs the amendment above answers), and the two
+later self-release dispatches are recorded with their outcomes
+(decision-log D65): run 34635157220, the changed cycle under the shared
+claims-register fetch (#274, decision-log D65), concluded `success` — the
+minted 0.2.0 plus the register's child tip pushed — and run 34635275253,
+the released version's replay, concluded `failure`, the demanded
+stop-band posture's expected conclusion: the `blocked` /
+`released-version-observed` record at the planning boundary — no claim,
+no mint, no second attempt.
 
 ## 8. What the fixture never does
 
