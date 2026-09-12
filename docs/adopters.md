@@ -152,7 +152,7 @@ Executed on this head, the human rendering is:
 
 ```text
 planned
-plan plan_sha256:79e8d5b3aba122d5cc04aee7483d7336d77442f17e895b84b9c87aab43f9add2
+plan plan_sha256:0f7856ebe3d2089c9e1a87a80d6e9525ea9ba646bf0c99e28a511ee0d51c72b3
 policy my-project-release-policy-1
 decision main blocked bootstrap-required
 detail the evaluated range starts at line birth, pending changes present, and no recorded bootstrap decision — the first version is the operator's call (S-02)
@@ -208,7 +208,7 @@ now renders the release:
 
 ```text
 planned
-plan plan_sha256:0f7856ebe3d2089c9e1a87a80d6e9525ea9ba646bf0c99e28a511ee0d51c72b3
+plan plan_sha256:79e8d5b3aba122d5cc04aee7483d7336d77442f17e895b84b9c87aab43f9add2
 policy my-project-release-policy-1
 line main 0.1.0 (tag 0.1.0)
 ```

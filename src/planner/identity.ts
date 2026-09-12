@@ -177,10 +177,12 @@ function releaseTriggeringChangesOf(input: PlanningInput): readonly Record<strin
  * The projection states "no operator intents" in its one canonical form:
  * an intent list that is absent or empty projects as absence, so an input
  * that declares `intents: []` and an input that omits the field are one
- * member of the tuple, not two (#319). §2.11's canonicalization law already
- * fixes the canonical zero — the serializer "omits object fields whose
- * value is `undefined` (absent and `undefined` are the same semantic
- * fact)" — and a projection that let the declared-empty spelling through
+ * member of the tuple, not two (#319). This header's own serializer law —
+ * "omits object fields whose value is `undefined` (absent and `undefined`
+ * are the same semantic fact)" — fixes the canonical zero (the omission
+ * rule lives here, in the locked `CanonicalJson` implementation; §2.11
+ * carries the identity/closed-tuple law, not the serializer's omission
+ * rule), and a projection that let the declared-empty spelling through
  * would serialize that one semantic fact as two distinct canonical byte
  * strings, splitting one world into two input fingerprints and two plan
  * identities over identical content (invariant 2, E-04; the closed tuple's

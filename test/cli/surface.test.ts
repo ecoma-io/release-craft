@@ -621,6 +621,54 @@ describe("the two plan doors fingerprint one world identically (#319)", () => {
     expect(identities[0]?.planId).toBe(identities[1]?.planId);
     expect(identities[0]?.inputs).toBe(identities[1]?.inputs);
   });
+
+  it("the same both-doors identity holds over a GIT-assembly world — the built CLI plans the seeded world and the raw planner seam plans it identically, and an actual operator intent still moves the identity (the memory pin's real-intent counterpart, #319)", () => {
+    withSeededRepo("both-doors-identity-git", (repo, _git, heads) => {
+      const cliGitPlanIdentity = (doc: PlanningInput): { planId: string; inputs: string } => {
+        const child = runCli(
+          [
+            "plan",
+            "--assembly",
+            "git",
+            "--repo",
+            repo,
+            "--tag-namespace",
+            "",
+            "--world",
+            "-",
+            "--json",
+          ],
+          { input: docBytes(doc) },
+        );
+        expect(child.status).toBe(0);
+        const outcome = cliJson(child) as { plan?: { planId: string; inputsFingerprint: string } };
+        expect(outcome.plan).toBeDefined();
+        return {
+          planId: outcome.plan?.planId ?? "",
+          inputs: outcome.plan?.inputsFingerprint ?? "",
+        };
+      };
+      const declared = gitDoc("main", [], heads);
+      const absent = withoutIntents(declared);
+      const gitIdentities: { planId: string; inputs: string }[] = [];
+      for (const doc of [absent, declared]) {
+        const cli = cliGitPlanIdentity(doc);
+        const seam = seamPlanIdentity(doc);
+        expect(cli.inputs).toBe(seam.inputs);
+        expect(cli.planId).toBe(seam.planId);
+        gitIdentities.push(cli);
+      }
+      // The two intents spellings of the git world are one world to both
+      // doors — the world that carries the declared channel registry and the
+      // real seeded heads plans under one identity, not two.
+      expect(gitIdentities[0]?.planId).toBe(gitIdentities[1]?.planId);
+      expect(gitIdentities[0]?.inputs).toBe(gitIdentities[1]?.inputs);
+      // A real operator intent still moves the identity — D17(7) untouched
+      // (the memory pin's real-intent assertion, mirrored over the git world).
+      const realIntent = cliGitPlanIdentity({ ...declared, intents: [betaIntent] });
+      expect(realIntent.planId).not.toBe(gitIdentities[0]?.planId);
+    });
+  });
 });
 
 describe("§6 obligation 7 — cross-process posture", () => {
