@@ -21,6 +21,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "paths": {
+      "@ecoma-io/release-craft": ["./src/index.ts"],
       "@ecoma-io/release-craft/domain": ["./core/domain/index.ts"],
       "@ecoma-io/release-craft/planner": ["./src/planner/index.ts"],
       "@ecoma-io/release-craft/execution": ["./src/execution/index.ts"],
@@ -31,6 +32,6 @@
       "@ecoma-io/release-craft/__internal__/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "action/**/*.mjs", "vitest.config.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "action/**/*.mjs", "e2e/**/*.mjs", "vitest.config.ts"],
   "exclude": ["node_modules", "dist", "coverage"]
 }
