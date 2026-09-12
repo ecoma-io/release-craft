@@ -170,7 +170,10 @@ ownership (§2.4); `prepare` and `commit` are workspace-mutating;
 home — re-proofs, or plan-recorded content, #269); `tag` is the
 **no-return boundary** (E-01: "the tag-push as the no-return boundary" —
 once `tag` completes, supersede can no longer void the attempt, only record
-it for reconciliation); `publish` and `verify` are post-tag. The sequence is
+it for reconciliation); `channel-transition` (ADR-0012's door) is a
+mutation by the same law — it repoints a consumer-facing channel pointer,
+and no pointer moves without the held release-line claim (invariant 2.7);
+`publish` and `verify` are post-tag. The sequence is
 closed in Phase 4: hooks (Phase 6) and artifact steps (Phase 7) extend it
 through their own ADRs, which must name their insertion rules over this
 sequence — no extension syntax is invented here.
@@ -258,7 +261,7 @@ field.
 ### 2.9 No mutation before claim (invariant 11 executable)
 
 The guard table encodes it: every mutating stage (`prepare`, `commit`, `tag`,
-`publish`) requires a held, verified claim in its guard list, and `verify`
+`channel-transition`, `publish`) requires a held, verified claim in its guard list, and `verify`
 (whose guard reads the walk's recorded sequence — every prior stage's
 completion recorded, no world re-observation; the boundary's world-side
 re-check lives at the mint door's create-if-absent CAS, #279) requires the
