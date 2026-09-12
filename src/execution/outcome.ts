@@ -161,7 +161,12 @@ const guardList = (
     guards.push({
       guard: "claim-verified",
       passed: true,
-      detail: "token re-verified against the store immediately before this record",
+      // The order is the truth, not "immediately before this record"
+      // (#279): the re-verification runs inside the stage's classification,
+      // ahead of its advance verdict — on the channel stage the store's
+      // own CAS lands the moves between the verdict and this record's
+      // append, so nothing here may claim an immediacy it does not have.
+      detail: "token re-verified against the store before this stage's advance verdict",
     });
   }
   if (stepKey === "validate") {
@@ -190,7 +195,14 @@ const guardList = (
     guards.push({
       guard: "tag-boundary",
       passed: tagBoundary,
-      detail: "re-proving external state demands the tag boundary behind it (§2.9)",
+      // The detail names the derivation this check performs (#279): a
+      // recorded-sequence projection — by sequence `verify` is last, so the
+      // guard reads completions, never the world. The world-side re-check
+      // for the boundary is the mint door's create-if-absent CAS, a
+      // different layer's arm — recorded here so the durable row can never
+      // read as a re-proof this check did not run.
+      detail:
+        "the tag boundary stands by the walk's recorded sequence — every prior stage's completion recorded, no world re-observation here; where a mint door is wired, its create-if-absent CAS is the world's re-check (§2.9)",
     });
   }
   if (stepKey === "publish" && generation !== undefined) {
