@@ -224,7 +224,9 @@ export const scheduleMutations = (
         // effect is durable-in-place; record completion, never re-write.
         // The completion carries the content fingerprint derived from
         // the bytes on disk — the same derivation a fresh completion
-        // runs, never the caller's declared digest (issue #203).
+        // runs, never the caller's declared digest (issue #203) — and
+        // names the target path it resumed over (issue #287), the same
+        // coordinates a fresh completion records.
         const appended = ledger.append({
           kind: "step",
           record: {
@@ -235,6 +237,7 @@ export const scheduleMutations = (
             attribution,
             to: "completed",
             contentFingerprint: contentFingerprint({ [intent.path]: current }),
+            targetPath: intent.path,
           },
         });
         outcomes.push({
@@ -358,6 +361,9 @@ export const scheduleMutations = (
     // derived from the bytes the write left on disk — the recorded proof
     // is what the updater itself derived, never the caller's declared
     // digest (issue #203: a declared digest is attestation, not evidence).
+    // The record also names the target path (issue #287): the ledger's
+    // WHETHER is verifiable on its own terms only when it states what was
+    // operated on, the file coordinate the fingerprint was derived over.
     const appended = ledger.append({
       kind: "step",
       record: {
@@ -368,6 +374,7 @@ export const scheduleMutations = (
         attribution,
         to: "completed",
         contentFingerprint: contentFingerprint({ [intent.path]: written }),
+        targetPath: intent.path,
       },
     });
     outcomes.push({
