@@ -187,6 +187,21 @@ describe("inputsFingerprint — §2.11/E-04 input-world identity", () => {
     expect(left).toBe(right);
   });
 
+  it("states no operator intents in one canonical form — an input declaring `intents: []` and an input omitting the field are one world, one fingerprint (#319)", () => {
+    const absent = input([commit("sha-a", "feat: one")]);
+    const declaredEmpty = { ...input([commit("sha-a", "feat: one")]), intents: [] };
+    expect(inputsFingerprint(declaredEmpty)).toBe(inputsFingerprint(absent));
+  });
+
+  it("still differs when an actual operator intent joins the world (D17(7))", () => {
+    const before = inputsFingerprint(input([commit("sha-a", "feat: one")]));
+    const after = inputsFingerprint({
+      ...input([commit("sha-a", "feat: one")]),
+      intents: [{ kind: "release" }],
+    });
+    expect(after).not.toBe(before);
+  });
+
   it("differs when one commit joins the world (E-04 staleness recognition)", () => {
     const before = inputsFingerprint(input([commit("sha-a", "feat: one")]));
     const after = inputsFingerprint(

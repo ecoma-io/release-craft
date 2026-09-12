@@ -70,15 +70,24 @@ const execute = (invocation: Invocation): DoorOutcome => {
     );
   }
   if (invocation.command === "plan") {
+    // The overlay is the document's own intents under no `--intent` flags —
+    // absent when the document omits the field, never a fabricated `[]`
+    // (#319): the door's PlanningInput stays the world the caller wrote,
+    // so both plan doors fingerprint identical worlds identically.
+    const intents = overlayIntents(document.intents, invocation.intents);
     return engine.plan({
       ...document,
-      intents: overlayIntents(document.intents ?? [], invocation.intents),
+      ...(intents === undefined ? {} : { intents }),
     });
   }
   return engine.run({
     input: document,
     lineIds: [invocation.line],
-    intents: overlayIntents(document.intents ?? [], invocation.intents),
+    // The run request's intents are an array by the engine port's own
+    // contract; with none declared the empty list is that contract's
+    // spelling of "no operator intents", and the planner's input
+    // projection states it canonically (identity.ts, #319).
+    intents: overlayIntents(document.intents, invocation.intents) ?? [],
     actor: invocation.actor,
     targets: deriveTargets(document),
   });

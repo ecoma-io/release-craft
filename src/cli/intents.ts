@@ -21,11 +21,16 @@ export const parseIntents = (values: readonly string[]): readonly OperatorIntent
 /** The intents overlay (§2.6's law, carried through the surface): the
  * request's intents win over any intents inside the world document —
  * explicit `--intent` occurrences are the request's; with none, the
- * document's `intents` is the run's. The two are never merged. */
+ * document's `intents` is the run's, verbatim. The two are never merged.
+ * Absence passes through: a document that omits the field hands the door
+ * `undefined`, not a fabricated `[]` — the boundary input stays the world
+ * the caller wrote (#319; the surface invents nothing the document did not
+ * declare). */
 export const overlayIntents = (
-  documentIntents: readonly OperatorIntent[],
+  documentIntents: readonly OperatorIntent[] | undefined,
   flagIntents: readonly OperatorIntent[],
-): readonly OperatorIntent[] => (flagIntents.length > 0 ? flagIntents : documentIntents);
+): readonly OperatorIntent[] | undefined =>
+  flagIntents.length > 0 ? flagIntents : documentIntents;
 
 const parseIntent = (value: string): OperatorIntent => {
   const segments = value.split(":");

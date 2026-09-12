@@ -97,7 +97,10 @@ const additionsBlocks = (markdown: string): Record<string, unknown>[] => {
 const memory: AssemblySelection = { assembly: "memory", maxRetries: 0 };
 
 const planDocument = (document: PlanningInput): PlanningOutcome =>
-  selectEngine(memory).plan({ ...document, intents: document.intents ?? [] });
+  // The document verbatim — the same boundary input the entrypoint hands
+  // the engine since #319's fix: absence stays absence, so the digest the
+  // page quotes is the plan door's own, never a fabricated-intents variant.
+  selectEngine(memory).plan(document);
 
 /** The plan identity a planned outcome carries — the `plan_sha256:` digest
  * the plan door renders and the page's transcripts quote. */
@@ -199,12 +202,22 @@ describe("docs/adopters.md — the adopter journey's world documents", () => {
     // The three plans the page's transcripts quote identities for: the
     // plain plan over the first document, the plan after the operator's
     // record, and the release-intent plan the `run` door replans under.
+    // The set already bound them (a stale or reshaped digest drifts the
+    // page); the ORDER-STRICT expectation below is what catches a
+    // positional SWAP — the reviewer's catch on #320, where the plain and
+    // composed digests sat in each other's transcripts and the unordered
+    // set could not see it. The page's two world plans each must appear
+    // where its own transcript shows it: the plain plan in the refusal
+    // walkthrough, the composed plan after the operator's record.
     const computed = [
       planDocument(first as PlanningInput),
       planDocument(composed),
       planDocument({ ...composed, intents: [{ kind: "release" }] }),
     ].map(plannedPlanId);
-    expect([...new Set(pagePlanDigests(markdown))].sort()).toStrictEqual(computed.sort());
+    const quoted = pagePlanDigests(markdown);
+    expect([...new Set(quoted)].sort()).toStrictEqual(computed.sort());
+    expect(quoted[0]).toBe(computed[0]);
+    expect(quoted[1]).toBe(computed[1]);
   });
 
   it("the run rendering's stop row is the engine's own, and the page quotes it verbatim", () => {
