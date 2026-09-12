@@ -78,6 +78,10 @@ import { aggregateLedger, compareConsumer, FIELD_IDS } from "./compare-fields.mj
 
 /** The git verbs the harness may speak — the read surface and nothing else.
  * Anything else is refused by name before git runs. */
+// Every verb here is read-only BY ARGUMENT SHAPE, not by custom: `tag` is
+// deliberately absent — `git tag <name>` writes, and the harness's tag
+// reads go through `rev-parse` (the recorded tags' commits) and
+// `for-each-ref refs/tags` (the declared-tag closure) instead.
 const READONLY_GIT_VERBS = Object.freeze([
   "rev-parse",
   "log",
@@ -87,7 +91,6 @@ const READONLY_GIT_VERBS = Object.freeze([
   "merge-base",
   "cat-file",
   "diff-tree",
-  "tag",
 ]);
 
 /** The gh subcommands the harness may speak: reads over recorded pull-
@@ -328,10 +331,17 @@ const readRpConfig = (clone, sha) => {
     packageName: typeof packageName === "string" ? packageName : null,
     includeComponentInTag: root["include-component-in-tag"] === true,
     prerelease: root["prerelease"] === true,
+    // `pull-request-title-pattern` is valid at both scopes the recorded
+    // consumers use — config-root and per-package (`packages["."]`'s own
+    // pattern, archkeep's shape). The same dual-scope rule
+    // `changelog-sections` follows above applies: the per-package
+    // declaration is the more specific one, so it wins when both exist.
     titlePattern:
-      typeof raw["pull-request-title-pattern"] === "string"
-        ? raw["pull-request-title-pattern"]
-        : null,
+      typeof root["pull-request-title-pattern"] === "string"
+        ? root["pull-request-title-pattern"]
+        : typeof raw["pull-request-title-pattern"] === "string"
+          ? raw["pull-request-title-pattern"]
+          : null,
     bumpMinorPreMajor: root["bump-minor-pre-major"] === true,
     sections,
   };
@@ -476,7 +486,14 @@ const harvest = (argv) => {
   }
   const commitCount = gitRead(clone, ["rev-list", "--count", `${baseSha}..${head}`]).trim();
 
-  const versionHeading = new RegExp(`## \\[${version}\\]`).test(pr?.body ?? "");
+  // The heading test is literal substring containment, not a pattern: the
+  // version is an observed recorded string (the released tag, v-stripped),
+  // and building a RegExp from it would interpret it as one — CodeQL's
+  // js/regex-injection class. For the kernel's SemVer spellings (digits and
+  // dots) `includes` decides every genuine `## [<version>]` heading the
+  // pattern did and refuses the degenerate near-misses a dotted pattern
+  // would have matched, so the test only narrows, never flips, a verdict.
+  const versionHeading = (pr?.body ?? "").includes(`## [${version}]`);
   /** @type {RpBodyStructure} */
   const bodyStructure = {
     botHeader: (pr?.body ?? "").startsWith(":robot:"),
@@ -525,7 +542,7 @@ const harvest = (argv) => {
     tag: {
       recorded: releasedTag,
       commit: head,
-      source: `git tag -l / rev-parse over the clone; the tag binds the release PR's merge commit`,
+      source: `gh release view ${releasedTag} (the tag's recorded existence); commits read via rev-parse / for-each-ref over the clone`,
     },
     changelog: {
       path: config.changelogPath,
@@ -1164,7 +1181,11 @@ const rpSourceFor = (rp, id) => {
     case "commit-to-section-assignment":
       return String(rp?.changelog?.source ?? "");
     case "bump-type":
-      return `${String(rp?.manifest?.source ?? "")} → the recorded ${String(rp?.changelog?.version ?? "")}`;
+      return `the manifest at the base records ${String(rp?.manifest?.baseVersion ?? "")} (${String(
+        rp?.manifest?.source ?? "",
+      )}); the recorded release at the head records ${String(
+        rp?.changelog?.version ?? "",
+      )} (${String(rp?.changelog?.source ?? "")}); the bump is the derivation between them`;
     case "tag-name":
       return String(rp?.tag?.source ?? "");
     case "commit-range":
