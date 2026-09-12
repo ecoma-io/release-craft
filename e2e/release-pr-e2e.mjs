@@ -2,6 +2,9 @@
 // decision-log D80): the six gate legs the campaign runs against a real
 // target — the checkout's own origin, dogfood-true, the self-release legs'
 // precedent — captured per leg into an evidence JSONL file the caller names.
+// Since D83 the target may also be a FOREIGN consumer: `--world` reads a
+// caller-closed world document instead of spawning the self-dogfood closure,
+// and `--repo` names the checkout whose origin is the PR target.
 //
 // This file is the HARNESS, not the live run: no token exists in the authoring
 // environment by design, the live legs are executed by the coordinator, and
@@ -80,7 +83,7 @@
 //
 // Usage: `node e2e/release-pr-e2e.mjs --help`.
 import { spawnSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -154,6 +157,7 @@ const EXPECTED_KINDS = /** @type {Readonly<Record<string, readonly string[]>>} *
  * @typedef {object} ParsedArgvHelp
  * @property {true} help the `--help` posture: print the help, run nothing.
  * @property {undefined} repo unused under the help posture.
+ * @property {undefined} world unused under the help posture.
  * @property {undefined} evidence unused under the help posture.
  * @property {undefined} legs unused under the help posture.
  * @property {undefined} expectTampered unused under the help posture.
@@ -164,8 +168,11 @@ const EXPECTED_KINDS = /** @type {Readonly<Record<string, readonly string[]>>} *
  *
  * @typedef {object} ParsedRunArgv
  * @property {false} help not the help posture.
- * @property {string} repo the repository to close the world over and to open
- *   the PR against.
+ * @property {string} repo the repository whose origin names the PR target
+ *   (and, without `--world`, the repository the closure observes).
+ * @property {string | undefined} world the caller-closed world document's
+ *   path when the invocation carries `--world` — the foreign-consumer
+ *   posture (D83). `undefined` keeps the self-dogfood closure.
  * @property {string} evidence the evidence JSONL file's path — the caller
  *   names it, the harness appends.
  * @property {string[]} legs the legs to run, canonicalized to `LEG_NAMES`
@@ -185,10 +192,12 @@ const EXPECTED_KINDS = /** @type {Readonly<Record<string, readonly string[]>>} *
 
 /**
  * Parses the harness's argv. The protocol: `--repo <path>` (default `.` —
- * the workflow's posture), `--evidence <path>` (required — evidence whose
- * path the caller does not name is evidence nobody can read), `--legs`
- * (comma-separated subset), `--expect-tampered`, `--help`. Anything else is
- * a usage fault, never an ignored argument.
+ * the workflow's posture), `--world <path>` (the caller-closed world
+ * document — the foreign-consumer posture, D83), `--evidence <path>`
+ * (required — evidence whose path the caller does not name is evidence
+ * nobody can read), `--legs` (comma-separated subset),
+ * `--expect-tampered`, `--help`. Anything else is a usage fault, never an
+ * ignored argument.
  *
  * @param {readonly string[]} argv the harness's argv (post `node <script>`)
  * @returns {ParsedInvocation} the parse, the help posture, or the fault
@@ -198,6 +207,7 @@ export function parseArgv(argv) {
     return {
       help: true,
       repo: undefined,
+      world: undefined,
       evidence: undefined,
       legs: undefined,
       expectTampered: undefined,
@@ -205,6 +215,8 @@ export function parseArgv(argv) {
   }
   /** @type {string | undefined} */
   let repo;
+  /** @type {string | undefined} */
+  let world;
   /** @type {string | undefined} */
   let evidence;
   /** @type {string | undefined} */
@@ -214,6 +226,7 @@ export function parseArgv(argv) {
     const arg = argv[index];
     switch (arg) {
       case "--repo":
+      case "--world":
       case "--evidence":
       case "--legs": {
         const value = argv[index + 1];
@@ -221,6 +234,7 @@ export function parseArgv(argv) {
           return { fault: `${String(arg)} demands a value` };
         }
         if (arg === "--repo") repo = value;
+        else if (arg === "--world") world = value;
         else if (arg === "--evidence") evidence = value;
         else legs = value;
         index += 1;
@@ -259,6 +273,7 @@ export function parseArgv(argv) {
   return {
     help: false,
     repo: repo ?? ".",
+    world,
     evidence,
     legs: [...canonical],
     expectTampered,
@@ -342,6 +357,66 @@ export function closeWorld(repo) {
   } catch {
     throw new Error("the world closure's stdout is not a JSON world document");
   }
+}
+
+/**
+ * Reads a caller-closed world document — the foreign-consumer posture
+ * (decision D83): phase 12 §2.4's law is that the CALLER closes the world
+ * and the engine discovers nothing, so a world closed by a caller other
+ * than the self-dogfood closure enters here as a file. The harness reads
+ * it; it never authors one. The shape check is deliberately minimal — the
+ * fields the harness's own identity derivation reads must exist, and the
+ * planner's input door owns every deeper validation (a world that lies
+ * about its history is the planner's refusal to record, not a harness
+ * guess to paper over).
+ *
+ * @param {string} path the world document's path
+ * @returns {PlanningInput} the parsed world document
+ */
+export function readWorldDocument(path) {
+  /** @type {string} */
+  let bytes;
+  try {
+    bytes = readFileSync(path, "utf8");
+  } catch (error) {
+    throw new Error(
+      `the world document at ${path} could not be read: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  /** @type {unknown} */
+  let parsed;
+  try {
+    parsed = JSON.parse(bytes);
+  } catch (error) {
+    throw new Error(`the world document at ${path} is not JSON`, { cause: error });
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`the world document at ${path} is not a JSON object`);
+  }
+  const document = /** @type {{ lines?: unknown, components?: unknown }} */ (parsed);
+  if (!Array.isArray(document.lines) || document.lines.length === 0) {
+    throw new Error(
+      `the world document at ${path} declares no lines — the identity is underivable`,
+    );
+  }
+  if (!Array.isArray(document.components)) {
+    throw new Error(`the world document at ${path} declares no components`);
+  }
+  return /** @type {PlanningInput} */ (parsed);
+}
+
+/**
+ * The run's world input: the caller-closed document when `--world` names
+ * one, the self-dogfood closure otherwise. One seam so the run and the
+ * pins read the same selection.
+ *
+ * @param {string} repo the repository to observe when no world is named
+ * @param {string | undefined} worldPath the caller-closed document's path
+ * @returns {PlanningInput} the closed world document
+ */
+export function loadWorld(repo, worldPath) {
+  return worldPath === undefined ? closeWorld(repo) : readWorldDocument(worldPath);
 }
 
 /**
@@ -718,9 +793,20 @@ USAGE
   node e2e/release-pr-e2e.mjs --evidence <path> [flags]
 
 FLAGS
-  --repo <path>          the repository to close the world over and open the PR
-                         against (default: "." — the checkout's own origin IS the
+  --repo <path>          the repository whose origin names the PR target — and,
+                         without --world, the repository the closure observes
+                         (default: "." — the checkout's own origin IS the
                          target; the adapter factory cross-checks them at open)
+  --world <path>         a caller-closed world document to plan instead of the
+                         self-dogfood closure — the foreign-consumer posture
+                         (D83): the caller closes the world, the engine
+                         discovers nothing (phase 12 §2.4). The document must
+                         observe the planner's closure laws (the full parent-
+                         closed ancestry, the recorded tags as the recorded
+                         state, the manifest as the recorded state held it);
+                         e2e/shadow/close-window-world.mjs closes one under
+                         the D82 laws. --repo still names the checkout whose
+                         origin is the PR target.
   --evidence <path>      the evidence JSONL file; lines are APPENDED, one per leg
                          (required)
   --legs <a,b,...>       a subset of the six legs, canonical order kept (default: all)
@@ -756,13 +842,16 @@ SAFETY LAWS
     identity turns it into a found — a loud failure, not a skip.
 
 THE PLAN INPUT (computed, never hand-written)
-  The world is closed exactly as the self-dogfood closes it (the
-  scripts/dogfood/close-world.mjs closure, spawned), and the planner seam
-  computes the ReleasePlan — same world, same plan bytes. The identity is
-  derived from that world: the declared component, the declared line, the
-  branch its feed ref names. A world that plans no pending release (e.g. a
-  checkout that has fetched the release tags, whose replay refuses at the
-  planning boundary — #263) faults the run loudly BEFORE any leg runs.
+  Without --world, the world is closed exactly as the self-dogfood closes
+  it (the scripts/dogfood/close-world.mjs closure, spawned); with --world,
+  the caller's closed document is read as-is — the foreign-consumer
+  posture (D83), the closure laws living in the caller's instrument, never
+  here. The planner seam computes the ReleasePlan — same world, same plan
+  bytes. The identity is derived from that world: the declared component,
+  the declared line, the branch its feed ref names. A world that plans no
+  pending release (e.g. a checkout that has fetched the release tags,
+  whose replay refuses at the planning boundary — #263) faults the run
+  loudly BEFORE any leg runs.
   Build the package first: the harness imports the built barrel at runtime
   (pnpm build — the fresh-clone law).
 
@@ -934,7 +1023,7 @@ function run(argv) {
   /** @type {{ component: string, releaseLine: string, targetBranch: string }} */
   let identity;
   try {
-    world = closeWorld(parsed.repo);
+    world = loadWorld(parsed.repo, parsed.world);
     planValue = computePlan(world);
     identity = deriveIdentity(world);
     requirePendingRelease(planValue, identity);
