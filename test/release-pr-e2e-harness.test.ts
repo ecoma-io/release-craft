@@ -29,8 +29,10 @@ import {
   helpText,
   judgeLeg,
   judgeStillResolves,
+  loadWorld,
   originOwnerRepo,
   parseArgv,
+  readWorldDocument,
   requirePendingRelease,
   resolveLegPlan,
   serializeEvidenceLine,
@@ -151,6 +153,118 @@ describe("the argv protocol", () => {
       "transport-failure,create,detect-empty",
     ]);
     expect(runOf(parsed).legs).toEqual(["detect-empty", "create", "transport-failure"]);
+  });
+
+  it("carries the caller-closed world path and defaults it to the self-dogfood closure", () => {
+    const withWorld = parseArgv([
+      "--evidence",
+      "e.jsonl",
+      "--world",
+      "/tmp/world.json",
+      "--legs",
+      "detect-empty",
+    ]);
+    if ("fault" in withWorld || withWorld.help) throw new Error("expected a run parse");
+    expect(withWorld.world).toBe("/tmp/world.json");
+    const withoutWorld = parseArgv(["--evidence", "e.jsonl", "--legs", "detect-empty"]);
+    if ("fault" in withoutWorld || withoutWorld.help) throw new Error("expected a run parse");
+    expect(withoutWorld.world).toBeUndefined();
+  });
+
+  it("refuses a --world that demands a value, by name", () => {
+    expect(faultOf(parseArgv(["--evidence", "e.jsonl", "--world"]))).toContain(
+      "--world demands a value",
+    );
+  });
+});
+
+describe("the caller-closed world document (--world, the foreign-consumer posture D83)", () => {
+  it("reads a well-formed world document verbatim — the harness never authors a world", () => {
+    const fixture: TempRepo = createTempRepo();
+    try {
+      const document = {
+        policy: { digest: "pin-world-policy-1" },
+        repository: { commits: [], refs: [] },
+        history: { tags: [] },
+        lines: [{ id: "main", feedRef: "refs/heads/main", lifecycle: "active", declared: true }],
+        components: [
+          { name: "foreign-consumer", manifestVersion: "1.2.3", paths: ["package.json"] },
+        ],
+      };
+      const path = `${fixture.repo}/world.json`;
+      writeFileSync(path, `${JSON.stringify(document, null, 2)}\n`);
+      const world = readWorldDocument(path);
+      expect(world.components).toHaveLength(1);
+      expect(world.components?.[0]?.name).toBe("foreign-consumer");
+      // The identity derivation runs over the caller's document unchanged.
+      expect(deriveIdentity(world)).toEqual({
+        component: "foreign-consumer",
+        releaseLine: "main",
+        targetBranch: "main",
+      });
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("refuses a document that is not JSON, not an object, or declares no lines or components", () => {
+    const fixture: TempRepo = createTempRepo();
+    try {
+      const notJson = `${fixture.repo}/not-json.json`;
+      writeFileSync(notJson, "{oops");
+      expect(() => readWorldDocument(notJson)).toThrow(/is not JSON/);
+
+      const array = `${fixture.repo}/array.json`;
+      writeFileSync(array, "[]\n");
+      expect(() => readWorldDocument(array)).toThrow(/is not a JSON object/);
+
+      const noLines = `${fixture.repo}/no-lines.json`;
+      writeFileSync(noLines, `${JSON.stringify({ components: [] })}\n`);
+      expect(() => readWorldDocument(noLines)).toThrow(/declares no lines/);
+
+      const noComponents = `${fixture.repo}/no-components.json`;
+      writeFileSync(
+        noComponents,
+        `${JSON.stringify({ lines: [{ id: "main", feedRef: "refs/heads/main" }] })}\n`,
+      );
+      expect(() => readWorldDocument(noComponents)).toThrow(/declares no components/);
+
+      expect(() => readWorldDocument(`${fixture.repo}/absent.json`)).toThrow(/could not be read/);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("selects the caller's document when named and the self-dogfood closure otherwise", () => {
+    const fixture: TempRepo = createTempRepo();
+    try {
+      writeFileSync(
+        `${fixture.repo}/package.json`,
+        `${JSON.stringify({ name: "fixture", version: "0.1.0" })}\n`,
+      );
+      fixture.git(["add", "package.json"]);
+      fixture.git(["commit", "-m", "fix: a defect worth a birth release"]);
+      fixture.git(["branch", "-M", "main"]);
+
+      // No --world: the closure observes the named repository (the
+      // self-dogfood posture, D80's law unchanged).
+      const closed = loadWorld(fixture.repo, undefined);
+      expect(closed.components?.[0]?.name).toBe("@ecoma-io/release-craft");
+
+      // --world: the caller's document is read, the closure never spawns.
+      const document = {
+        policy: { digest: "pin-load-world-policy-1" },
+        repository: { commits: [], refs: [] },
+        history: { tags: [] },
+        lines: [{ id: "main", feedRef: "refs/heads/main", lifecycle: "active", declared: true }],
+        components: [{ name: "declared-consumer", manifestVersion: "0.2.0", paths: [] }],
+      };
+      const path = `${fixture.repo}/world.json`;
+      writeFileSync(path, `${JSON.stringify(document)}\n`);
+      expect(loadWorld(fixture.repo, path).components?.[0]?.name).toBe("declared-consumer");
+    } finally {
+      fixture.cleanup();
+    }
   });
 });
 
@@ -429,5 +543,11 @@ describe("the help", () => {
     expect(helpText).toContain("--expect-tampered");
     expect(helpText).toContain("gh pr edit");
     expect(helpText).toContain("NEVER merges the Release PR and NEVER pushes branches");
+  });
+
+  it("documents the caller-closed world flag and the closure instrument it pairs with", () => {
+    expect(helpText).toContain("--world <path>");
+    expect(helpText).toContain("the caller closes the world, the engine");
+    expect(helpText).toContain("e2e/shadow/close-window-world.mjs");
   });
 });
