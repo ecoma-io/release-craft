@@ -1,0 +1,31 @@
+{
+  "$comment": "The §12–14 Tier 1+2 shadow run's classification table (issue #315). Authored AFTER the strict pass — the strict pass (empty table) recorded 7/6/5 unexplained divergences across loom/archkeep/action-agents, and this table classifies exactly those fields, each with its citable cover. The class vocabulary is the §13 ledger's closed set. Assignment rule, disclosed: a divergence that exists because release-craft's contracted, test-pinned behavior deliberately differs takes release-craft-stronger with the contract/decision citation; a divergence that exists because release-please's recorded artifact shows a quirk release-craft deliberately does not adopt takes release-please-quirk with the exact compatibility-matrix row; anything else would fall back to unexplained — the harness enforces that fallback in code, so an entry without a citation classifies nothing.",
+  "selected-changes": {
+    "class": "release-craft-stronger",
+    "citation": "The decide stage's membership filter: the plan's change set records only release-worthy (bump-resolving) commits — compatibility matrix row A, Revert-commits cell ('the change set records only release-worthy changes'), pinned as scenario S-04 (bump-driving independent of changelog-worthiness, assemble.test.ts); the changelog renderer renders exactly that recorded plan (row E1, #226). Release-please's committed changelog instead renders every conventionally-typed commit in the window: loom's 0.6.0 section holds 75 entries over 69 distinct commits (six shas appear twice — b230fef, 11034ca, 135dc2d, 278167a, 546c8c5, 68f6c72, once with a PR reference and once with the bare commit link) where the recomputed plan selects 31; archkeep's 0.29.0 section carries three docs entries the plan does not select."
+  },
+  "release-pr-title": {
+    "class": "release-craft-stronger",
+    "citation": "The Release-PR gate's deterministic render (src/app/release-pr.ts): the title is the gate's own render of the recorded plan, deliberately not configurable — configuration would make the identity surface mutable (compatibility matrix row F4, PR title/body patterns). The live create leg read the projected title back exactly as rendered (decision D81, PR #313)."
+  },
+  "release-pr-body-structure": {
+    "class": "release-craft-stronger",
+    "citation": "The identity contract: the body is the claim marker (component, line, target, plan fingerprint) plus the plan render — parseable identity content, never a title/label pattern (compatibility matrix row F2, detect & update; src/app/release-pr.ts §1). Decision D81 proves the marker live: the created draft was adopted by its marker alone and a tampered body was refused as plan-conflict without a rewrite. Release-please's body is a bot-authored changelog carrier — a generated-by header and a version heading, no parseable identity claim."
+  },
+  "release-pr-labels": {
+    "class": "release-please-quirk",
+    "citation": "Compatibility matrix row F3 (pending-state labels `autorelease: pending`): RELEASE-PLEASE QUIRK deliberately not adopted — label-based state is replaced by claim/attempt identity in ledger refs. Observed on all three consumers' merged release PRs: `autorelease: tagged` rides alongside organizational labels (`documentation`, `size/s`); release-craft's projection carries the one constant organizational label `release-craft`."
+  },
+  "head-branch-naming": {
+    "class": "release-craft-stronger",
+    "citation": "The GitHub port's head-branch derivation (src/adapters/github/release-pr.ts): release-craft--branches--<target>--lines--<line>--components--<component> — the injective identity grammar the D81 create leg minted live on this repository (compatibility matrix row F1's recorded evidence). Release-please's grammar names target branch and component only."
+  },
+  "changelog-section-headers": {
+    "class": "release-craft-stronger",
+    "citation": "The renderer's declared-sections contract (src/planner/changelog.ts, pinned by changelog.test.ts): declaration order is the render order and a type the declaration does not name surfaces under its own capitalized heading, never dropped (compatibility matrix row E5) — action-agents declares no changelog-sections, so `fix` renders as `Fix` where release-please's preset maps it to `Bug Fixes`. On loom and archkeep the absent `Documentation` header is the selected-changes membership law rendered: the plan selects no docs commits, so the declared Documentation section has nothing to render (row A)."
+  },
+  "changelog-entry-ordering": {
+    "class": "release-craft-stronger",
+    "citation": "The determinism law: the renderer is a pure projection of the recorded plan into deterministic markdown bytes (compatibility matrix row E1, CHANGELOG.md generation — [#226]), so entries render in the recorded plan's change order, and the plan records no dates — a date that would have to be read is never read (row 'Version-heading date/link policy', the determinism law). Release-please orders entries newest-first within each section — a commit-timestamp ordering, exactly the ambient input the determinism law refuses. Observed on loom: the 31 entries both engines render disagree in relative order (release-please's first shared entry 75c66fb vs the plan's 9226755). archkeep's two shared entries render in the same relative order on both sides, so that window records equal; action-agents' single shared entry is no ordering (equal at its granularity, the lists recorded in the row)."
+  }
+}
