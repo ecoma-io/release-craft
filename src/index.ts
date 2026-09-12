@@ -62,5 +62,12 @@ export * from "@ecoma-io/release-craft/execution";
 export * from "@ecoma-io/release-craft/app";
 export * from "@ecoma-io/release-craft/adapters/node-workspace";
 
+// The Release PR gate's production composition (issue #309): the real
+// GitHub port wired into the application gate. Composed here, in the
+// package shell — `type-package` is the one tag whose boundary row
+// reaches both the app layer and the GitHub adapter — and re-exported so
+// a host composes the gate through the front door, never by hand.
+export * from "./release-pr-driver.js";
+
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;
