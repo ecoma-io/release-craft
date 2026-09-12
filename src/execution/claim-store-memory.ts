@@ -109,23 +109,22 @@ export class MemoryClaimStore implements ClaimStore {
   }
 
   verify(token: ClaimToken): ClaimVerification {
-    for (const [key, claim] of this.#held) {
-      if (claim.token === token) {
-        // The store consults its supersession records in every verdict:
-        // a token whose lease a takeover has passed verifies superseded,
-        // naming the taker (§2.4 item 6) — never held.
-        const passed = this.#supersessions.get(key);
-        if (passed !== undefined) {
-          return { kind: "superseded", supersededBy: passed.supersededBy };
-        }
-        return { kind: "held", claim };
-      }
-    }
-    // Evidence survives release: a released lease's claim left the held
-    // set, but its supersession record stands.
+    // The store consults its supersession records in every verdict, keyed
+    // by the one law the port's stores share (#303): the record names the
+    // lease that was passed — its token — so a token whose lease a takeover
+    // has passed verifies superseded, naming the taker (§2.4 item 6) —
+    // whether its claim still stands in the held set or left it (the
+    // evidence survives release) — never held; and a later claim re-landed
+    // on the same scope rules by its own token, the earlier record never
+    // resurrecting onto the new holder.
     for (const record of this.#supersessions.values()) {
       if (record.superseded.token === token) {
         return { kind: "superseded", supersededBy: record.supersededBy };
+      }
+    }
+    for (const claim of this.#held.values()) {
+      if (claim.token === token) {
+        return { kind: "held", claim };
       }
     }
     return { kind: "lost" };

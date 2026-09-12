@@ -747,6 +747,68 @@ describe("the per-line claim register (ADR-0011)", () => {
       });
     });
   });
+
+  describe("the fence consults the records by one key law over both stores (#303)", () => {
+    /** The verdict's store-independent shape: the holders are the attempt
+     *  ids both stores share — only the token spellings differ. */
+    const shape = (verification: ClaimVerification): Record<string, unknown> =>
+      verification.kind === "held"
+        ? { kind: "held", holder: verification.claim.holder }
+        : verification.kind === "superseded"
+          ? { kind: "superseded", supersededBy: verification.supersededBy.holder }
+          : verification;
+
+    /** The #303 corner's move script, run over each store: a lease taken
+     *  over, released, and its scope re-landed by a fresh holder — the
+     *  released passed lease's record standing under the re-landed claim. */
+    const releasedAndReLanded = (
+      store: ClaimStore,
+    ): { passed: Record<string, unknown>; fresh: Record<string, unknown> } => {
+      const passed = asClaim(store.acquire(prerelease(1), "attempt_holder"));
+      asClaim(store.acquire(prerelease(2), "attempt_taker"));
+      store.release(passed.token);
+      const fresh = asClaim(store.acquire(prerelease(1), "attempt_stranger"));
+      return {
+        passed: shape(store.verify(passed.token)),
+        fresh: shape(store.verify(fresh.token)),
+      };
+    };
+
+    it("the released passed lease still verifies superseded and the re-landed scope rules by its own token — one transcript over both stores", () => {
+      withTempRepo("register-one-law-reland", (repo) => {
+        // One law, both stores: the re-landed claim's token was never
+        // passed, so it verifies held — the scope's earlier record never
+        // resurrects onto the new holder — while the released lease's own
+        // evidence stands, naming its taker.
+        expect(releasedAndReLanded(new GitClaimStore(repo))).toEqual(
+          releasedAndReLanded(new MemoryClaimStore()),
+        );
+        const { passed, fresh } = releasedAndReLanded(new MemoryClaimStore());
+        expect(passed).toEqual({ kind: "superseded", supersededBy: "attempt_taker" });
+        expect(fresh).toEqual({ kind: "held", holder: "attempt_stranger" });
+      });
+    });
+
+    it("the re-landed scope's idempotent re-acquisition still denies superseded, the standing record answering (D75)", () => {
+      const reAcquired = (store: ClaimStore): ClaimDenied => {
+        const passed = asClaim(store.acquire(prerelease(1), "attempt_holder"));
+        asClaim(store.acquire(prerelease(2), "attempt_taker"));
+        store.release(passed.token);
+        asClaim(store.acquire(prerelease(1), "attempt_stranger"));
+        return asDenied(store.acquire(prerelease(1), "attempt_stranger"));
+      };
+      const expected = {
+        kind: "denied",
+        holder: "attempt_taker",
+        scope: prerelease(1),
+        refusal: "superseded",
+      } as const;
+      withTempRepo("register-one-law-reacquire", (repo) => {
+        expect(reAcquired(new GitClaimStore(repo))).toEqual(expected);
+        expect(reAcquired(new MemoryClaimStore())).toEqual(expected);
+      });
+    });
+  });
 });
 
 /**

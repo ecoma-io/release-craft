@@ -75,8 +75,17 @@ export function GitTagDoor(git: GitRun, naming: GitTagNaming): TagMint {
     const takeoverDetail = (taker: string): string =>
       `attempt ${input.attemptId}'s claim deriving tag ${input.tag} was superseded by attempt ${taker} — the recorded takeover refuses the mint`;
     if (held.length === 0) {
-      const takeover = taken[0];
-      if (takeover === undefined) {
+      // The refusal names the recorded takeover that blocks THIS mint: the
+      // taker(s) of the taken scope(s) whose derived tag is the requested
+      // one — every taker when several, the first taken scope's taker only
+      // when no taken scope derives the tag (#304). The refusal itself was
+      // never in question; the evidence's attribution was.
+      const deriving = taken.filter((record) => naming.tagFor(record.scope) === input.tag);
+      const takers = (deriving.length > 0 ? deriving : taken.slice(0, 1)).map(
+        (record) => passedBy.get(canonicalJson(record.scope)) ?? "unknown",
+      );
+      const [taker] = takers;
+      if (taker === undefined) {
         return {
           kind: "refused",
           reason: "unclaimed",
@@ -88,7 +97,10 @@ export function GitTagDoor(git: GitRun, naming: GitTagNaming): TagMint {
         kind: "refused",
         reason: "unclaimed",
         tag: input.tag,
-        detail: takeoverDetail(passedBy.get(canonicalJson(takeover.scope)) ?? "unknown"),
+        detail:
+          takers.length === 1
+            ? takeoverDetail(taker)
+            : `attempt ${input.attemptId}'s claims deriving tag ${input.tag} were superseded by attempts ${takers.join(", ")} — the recorded takeover refuses the mint`,
       };
     }
     // The naming policy derives each held claim's tag name; an in-namespace

@@ -450,6 +450,89 @@ describe("the tag mint door (fixtures 3 and 4)", () => {
     });
   });
 
+  it("names the taker of the taken scope that derives the requested tag, beside an unrelated taken scope (#304)", () => {
+    // A naming that admits prerelease scopes, so each taken lease derives
+    // its own tag name — the two taken scopes different tags.
+    const fenceNaming: GitTagNaming = {
+      namespaces: ["v"],
+      tagFor: (scope: ClaimScope): string | null =>
+        scope.kind === "prerelease-sequence" ? `v${scope.target}.${String(scope.sequence)}` : null,
+    };
+    const at = (target: string, sequence: number): ClaimScope => ({
+      kind: "prerelease-sequence",
+      lineId: "line-main",
+      target,
+      streamId: "rc",
+      sequence,
+    });
+    withTempRepo("claims-mint-freeze-wrong-taker", (repo, git) => {
+      const store = new GitClaimStore(repo);
+      const mint = GitTagDoor(git, fenceNaming);
+      // The holder's two leases both pass, each to another taker. The beta
+      // scope sorts first by its scope JSON — the taker the taken[0] form
+      // named — while the requested tag is the rc scope's derivation.
+      asClaim(store.acquire(at("1.3.0-beta", 1), "attempt_holder"));
+      asClaim(store.acquire(at("1.3.0-rc", 2), "attempt_holder"));
+      asClaim(store.acquire(at("1.3.0-beta", 2), "attempt_taker_beta"));
+      asClaim(store.acquire(at("1.3.0-rc", 3), "attempt_taker_rc"));
+      const refused = asRefused(
+        mint({
+          attemptId: "attempt_holder",
+          token: "claim:none",
+          tag: "v1.3.0-rc.2",
+          target: rootCommit(git),
+        }),
+      );
+      expect(refused.reason).toBe("unclaimed");
+      // The detail names the takeover that blocks THIS mint — the rc
+      // scope's taker — never the beta taker, whose scope derives another
+      // tag. The refusal itself was never in question; the attribution was.
+      expect(refused.detail).toContain("was superseded by attempt attempt_taker_rc");
+      expect(refused.detail).not.toContain("attempt_taker_beta");
+      expect(refused.detail).toContain("the recorded takeover refuses the mint");
+      expect(refNames(git, "refs/tags/")).toHaveLength(0);
+    });
+  });
+
+  it("names every taker when several taken scopes derive the requested tag (#304)", () => {
+    // A naming that derives one tag from both taken scopes — the plural
+    // shape the single-taker tests never reach.
+    const sharedNaming: GitTagNaming = {
+      namespaces: ["v"],
+      tagFor: (scope: ClaimScope): string | null =>
+        scope.kind === "prerelease-sequence" ? `v${scope.streamId}` : null,
+    };
+    const at = (target: string, sequence: number): ClaimScope => ({
+      kind: "prerelease-sequence",
+      lineId: "line-main",
+      target,
+      streamId: "rc",
+      sequence,
+    });
+    withTempRepo("claims-mint-freeze-all-takers", (repo, git) => {
+      const store = new GitClaimStore(repo);
+      const mint = GitTagDoor(git, sharedNaming);
+      // The holder's two leases both derive the requested tag, and each
+      // was passed by a different taker — the detail owes both names.
+      asClaim(store.acquire(at("1.3.0-rc", 1), "attempt_holder"));
+      asClaim(store.acquire(at("2.0.0-rc", 1), "attempt_holder"));
+      asClaim(store.acquire(at("1.3.0-rc", 2), "attempt_taker_first"));
+      asClaim(store.acquire(at("2.0.0-rc", 2), "attempt_taker_second"));
+      const refused = asRefused(
+        mint({
+          attemptId: "attempt_holder",
+          token: "claim:none",
+          tag: "vrc",
+          target: rootCommit(git),
+        }),
+      );
+      expect(refused.reason).toBe("unclaimed");
+      expect(refused.detail).toContain("attempt_taker_first");
+      expect(refused.detail).toContain("attempt_taker_second");
+      expect(refNames(git, "refs/tags/")).toHaveLength(0);
+    });
+  });
+
   it("denies the acquisition of a scope the naming maps to no tag — before git sees it (§2.4)", () => {
     withTempRepo("claims-acquire-door", (repo, git) => {
       const binding = openGitBinding({ repo, tagNaming: naming });
