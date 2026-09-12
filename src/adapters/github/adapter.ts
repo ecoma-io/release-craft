@@ -40,6 +40,7 @@ import type {
 } from "./adapter-types.js";
 import { GitReleasePublication } from "./publication.js";
 import { GitReleaseReconciliation } from "./reconciliation.js";
+import { GitReleasePR } from "./release-pr.js";
 import { openRemoteGit } from "./remote-git.js";
 import { originIdentityFault } from "./remote-identity.js";
 import { GitRemoteSync } from "./sync.js";
@@ -89,6 +90,7 @@ export const openGitHubAdapter = (
   const sync = GitRemoteSync(binding, credentials);
   const publication = GitReleasePublication(binding, credentials, transport);
   const reconciliation = GitReleaseReconciliation(binding, credentials, transport);
+  const releasePR = GitReleasePR(credentials, transport);
   return {
     syncRemote(): SyncReport {
       return sync.syncRemote();
@@ -102,5 +104,6 @@ export const openGitHubAdapter = (
     reconcile(): ReconciliationReport {
       return reconciliation.reconcile();
     },
+    releasePR,
   };
 };

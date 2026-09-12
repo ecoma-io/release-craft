@@ -74,6 +74,7 @@ tasks:
     command: tsc --noEmit
     inputs:
       - "src/index.ts"
+      - "src/release-pr-driver.ts"
       - "test/**/*"
       - "action/**/*"
       - "project://core-domain?group=sources"
@@ -102,6 +103,7 @@ tasks:
       - build
     inputs:
       - "src/index.ts"
+      - "src/release-pr-driver.ts"
       - "test/**/*"
       - "action/**/*"
       - "/action.yml"
@@ -123,6 +125,7 @@ tasks:
     command: tsc -p tsconfig.build.json
     inputs:
       - "src/index.ts"
+      - "src/release-pr-driver.ts"
       - "project://core-domain?group=sources"
       - "project://planner?group=sources"
       - "project://execution?group=sources"
