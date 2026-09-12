@@ -263,8 +263,10 @@ shape, the CLI validates nothing: the planner's own door normalizes and
 refuses as landed (phase 11 §4 question 4's posture — the boundary
 re-validates nothing, and neither does the surface above it), and
 `RunRequest.intents` is overlaid from `--intent` flags, which win over any
-intents inside the document (verified: the boundary plans over
-`{ ...input, intents }`).
+intents inside the document (verified: the boundary plans over the input
+with operator intents as declared — absent stays absent, and
+canonicalization collapses a declared-empty list to absence per §2.11,
+so one world keeps one plan identity across the doors, D84).
 
 The alternatives, weighed:
 
