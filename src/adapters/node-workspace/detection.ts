@@ -12,9 +12,10 @@
  *
  * Every refusal is loud and names the source file and field: missing or
  * duplicated manifest keys, empty sequences, unsupported glob syntax,
- * unknown range variants (outside the D16 `^`/`~`/exact grammar), and
- * duplicate member names refuse at detection time — never best-effort,
- * never silent.
+ * unknown range variants (outside the D16 `^`/`~`/exact grammar),
+ * duplicate member names, and a member dependency naming the workspace
+ * root package (the root is not a member, so no edge can represent it)
+ * refuse at detection time — never best-effort, never silent.
  *
  * Gate: `check:package` (invariant 1: no runtime dependencies).
  */
@@ -67,8 +68,8 @@ const ALL_KINDS: readonly WorkspaceDependencyKind[] = [
  *   hand-declared components.
  * @throws {WorkspaceDetectionError} when evidence exists but is malformed,
  *   a glob uses unsupported syntax, a member manifest is unreadable or
- *   incomplete, a member name is duplicated, or an edge range is outside
- *   the D16 grammar.
+ *   incomplete, a member name is duplicated, a member dependency names the
+ *   workspace root package, or an edge range is outside the D16 grammar.
  */
 export function detectNodeWorkspace(root: string): DetectedWorkspace | null {
   const patterns = readWorkspacePatterns(root);
@@ -83,7 +84,8 @@ export function detectNodeWorkspace(root: string): DetectedWorkspace | null {
     });
   }
 
-  const members = buildMembers(root, manifests);
+  const rootPackageName = readRootPackageName(join(root, "package.json"));
+  const members = buildMembers(root, manifests, rootPackageName);
   return { root, members };
 }
 
@@ -165,6 +167,27 @@ function readRootPackageWorkspaces(pkgPath: string): readonly WorkspacePattern[]
   });
 }
 
+/**
+ * The root manifest's own `name`, or `undefined` when the root manifest is
+ * absent or carries no usable name — a workspace with no root name has no
+ * root-named dependency targets to refuse. A missing file is "no name
+ * here" (the same posture as `readRootPackageWorkspaces`); any other read
+ * or parse failure refuses loudly.
+ */
+function readRootPackageName(pkgPath: string): string | undefined {
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = readJsonObject(pkgPath);
+  } catch (error: unknown) {
+    if (error instanceof WorkspaceDetectionError && error.message.includes("ENOENT")) {
+      return undefined;
+    }
+    throw error;
+  }
+  const name = pkg.name;
+  return typeof name === "string" && name.length > 0 ? name : undefined;
+}
+
 function patternsFromList(
   entries: readonly unknown[],
   sourceFile: string,
@@ -229,7 +252,11 @@ function manifestIdentity(manifest: string): string {
   }
 }
 
-function buildMembers(root: string, manifests: readonly string[]): readonly WorkspaceMember[] {
+function buildMembers(
+  root: string,
+  manifests: readonly string[],
+  rootPackageName: string | undefined,
+): readonly WorkspaceMember[] {
   const members: RawMember[] = [];
   for (const manifestPath of manifests) {
     members.push(readMember(root, manifestPath));
@@ -253,7 +280,7 @@ function buildMembers(root: string, manifests: readonly string[]): readonly Work
   // member must be read first.
   const memberNames: Record<string, true> = {};
   for (const member of members) memberNames[member.name] = true;
-  for (const member of members) extractEdges(member, memberNames);
+  for (const member of members) extractEdges(member, memberNames, rootPackageName);
 
   return members.map((member) => toPublicMember(root, member));
 }
@@ -305,10 +332,17 @@ function toPublicMember(root: string, member: RawMember): WorkspaceMember {
  * Extracts dependency edges from one member's manifest: every declared
  * dependency whose name resolves to another workspace member becomes an
  * edge, with its kind and declaring file recorded. External dependencies
- * are skipped — they are not components. Each range is validated against
+ * are skipped — they are not components — but a dependency naming the
+ * workspace root package's name refuses: the root is inside the workspace,
+ * so silently classifying it external would drop a real intra-workspace
+ * dependency on the floor (issue #285). Each range is validated against
  * the D16 grammar on the spot.
  */
-function extractEdges(member: RawMember, memberNames: Readonly<Record<string, true>>): void {
+function extractEdges(
+  member: RawMember,
+  memberNames: Readonly<Record<string, true>>,
+  rootPackageName: string | undefined,
+): void {
   for (const kind of ALL_KINDS) {
     const deps = member.data[kind];
     if (deps === undefined || deps === null) continue;
@@ -320,6 +354,17 @@ function extractEdges(member: RawMember, memberNames: Readonly<Record<string, tr
       });
     }
     for (const [target, rangeExpr] of Object.entries(deps as Record<string, unknown>)) {
+      // The root package's name is an intra-workspace target, but the root
+      // is not a member, so no edge can represent it — refuse, whatever the
+      // range says. When the root is itself discovered as a member (the `.`
+      // glob), memberNames resolves it and the member path below applies.
+      if (target === rootPackageName && memberNames[target] !== true) {
+        throw new WorkspaceDetectionError({
+          file: member.manifestPath,
+          field: `${kind}.${target}`,
+          message: `dependency ${JSON.stringify(target)} names the workspace root package: the root is not a workspace member, so this dependency is not representable as a workspace edge`,
+        });
+      }
       if (memberNames[target] !== true) continue; // External — not a workspace edge.
       if (typeof rangeExpr !== "string" || rangeExpr.length === 0) {
         throw new WorkspaceDetectionError({

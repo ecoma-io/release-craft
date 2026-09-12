@@ -200,6 +200,120 @@ describe("detectNodeWorkspace — external dependency omission", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The root package's name as a dependency target (#285): the root manifest's
+// `name` never enters the member-name map, so before the fix a member
+// declaring it fell through the external-skip branch — no refusal, no edge,
+// a real intra-workspace dependency silently classified external. The real
+// shape is loom: the publishable root package "@ecoma-io/loom" is declared
+// by templates/* as "workspace:*". The refusal must name the manifest file,
+// the field, and the dependency name.
+// ---------------------------------------------------------------------------
+
+describe("detectNodeWorkspace — root package name as dependency target", () => {
+  const ROOT_NAME = "@acme/loom";
+
+  /** A loom-shaped workspace: publishable root package plus template
+   * members under `templates/*`, mirroring the real occurrence. */
+  function addLoomShapedWorkspace(ws: TempWorkspace, memberDeps: Record<string, unknown>): void {
+    ws.write("pnpm-workspace.yaml", "packages:\n  - templates/*\n");
+    ws.write("package.json", JSON.stringify({ name: ROOT_NAME, version: "0.5.0" }));
+    addPackage(ws, "templates/analytics", "@acme/loom-analytics", "0.5.0", memberDeps);
+  }
+
+  it.each(["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"])(
+    "refuses a %s dependency on the root package's name, naming file, field and dependency",
+    (kind) => {
+      withTempWorkspace(`root-target-${kind}`, (ws) => {
+        addLoomShapedWorkspace(ws, { [kind]: { [ROOT_NAME]: "workspace:*" } });
+        const error = capture(() => detectNodeWorkspace(ws.root));
+        expect(error).toBeInstanceOf(WorkspaceDetectionError);
+        const refusal = error as WorkspaceDetectionError;
+        expect(refusal.file).toBe(`${ws.root}/templates/analytics/package.json`);
+        expect(refusal.field).toBe(`${kind}.${ROOT_NAME}`);
+        expect(refusal.message).toContain(ROOT_NAME);
+        expect(refusal.message).toContain("workspace root package");
+      });
+    },
+  );
+
+  it("refuses a root-named dependency even when its range is inside the D16 grammar", () => {
+    withTempWorkspace("root-target-canonical-range", (ws) => {
+      addLoomShapedWorkspace(ws, { dependencies: { [ROOT_NAME]: "^0.5.0" } });
+      const error = capture(() => detectNodeWorkspace(ws.root));
+      expect(error).toBeInstanceOf(WorkspaceDetectionError);
+      const refusal = error as WorkspaceDetectionError;
+      expect(refusal.field).toBe(`dependencies.${ROOT_NAME}`);
+      expect(refusal.message).toContain("workspace root package");
+    });
+  });
+
+  it("the sibling-member contrast still refuses through the D16 grammar path", () => {
+    withTempWorkspace("root-target-sibling-contrast", (ws) => {
+      ws.write("pnpm-workspace.yaml", "packages:\n  - templates/*\n");
+      ws.write("package.json", JSON.stringify({ name: ROOT_NAME, version: "0.5.0" }));
+      addPackage(ws, "templates/starter", "@acme/loom-starter", "0.5.0");
+      addPackage(ws, "templates/analytics", "@acme/loom-analytics", "0.5.0", {
+        dependencies: { "@acme/loom-starter": "workspace:*" },
+      });
+      const error = capture(() => detectNodeWorkspace(ws.root));
+      expect(error).toBeInstanceOf(WorkspaceDetectionError);
+      const refusal = error as WorkspaceDetectionError;
+      expect(refusal.file).toBe(`${ws.root}/templates/analytics/package.json`);
+      expect(refusal.field).toBe("dependencies.@acme/loom-starter");
+      expect(refusal.message).toContain("D16 grammar");
+    });
+  });
+
+  it("positive control: an external name with a D16 range still skips cleanly beside a named root", () => {
+    withTempWorkspace("root-target-external-control", (ws) => {
+      addLoomShapedWorkspace(ws, { dependencies: { express: "^4.21.0" } });
+      const detected = expectDetected(detectNodeWorkspace(ws.root));
+      // The root package is not a member, and the external dependency is
+      // skipped without an edge or a refusal.
+      expect(detected.members.map((m) => m.name)).toEqual(["@acme/loom-analytics"]);
+      expect(detected.members[0]?.edges).toEqual([]);
+    });
+  });
+
+  it("when the root is itself a member (the `.` glob), a dependency on the root's name stays a member edge", () => {
+    withTempWorkspace("root-target-root-as-member", (ws) => {
+      ws.write("pnpm-workspace.yaml", "packages:\n  - .\n  - packages/*\n");
+      ws.write("package.json", JSON.stringify({ name: "root", version: "0.0.0" }));
+      addPackage(ws, "packages/app", "app", "1.0.0", {
+        dependencies: { root: "^0.0.0" },
+      });
+      const detected = expectDetected(detectNodeWorkspace(ws.root));
+      expect(detected.members.map((m) => m.name)).toEqual(["root", "app"]);
+      const app = detected.members.find((m) => m.name === "app");
+      expect(app?.edges).toEqual([
+        {
+          target: "root",
+          range: "^0.0.0",
+          kind: "dependencies",
+          declaredIn: { file: `${ws.root}/packages/app/package.json` },
+        },
+      ]);
+    });
+  });
+
+  it("refuses a root manifest that cannot be parsed even when the pnpm evidence alone would have sufficed at main", () => {
+    withTempWorkspace("root-manifest-unreadable", (ws) => {
+      ws.write("pnpm-workspace.yaml", "packages:\n  - templates/*\n");
+      // Valid evidence, truncated root manifest: reading the root's `name`
+      // widens detection's failure surface by exactly this case — pinned.
+      ws.write("package.json", '{"name":"@acme/root","version":');
+      addPackage(ws, "templates/analytics", "@acme/loom-analytics", "0.5.0");
+      const error = capture(() => detectNodeWorkspace(ws.root));
+      expect(error).toBeInstanceOf(WorkspaceDetectionError);
+      const refusal = error as WorkspaceDetectionError;
+      expect(refusal.file).toBe(`${ws.root}/package.json`);
+      expect(refusal.field).toBe("(file)");
+      expect(refusal.message).toContain("cannot read manifest");
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edge kinds: dev-only excluded from ComponentMeta; peer/optional propagate
 // ---------------------------------------------------------------------------
 
