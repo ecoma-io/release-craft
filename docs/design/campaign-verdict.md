@@ -26,7 +26,7 @@ The readiness rule, verbatim from issue #321:
 
 The decisive clause is the third sentence. Section 3 classifies the open list
 of 22 issues exhaustively. The result that forecloses the limitations tier:
-**thirteen open defects cannot be honestly bounded by (a)+(b)+(c).** Each is
+**sixteen open defects cannot be honestly bounded by (a)+(b)+(c).** Each is
 either a product-code defect with no contract text that bounds its reach and
 no negative test that pins its refusal, or a recorded divergence carried as
 `UNKNOWN` with no test coverage at all, or a toolchain/docs defect with no
@@ -65,9 +65,13 @@ records the plan-identity fix.
 
 ## 3. Limitations — every open issue classified
 
-Inventory from `gh issue list --state open` at the verdict head: **22 open
-issues**. They classify exhaustively into (i) bounded limitations, (ii)
-declared-out roadmap, and (iii) open defects.
+Inventory from `gh issue list --state open` at the verdict head: **27 open
+issues** (excluding the Dependency Dashboard if it is not an issue). They
+classify exhaustively into (i) bounded limitations, (ii) declared-out roadmap,
+and (iii) open defects. Of the 27: 2 are bounded limitations (#237, #262), 7
+are declared-out roadmap (#203–#208, #268), 16 are open defects, 1 is the
+Dependency Dashboard (named, never dropped), 1 is the verdict issue #321
+itself.
 
 ### (i) Bounded limitations — each with its three readiness citations
 
@@ -155,6 +159,13 @@ contract binds the driver; no test judges its order.
 contract (this repo's standard shape) stays red and unlabeled. No test covers
 the sheet's exclusivity; the run stays `dry-run` mislabeled (stale comment).
 
+**#233** — the phase 14 fixture contract's R2 drops the A-cross-process leg
+mid-sentence. `docs/design/phase14-certification-fixture-contract.md:305-306`
+ends the assembly-home leg after "On `A-cross-process`, the process-local
+boundary." with no requirement stated. Not bounded: (a) no contract text
+completes the sentence's requirement, (b) no interface surfaces either leg,
+(c) no test pins the fixture rule's completeness.
+
 **#235** — the PR template ships unchecked boxes the policy gate refuses.
 `.github/PULL_REQUEST_TEMPLATE.md:13-16` + `scripts/check-pr-description.mjs`
 (no-unchecked-box rule): every verbatim-templated PR starts red on policy. No
@@ -175,9 +186,9 @@ drive.ts` (after #246). No negative test pins the hermetic default.
 `node --test` in `scripts/` executes the stress harness and fails it;
 `stress-results.json` is ungitignored. No test binds the filename/glob.
 
-**Named as open defects that cannot be bounded:** #223, #288, #289, #291,
-#294, #299, #305, #307, #311, #222, #230, #235, #248, #250, #253. These
-thirteen force `NOT READY`.
+**Named as open defects that cannot be bounded:** #222, #223, #230, #233,
+#235, #248, #250, #253, #288, #289, #291, #294, #299, #305, #307, #311.
+These sixteen force `NOT READY`.
 
 ## 4. Evidence provenance
 
