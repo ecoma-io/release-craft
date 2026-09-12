@@ -333,6 +333,16 @@ export interface TransitionRecord {
     readonly artifactId: string;
     readonly digest: string;
   }[];
+  /** The mutation's target path (issue #287): the file coordinate the
+   * completion's content fingerprint was derived over. The updater layer
+   * decides HOW a declared mutation is applied; the completion record
+   * must name what that HOW operated on, or a consumer holding only the
+   * ledger cannot answer "which file did `updater:<id>` move" — the
+   * sibling artifact record states its coordinates for the same reason.
+   * Present only on a completed updater step's record; the scheduler
+   * writes it, never a stage or a hook. The record states the path;
+   * verifying the write stays the write-verify gate's job (issue #203). */
+  readonly targetPath?: string;
 }
 
 // ---------------------------------------------------------------------------
