@@ -609,12 +609,21 @@ row → 10.
   the repository's own `refs/release-craft/*`, so the "one repository"
   in this law is one checkout's ref space, and two processes in two
   different checkouts of the same repository each hold their own (#182)
-  — both acquire the same line, both mint locally, and the divergence
-  first surfaces at the consumer's push as a non-fast-forward rejection,
-  a git refusal outside the engine's verdict vocabulary. Serializing
-  across checkouts is a declared precondition of the caller (phase 13
-  §2.9 names the Action's posture), not a mechanism this surface
-  provides.
+  when neither checkout holds the namespace fetched into it — the
+  no-fetch caller's shape: both acquire the same line, both mint
+  locally, and the divergence first surfaces at the consumer's push as a
+  non-fast-forward rejection, a git refusal outside the engine's verdict
+  vocabulary. One hosted caller answers the precondition from its own
+  caller-side hand — a hand this law does not govern (decision-log D65):
+  the self-release workflow fetches `refs/release-craft/claims/*` into
+  its checkout before the run and serializes dispatches through its
+  concurrency group (`cancel-in-progress: false`), so its sequential
+  second dispatch adjudicates against the fetched register — a replay of
+  a released version blocks at the planning boundary, never as a claim
+  denial — and the never-forced atomic publish stays the refusal
+  guarding the shared ref. Serializing across checkouts is a declared
+  precondition of the caller (phase 13 §2.9 names the Action's posture),
+  not a mechanism this surface provides.
 - **No retry policy of its own.** E-08's bounded sequence retry is the
   kernel's clause driven by the boundary (phase 11 §2.5 step 3); the CLI
   neither retries a door nor loops a command. A script that wants retries
