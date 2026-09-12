@@ -1,0 +1,276 @@
+{
+  "record": "tier3-producer-act",
+  "issue": 317,
+  "decision": "D83",
+  "tier": 3,
+  "date": "2026-09-12",
+  "law": "Record ONE Tier 3 producer act: release-craft's production Release-PR driver creating a real draft Release PR on a foreign consumer (ecoma-io/action-agents), exercising the §10 harness's full leg sequence, then closing the draft — never merged. Draft → judge → close. Never both mutate. Exactly one write class. §13 continuity: every observable difference routes to a recorded divergence class; anything uncited is unexplained and stops the run.",
+  "releaseCraft": {
+    "head": "48f5aaffbfeb93db559bbb45264ec5c40fbb65e1",
+    "branch": "feat/shadow-tier3-producer",
+    "pr": 318,
+    "harness": "e2e/release-pr-e2e.mjs (extended: --world <path> reads a caller-closed world document; no code path writes the world)",
+    "closureInstrument": "e2e/shadow/close-window-world.mjs (read-only git verbs only; the only write is --out)",
+    "driver": "src/release-pr-driver.ts → openReleasePRGate over the real GitHub port (production composition, not a stub)"
+  },
+  "consumer": {
+    "repo": "ecoma-io/action-agents",
+    "mainHeadAtRun": "60c597090b68d0f0d4a90143d2857f41ccf37b44",
+    "mainHeadAtRunSubject": "docs: add the Archkeep runtime integration design record (#519)",
+    "mainHeadAtRunCommittedAt": "2026-09-12T16:30:22Z",
+    "clone": "/home/johnitvn/tmp-work/shadow-clones/action-agents",
+    "releasePleaseConfigAtWindow": {
+      "commit": "46a6cc2e36fcb3d9d488c04b90507cf6a32b8244",
+      "releaseType": "node",
+      "packageName": "action-agents",
+      "includeComponentInTag": false,
+      "bumpMinorPreMajor": true,
+      "bumpPatchForMinorPreMajor": false,
+      "initialVersion": "0.1.0",
+      "pullRequestTitlePattern": "chore(workspace): release ${version}"
+    },
+    "manifestAtMain": {
+      "name": "@ecoma-io/action-agents",
+      "version": "0.13.2"
+    },
+    "latestRpDecision": {
+      "pr": 523,
+      "title": "chore(workspace): release 0.13.2",
+      "headRefName": "release-please--branches--main--components--action-agents",
+      "labels": ["size/s", "autorelease: tagged"],
+      "state": "MERGED",
+      "mergedAt": "2026-09-12T15:59:49Z"
+    }
+  },
+  "windowRecompute": {
+    "whyNotD82sWindow": "action-agents main moved past D82's recorded window through a full release (v0.13.2, release-please PR #523 merged 2026-09-12T15:59:49Z). D82's recorded-window law forbids citing D82's digest for a different world, so the window was recomputed one decision forward.",
+    "baseTag": "v0.13.1",
+    "baseTagCommit": "1d147e34868b06bfc6156d031a2f56d94d5f8c0c",
+    "head": "46a6cc2e36fcb3d9d488c04b90507cf6a32b8244",
+    "commits": 311,
+    "commitsNote": "the FULL parent-closed ancestry of the window head (the planner's parent-closure law), not the window slice",
+    "component": "action-agents",
+    "manifestNameDisclosure": "the manifest's name is @ecoma-io/action-agents (scoped npm name); the component id stays action-agents, matching the consumer's own release-please package-name",
+    "manifestAtBase": "0.13.1",
+    "worldDocumentSha256": "eff3c11b3aa452b7a21f123063331159adb52fee97c87110864be94c4d6a24ae",
+    "policyDigest": "shadow-tier3-ecoma-io/action-agents-policy-1",
+    "policyDerivation": {
+      "pre10Dampening": "release-please-config.json at 46a6cc2: bump-minor-pre-major: true",
+      "tagFormats": "the observed tag spelling refs/tags/v0.13.1 + include-component-in-tag: false → v{major}.{minor}.{patch}{prerelease}"
+    },
+    "currentPendingPosture": {
+      "note": "The CURRENT pending posture at main head 60c5970 was probed first: v0.13.2..60c5970 is 3 docs commits (88fc135, 9f43c13, 60c5970), the planner answers planned with an empty lines roster — a vacuous window the legs cannot run over (pre-flight faults by design).",
+      "probeWorldSha256": "36969ccbd6909a0a4e3e75bfa01ebf5c5a679ed8e6ba6fa31a9f799bdd9bc401",
+      "probePlanId": "plan_sha256:929cc1585ede4968543bd6b39ff85bb414013ce0067576124eaa26a7832fca7b",
+      "consequence": "the producer act exercised the latest DECIDED window (v0.13.1 → 46a6cc2) under the recorded-window law, one decision forward — disclosed here, not hidden"
+    }
+  },
+  "planIdentities": {
+    "seamPlanId": "plan_sha256:4521dd0ca01ed062d9dbc2c0760de149e7ab4ce799efe89cc76608a5599f9255",
+    "cliDoorPlanId": "plan_sha256:aa3c44abb59fbfd7d3f7df29d174a40eee1cf8685d710d9d357cd549aa26bc07",
+    "seamIsWhatTheDriverCarried": true,
+    "divergence": {
+      "cause": "the CLI plan command declares intents: overlayIntents(document.intents ?? [], …) while the raw planner seam leaves the field absent; canonical JSON fingerprints the serialization, so \"intents\": [] vs absent yields different inputs_sha256 and different planId over the IDENTICAL world document",
+      "filed": "ecoma-io/release-craft#319 (a §2.11 identity defect)",
+      "routing": "not a §13 divergence between release-craft and release-please — a release-craft-internal identity defect; the run's own legs were internally consistent (recordedPlanId == recomputedPlanId on the tamper leg)"
+    },
+    "notD82sDigest": "c3406cec… was D82's plan digest over D82's window; this run's world is different, so no digest is cited across the boundary"
+  },
+  "legs": {
+    "evidence": "e2e/evidence/shadow-tier3-action-agents-2026-09-12.jsonl",
+    "sequence": [
+      {
+        "leg": "detect-empty",
+        "at": "2026-09-12T17:45:15.224Z",
+        "expected": "detected",
+        "observed": "detected",
+        "prNumber": null
+      },
+      {
+        "leg": "create",
+        "at": "2026-09-12T17:45:16.021Z",
+        "expected": "created",
+        "observed": "created",
+        "prNumber": 528,
+        "draft": true,
+        "labels": ["release-craft"]
+      },
+      {
+        "leg": "detect-adopts",
+        "at": "2026-09-12T17:45:27.427Z",
+        "expected": "found",
+        "observed": "found",
+        "prNumber": 528,
+        "note": "the gate adopts PR #528 through the claim marker's identity, not through a local memory"
+      },
+      {
+        "leg": "update-in-place",
+        "at": "2026-09-12T17:45:33.337Z",
+        "expected": "updated|current",
+        "observed": "current (gate-outcome kind; leg-level observed found)",
+        "prNumber": 528,
+        "note": "idempotent no-write: the projection already matched the live PR byte for byte"
+      },
+      {
+        "leg": "transport-failure",
+        "at": "2026-09-12T17:45:35.460Z",
+        "expected": "transport-failure",
+        "observed": "transport-failure",
+        "detail": "bogus credential → findPR refused (auth-expired) HTTP 401, recorded as the gate's own verdict; no write"
+      },
+      {
+        "leg": "tampered-claim-refusal",
+        "at": "2026-09-12T17:48:03.724Z",
+        "expected": "plan-conflict",
+        "observed": "plan-conflict",
+        "prNumber": 528,
+        "recordedPlanId": "plan_sha256:4521dd0ca01ed062d9dbc2c0760de149e7ab4ce799efe89cc76608a5599f9255",
+        "recomputedPlanId": "plan_sha256:4521dd0ca01ed062d9dbc2c0760de149e7ab4ce799efe89cc76608a5599f9255",
+        "detail": "the existing PR body has drifted from the pure render of the plan it records"
+      }
+    ],
+    "tamperStep": "caller edit between run-a and run-b: exactly one appended line in PR #528's body below the rendered plan, the claim marker untouched (the caller tampers; the gate refuses)",
+    "bytePreservation": "body-after-refusal == body-as-created + exactly one trailing newline (536 → 537 bytes) — gh's own add-newline shape, the same shape D81 recorded; the gate wrote zero body bytes on the refusal leg"
+  },
+  "mutateGateProbe": {
+    "evidence": "e2e/evidence/shadow-tier3-mutate-gate-probe-2026-09-12.jsonl",
+    "posture": "REAL token in the environment, RELEASE_PR_E2E_MUTATE unset — the poison-proxy probe",
+    "observed": "detect-empty ran (detected), create was refused with reason 'mutating leg without RELEASE_PR_E2E_MUTATE=1' (run:false, recorded), transport-failure ran read-only",
+    "zeroWritesVerified": true
+  },
+  "producedPR": {
+    "number": 528,
+    "title": "chore(release): main v0.13.2",
+    "headBranch": "release-craft--branches--main--lines--main--components--action-agents",
+    "base": "main",
+    "draftAtCreate": true,
+    "claimMarker": "<!-- release-craft: identity component=action-agents line=main target=main plan=plan_sha256:4521dd0ca01ed062d9dbc2c0760de149e7ab4ce799efe89cc76608a5599f9255 -->"
+  },
+  "writeAudit": {
+    "law": "exactly ONE write class — the draft Release PR itself (branch mint + PR create) plus its update/tamper legs and final close + branch deletion; nothing else",
+    "classes": [
+      {
+        "write": "branch mint + projection commit (CHANGELOG.md) on release-craft--branches--main--lines--main--components--action-agents",
+        "actor": "harness create leg"
+      },
+      { "write": "POST /pulls → draft PR #528 (draft:true)", "actor": "harness create leg" },
+      { "write": "labels on #528 = exactly [\"release-craft\"]", "actor": "harness create leg" },
+      {
+        "write": "caller body edit on #528 (one appended line) — the tamper leg's demanded precondition, disclosed",
+        "actor": "caller"
+      },
+      {
+        "write": "close #528 + the naming comment (the only comment, on my own draft PR)",
+        "actor": "caller, immediately after judging"
+      },
+      {
+        "write": "delete head branch release-craft--branches--main--lines--main--components--action-agents",
+        "actor": "caller, after close"
+      }
+    ],
+    "zeroOtherWrites": "no issues, no stars, no workflow dispatches, no labels on any non-release PR, no comments besides the closing comment",
+    "consumerAutomationObserved": "the consumer's own triage bot commented on and labeled MY draft PR (documentation, size/l) — observed consumer automation, not a release-craft write; the gate's label set stayed exactly [\"release-craft\"]",
+    "readSurface": "git read verbs inside the clone (closure allowlist), gh pr view/list, GitHub REST reads"
+  },
+  "neverBothMutate": {
+    "law": "never both mutate — release-please holds NO open release PR while release-craft's draft exists",
+    "preRun": { "openReleasePleasePRs": [], "at": "2026-09-12T17:43:47Z" },
+    "duringWindow": "no release-please release PR opened at any point of the run window",
+    "postRun": { "openReleasePleasePRs": [], "at": "2026-09-12T17:49:13Z" },
+    "coexistenceLedger": "not exercised — RP held no open release PR at any point, so the simultaneous-existence row of the ledger stays unexercised (disclosed, not claimed)"
+  },
+  "postRunPosture": {
+    "prState": "CLOSED",
+    "isDraft": true,
+    "mergedAt": null,
+    "closingComment": "Shadow producer act, not a release: this draft Release PR was created and judged by the **release-craft** shadow harness (ecoma-io/release-craft §12 Tier 3, issue ecoma-io/release-craft#317, decision D83) — release-please remains this repository's producer and nothing here is merged. Closed immediately after judging; the head branch is deleted. See release-please's own release PR #523 for the real 0.13.2 release.",
+    "headBranchDeleted": true,
+    "headsAfter": "no release-craft--branches-- ref remains in the consumer's branch heads",
+    "tagsByteIdentical": { "refs": 39, "diffBeforeAfter": "identical (exit 0)" },
+    "manifestUnchanged": "package.json at origin/main still 0.13.2",
+    "mainHeadUnchanged": "60c597090b68d0f0d4a90143d2857f41ccf37b44",
+    "openPRsAfter": []
+  },
+  "fieldComparison": {
+    "anchor": "release-please's own latest real decision, PR #523 (merged 0.13.2)",
+    "equalFields": [
+      { "field": "release-decision", "rp": "release", "rc": "release" },
+      { "field": "version", "rp": "0.13.2", "rc": "0.13.2" },
+      { "field": "bump", "rp": "patch", "rc": "patch" },
+      { "field": "tag", "rp": "v0.13.2", "rc": "v0.13.2" },
+      {
+        "field": "window",
+        "rp": "base release → head",
+        "rc": "base release → head (same decided window grain)"
+      },
+      {
+        "field": "selected-changes",
+        "rp": "single commit 950d29e4a1d871454267cb3cc7d2b48401a0c8ac (fix)",
+        "rc": "single commit 950d29e4a1d871454267cb3cc7d2b48401a0c8ac (fix, patch)"
+      },
+      {
+        "field": "component-scoping",
+        "rp": "single component action-agents",
+        "rc": "single component action-agents"
+      },
+      { "field": "ordering", "rp": "one entry", "rc": "one entry" }
+    ],
+    "notExercisedByThisRun": ["prerelease ladder (no prerelease commit in the window)"],
+    "divergences": [
+      {
+        "field": "title",
+        "rp": "chore(workspace): release 0.13.2",
+        "rc": "chore(release): main v0.13.2",
+        "class": "release-craft-stronger (line segment in the title)",
+        "citation": "compat matrix §F row F4; D82 divergence class"
+      },
+      {
+        "field": "labels",
+        "rp": "size/s + autorelease: tagged (applied across the lifecycle by RP's automation)",
+        "rc": "exactly [release-craft] at create",
+        "class": "release-please-quirk",
+        "citation": "compat matrix §F row F3; D82 divergence class"
+      },
+      {
+        "field": "head-branch",
+        "rp": "release-please--branches--main--components--action-agents",
+        "rc": "release-craft--branches--main--lines--main--components--action-agents",
+        "class": "injective grammar + line segment",
+        "citation": "compat matrix §F row F1; D82 divergence class"
+      },
+      {
+        "field": "body-structure",
+        "rp": "release-please prose body",
+        "rc": "claim marker + rendered plan",
+        "class": "release-craft claim marker",
+        "citation": "compat matrix §F row F2; D82 divergence class"
+      },
+      {
+        "field": "changelog-file",
+        "rp": "# Changelog (release-please headers)",
+        "rc": "# Changelog with release-craft headers (## v0.13.2 (main))",
+        "class": "third-format projection + header spelling",
+        "citation": "compat matrix §F row F7 + §E row E5; D82 divergence class"
+      }
+    ],
+    "unexplained": 0
+  },
+  "credentialScan": {
+    "tokenLaw": "the credential entered only as the environment expression RELEASE_CRAFT_GITHUB_TOKEN=\"$(gh auth token)\" inside the caller's runner script; never pasted, stored, or echoed; no set -x",
+    "scan": "the GitHub credential prefixes (classic PAT, fine-grained PAT, OAuth, server tokens) plus a generic token-shaped scan, over the committed evidence bytes — zero matches in all three files",
+    "clean": true,
+    "harnessRedaction": "the harness's own redaction pass over the evidence lines held (no credential material in any recorded line)"
+  },
+  "evidenceDigests": {
+    "legs": {
+      "path": "e2e/evidence/shadow-tier3-action-agents-2026-09-12.jsonl",
+      "bytes": 7462,
+      "sha256": "3612a9b67b89f6c222b3eb47c9e49d9c21a4cced438205369044d5f6b66ef40f"
+    },
+    "mutateGateProbe": {
+      "path": "e2e/evidence/shadow-tier3-mutate-gate-probe-2026-09-12.jsonl",
+      "bytes": 1650,
+      "sha256": "8660d25c6de20016036bc996a25c2f01d1b9a2868132a6a180d1c2fd166ad653"
+    }
+  }
+}
