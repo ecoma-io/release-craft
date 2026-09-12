@@ -229,6 +229,31 @@ describe("scheduleMutations", () => {
     const outcome = completedOutcome(result.outcomes);
     expect(outcome.record.contentFingerprint).toBe(contentFingerprint({ "pkg.json": "{}" }));
   });
+
+  it("names the target path on the completion record — the ledger answers which file moved (issue #287)", () => {
+    const attempt = executing([mutationDecl("mut-1", "commit", "after")]);
+    const ledger = new MemoryLedger();
+    const fs = trackingFs();
+    const intents = new Map([["mut-1", intentFor("mut-1", "CHANGELOG.md", "# v1.0.0\n")]]);
+
+    const result = scheduleMutations(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      intents,
+      fs,
+    );
+
+    // The completion record states the file coordinate it mutated — a
+    // ledger-only consumer answers "which file did `updater:mut-1` move"
+    // without re-deriving the updater's HOW (the issue's law: the planner
+    // decides WHAT, the updater decides HOW, execution decides WHEN, the
+    // ledger records WHETHER). The record states the path; it does not
+    // verify the write.
+    const outcome = completedOutcome(result.outcomes);
+    expect(outcome.record.targetPath).toBe("CHANGELOG.md");
+  });
 });
 
 describe("deterministic replay", () => {
@@ -449,6 +474,27 @@ describe("crash reconciliation", () => {
     const outcome = completedOutcome(result.outcomes);
     expect(outcome.record.contentFingerprint).toBe(contentFingerprint({ "pkg.json": "{}" }));
     expect(outcome.record.contentFingerprint).not.toBe("sha256:resumed");
+  });
+
+  it("names the resumed completion's target path too — the resumed proof carries the same coordinates (issue #287)", () => {
+    const attempt = executing([mutationDecl("mut-1", "commit", "after")]);
+    const ledger = new MemoryLedger();
+    const fs = trackingFs({ "pkg.json": "{}" });
+    recordStartOnly(ledger, attempt, "mut-1");
+
+    const intents = new Map([["mut-1", intentFor("mut-1", "pkg.json", "{}")]]);
+    const result = scheduleMutations(
+      attempt,
+      actor(attempt),
+      ledger,
+      heldClaim(attempt),
+      intents,
+      fs,
+    );
+
+    // A resumed completion is a completion: it names what it resumes over.
+    const outcome = completedOutcome(result.outcomes);
+    expect(outcome.record.targetPath).toBe("pkg.json");
   });
 
   it("fails a crash-reconciled completion whose declared postconditions are unmet (issue #203)", () => {
