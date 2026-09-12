@@ -295,6 +295,22 @@ describe("detectNodeWorkspace — root package name as dependency target", () =>
       ]);
     });
   });
+
+  it("refuses a root manifest that cannot be parsed even when the pnpm evidence alone would have sufficed at main", () => {
+    withTempWorkspace("root-manifest-unreadable", (ws) => {
+      ws.write("pnpm-workspace.yaml", "packages:\n  - templates/*\n");
+      // Valid evidence, truncated root manifest: reading the root's `name`
+      // widens detection's failure surface by exactly this case — pinned.
+      ws.write("package.json", '{"name":"@acme/root","version":');
+      addPackage(ws, "templates/analytics", "@acme/loom-analytics", "0.5.0");
+      const error = capture(() => detectNodeWorkspace(ws.root));
+      expect(error).toBeInstanceOf(WorkspaceDetectionError);
+      const refusal = error as WorkspaceDetectionError;
+      expect(refusal.file).toBe(`${ws.root}/package.json`);
+      expect(refusal.field).toBe("(file)");
+      expect(refusal.message).toContain("cannot read manifest");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
