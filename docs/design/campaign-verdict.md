@@ -3,9 +3,12 @@
 This report closes the stabilization campaign's verdict slice. It applies the
 readiness rule from [issue #321] and decides one of `READY` / `READY WITH
 EXPLICIT LIMITATIONS` / `NOT READY`. Every number below is measured from
-artifacts in this repository at the verdict head (`1c0455a` on
-`docs/campaign-verdict-321`, base `9fe0893`), not carried from earlier prose
-(the D81 lesson).
+artifacts in this repository at base `9fe0893` (the campaign's last product
+landing), not carried from earlier prose (the D81 lesson). The verdict commit
+`d06005e` on `docs/campaign-verdict-321` adds only this document and the D85
+decision-log row, a docs-only delta: every measured artifact (the evidence
+files, the compatibility matrix, the source slices cited) is byte-identical
+in its tree.
 
 ## 1. Verdict and rule application
 
