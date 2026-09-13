@@ -25,7 +25,7 @@ The readiness rule, verbatim from issue #321:
 > `NOT READY`.
 
 The decisive clause is the third sentence. Section 3 classifies the open list
-of 22 issues exhaustively. The result that forecloses the limitations tier:
+of 27 issues exhaustively. The result that forecloses the limitations tier:
 **sixteen open defects cannot be honestly bounded by (a)+(b)+(c).** Each is
 either a product-code defect with no contract text that bounds its reach and
 no negative test that pins its refusal, or a recorded divergence carried as
@@ -75,10 +75,10 @@ itself.
 
 ### (i) Bounded limitations — each with its three readiness citations
 
-| Issue                                                 | Contract (a)                                                                                   | Interface (b)                                                                                                                                                                          | Negative/refusal test (c)                                                                   |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **#237** claim-exclusion enforcement                  | ADR-0011 decision 2's two-clone shape, D69's surface split                                     | `TestDomain` live check, `test/adapters/git/claim-register.test.ts:952-1010` (two clones acquire the same line independently; each register lists only its own; verify returns `lost`) | The same live pin is a refusal test: a git refusal, no engine outcome kind.                 |
-| **#262** check-workflow-safety comment-text blindness | D69's evidence cell names the gate's inventory; the workflow's own header admits the blindness | `scripts/check-workflow-safety.mjs:87` (raw source match)                                                                                                                              | `scripts/dogfood/self-release-workflow.test.mjs` — 11 pins read the comment-stripped shape. |
+| Issue                                                 | Contract (a)                                                                                   | Interface (b)                                                                                                                                                                          | Negative/refusal test (c)                                                                              |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **#237** claim-exclusion enforcement                  | ADR-0011 decision 2's two-clone shape, D69's surface split                                     | `TestDomain` live check, `test/adapters/git/claim-register.test.ts:952-1010` (two clones acquire the same line independently; each register lists only its own; verify returns `lost`) | The same live pin is a refusal test: a git refusal, no engine outcome kind.                            |
+| **#262** check-workflow-safety comment-text blindness | D69's evidence cell names the gate's inventory; the workflow's own header admits the blindness | `scripts/check-workflow-safety.mjs:87` (raw source match)                                                                                                                              | `scripts/dogfood/self-release-workflow.test.mjs` — 14 pins read the comment-stripped executable shape. |
 
 ### (ii) Declared-out roadmap — named, never dropped
 
@@ -131,9 +131,10 @@ forbids the class; (b) the token list is the interface; (c) no negative test
 covers the two reads — fail-open.
 
 **#305** — the baseline §3.1 section-heading observation and the renderer's
-`###` sections disagree. Recorded `UNKNOWN` in the matrix (the commit-types
-row). The issue itself says "one of the two texts is wrong"; nothing settles
-it — the divergence is unexplained, and no test pins either authority.
+`###` sections disagree. Recorded `UNKNOWN` in the matrix (the version-heading
+row, `docs/compatibility/release-please.md:118`). The issue itself says "one
+of the two texts is wrong"; nothing settles it — the divergence is
+unexplained, and no test pins either authority.
 
 **#307** — the adopt door mints a completed updater-step record without
 `targetPath`. The only writers are `src/execution/updater.ts:240,:377`; the
@@ -183,8 +184,11 @@ the fixed shape is the minimal-allowlist `runBin` in `test/certification/
 drive.ts` (after #246). No negative test pins the hermetic default.
 
 **#253** — `scripts/test-stress.mjs` sits in node's default test glob. A bare
-`node --test` in `scripts/` executes the stress harness and fails it;
-`stress-results.json` is ungitignored. No test binds the filename/glob.
+`node --test` in `scripts/` executes the stress harness (which runs with
+`mode=suite` by default, spawning a full vitest from the wrong working
+directory) and fails it; the sanctioned gate task runs only
+`find . -name '*.test.mjs'` and never matches the harness, so the gate suite
+stays green while a bare run is red. No test binds the filename/glob.
 
 **Named as open defects that cannot be bounded:** #222, #223, #230, #233,
 #235, #248, #250, #253, #288, #289, #291, #294, #299, #305, #307, #311.
