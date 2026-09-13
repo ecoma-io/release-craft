@@ -6,8 +6,11 @@ name: Review
 # dogfood.md step 11) per maintainer order. Enrolled dry-run first, per the
 # documented ladder; the checklist passed twice and the flip is live.
 #
-# The ref is digest-pinned to the commit the released tag v0.12.1 names — the
-# same bytes triage runs on since #198. The rollout's policy is the released
+# The ref is digest-pinned to the commit the released tag v0.14.0 names — the
+# deliberate re-pin this pull request takes, because v0.14.0 is the first
+# release whose review action declares the `architecture-report` input the
+# evidence recipe below wires (verified against the tag's action.yaml); triage
+# stays on its own separately-pinned ref. The rollout's policy is the released
 # exact version, never `@main` and never a floating tag: the operator must
 # know which bytes run before any of them do, and adopting a later fix is a
 # deliberate re-pin, never an accident of a moving tag (action-agents
@@ -219,7 +222,7 @@ jobs:
               head: {commit: $headCommit}}' > .archkeep/run.json
 
       - id: review
-        uses: ecoma-io/action-agents/review@2f0e18a8e1ea5bdfa8fc690057ca1bbdfaa4f3a4 # v0.12.1
+        uses: ecoma-io/action-agents/review@ae384f9f4808cd9ca871f642178b5c939a958f6e # v0.14.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           api-url: ${{ secrets.ECOMA_LLM_BASE_URL }}
