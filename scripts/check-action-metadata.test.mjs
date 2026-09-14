@@ -40,6 +40,9 @@ inputs:
   max-retries:
     default: "0"
     description: Claim sequence retry bound
+  changelog:
+    default: "false"
+    description: Declare the CHANGELOG.md artifact the run mints
   working-directory:
     default: "\${{ github.workspace }}"
     description: Where the run stands
@@ -82,6 +85,7 @@ runs:
         RC_INTENTS: \${{ inputs.intents }}
         RC_REPO: \${{ inputs.repo }}
         RC_MAX_RETRIES: \${{ inputs.max-retries }}
+        RC_CHANGELOG: \${{ inputs.changelog }}
       run: |
         node "\${{ github.action_path }}/action/invoke.mjs" \\
           --bin "\${{ github.action_path }}/dist/src/cli/index.js" \\
@@ -92,7 +96,8 @@ runs:
           --tag-namespaces "$RC_TAG_NAMESPACES" \\
           --intents "$RC_INTENTS" \\
           --repo "$RC_REPO" \\
-          --max-retries "$RC_MAX_RETRIES"
+          --max-retries "$RC_MAX_RETRIES" \\
+          --changelog "$RC_CHANGELOG"
 `;
 
 test("the clean fixture passes with zero findings", () => {

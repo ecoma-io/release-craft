@@ -117,6 +117,7 @@ const DEMANDED = new Set([
   "tag-namespaces",
   "repo",
   "max-retries",
+  "changelog",
 ]);
 
 /**
@@ -185,6 +186,7 @@ const DECLARED_INPUTS = new Set([
   "intents",
   "repo",
   "max-retries",
+  "changelog",
   "working-directory",
 ]);
 
@@ -329,8 +331,23 @@ function invoke(values) {
     values.get("actor") ?? "",
     "--line",
     values.get("line") ?? "",
-    "--json",
   ];
+  // The changelog opt-in is the grammar's boolean row — it takes no value —
+  // so the metadata's string transports to a bare flag. "true" declares,
+  // "false"/empty omits (the declared default's own spelling), and any
+  // other spelling is forwarded WITH the value: the grammar's refusal
+  // surfaces the author's typo loudly (exit 64, annotated) instead of
+  // absorbing it into a silent default — the closed grammar stays the
+  // values' only validation (§2.3's #191 posture, applied to a value).
+  const changelog = values.get("changelog") ?? "";
+  argv.push(
+    ...(changelog === "true"
+      ? ["--changelog"]
+      : changelog === "false" || changelog === ""
+        ? []
+        : ["--changelog", changelog]),
+    "--json",
+  );
 
   // The outer line (§4): `env -i` semantics through the two-name allowlist.
   // The child stands in this program's own working directory — the step's

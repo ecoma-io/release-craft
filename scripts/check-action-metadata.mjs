@@ -56,9 +56,9 @@ import { resolve } from "node:path";
 const ACTION_FILE = "action.yml";
 
 /** §2.3's input inventory, row by row: the demanded four carry no default
- * (their omission must stop the step), the optional four each declare one. */
+ * (their omission must stop the step), the optional five each declare one. */
 const DEMANDED_INPUTS = ["world", "line", "actor", "tag-namespaces"];
-const OPTIONAL_INPUTS = ["intents", "repo", "max-retries", "working-directory"];
+const OPTIONAL_INPUTS = ["intents", "repo", "max-retries", "changelog", "working-directory"];
 
 /** The invocation step's id — the one the `outputs:` declaration reads. */
 const INVOKE_STEP_ID = "invoke";
@@ -197,7 +197,7 @@ export function analyzeActionMetadata(source) {
     }
   }
 
-  // — the input inventory, exactly §2.3's eight rows —
+  // — the input inventory, exactly §2.3's nine rows —
   const inputsStart = lines.findIndex((line) => /^inputs:\s*$/.test(line));
   const runsStart = lines.findIndex((line) => /^runs:\s*$/.test(line));
   // The block ends at the NEXT top-level key (outputs: sits between inputs:
