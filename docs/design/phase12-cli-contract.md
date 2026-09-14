@@ -387,30 +387,44 @@ an engine capability that never had the problem the refusal fears.
 
 **Option 3 — a fixed, declared-in-repo declaration set that exercises the
 binding's own effects** (e.g. declare an artifact step so the walk reaches
-the wired producer). **Refused for v1.** A declaration the operator never
-made is the CLI inventing release semantics — the same law as inventing
-user code, one step removed. The binding's producer stays wired for hosts
-that declare artifacts (the boundary's per-id fallback, verified:
-`assembleGitBinding` wires it and the walk falls back to it only under the
-run declarations' map); it is not a reason for the CLI to fabricate steps
-that would reach it.
+the wired producer). **Refused for v1 as an open surface** — a declaration
+the operator never made is the CLI inventing release semantics, the same
+law as inventing user code, one step removed. The binding's producer stays
+wired for hosts that declare artifacts (the boundary's per-id fallback,
+verified: `assembleGitBinding` wires it and the walk falls back to it only
+under the run declarations' map); it is not a reason for the CLI to
+fabricate steps that would reach it. **Landed in the one closed shape
+(#327):** the operator's own opt-in `--changelog` flag declares exactly the
+single changelog artifact step — `artifact:changelog`, anchor `tag`/`after`,
+`kind: changelog`, coordinates `CHANGELOG.md`, postcondition
+`content-fingerprint-present` — answered by the binding's fallback
+producer, code reviewed in this repository. The surface stays closed: no
+`--declarations`, no module paths, no hooks, no `hookEffects`, no
+`producers` map.
 
-**Decided: the CLI v1 executes runs with the empty declaration.**
-`declarations` is structurally absent — no `hooks`, no `artifacts`, no
-`hookEffects`, no `producers`. The effects a run then performs are exactly
-the operations whose effects are the binding's own: the ledger's records,
-the claim store's CAS, the channel store's moves under the
-`channel-transition` stage (ADR-0012 decision 6's wiring), the tag door's
-mint. Nothing code-shaped ever enters the process, and ADR-0007 decision
-2's law holds at the surface by construction rather than by review.
+**Decided: the CLI v1 executes runs with the empty declaration** —
+`declarations` is structurally absent — no `hooks`, no `hookEffects`, no
+`producers` — apart from the single closed opt-in `--changelog` artifact
+declaration (#327, Option 3 above): the operator's own flag, the changelog
+step it declares, and that step's binding fallback producer. The effects a
+run then performs are exactly the operations whose effects are the
+binding's own: the ledger's records, the claim store's CAS, the channel
+store's moves under the `channel-transition` stage (ADR-0012 decision 6's
+wiring), the tag door's mint. Nothing code-shaped ever enters the process
+except the reviewed-in-repo changelog producer the operator opted into, and
+ADR-0007 decision 2's law holds at the surface by construction rather than
+by review.
 
 - **This is not a reduced mode.** The walk with no declared extension steps
   is the engine's own canonical walk (phase 11 §2.5's order with no-op
   anchors): claims still arbitrate, records still land, the tag still
   mints, and `published` still means what phase 11 §2.8 says it means.
 - **The cost, stated honestly:** a CLI release today records and mints but
-  performs no caller operation — no notify hook, no publish-shaped step, no
-  artifact step. Nothing the v1 CLI withholds has a landed owner: remote
+  performs no caller operation — no notify hook, no publish-shaped step.
+  The one declared step is the changelog artifact's generation record (its
+  content fingerprint) behind the opt-in `--changelog`; byte-minting
+  `CHANGELOG.md` is the later publish slice's business, deferred with
+  #327's choices. Nothing the v1 CLI withholds has a landed owner: remote
   publication is the adapter's and publishing slice's territory regardless
   ([ADR-0010](../adr/0010-github-adapter.md); ADR-0007 decision 12;
   ADR-0008 decision 12; phase 11 §6). When a slice lands that owns a

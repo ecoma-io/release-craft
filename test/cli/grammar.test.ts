@@ -57,6 +57,7 @@ describe("§2.2 — the grammar as executable data", () => {
       "intent",
       "actor",
       "line",
+      "changelog",
     ]);
     expect(GRAMMAR.resume.flags).toStrictEqual([
       "assembly",
@@ -110,6 +111,10 @@ describe("§2.2 — the grammar as executable data", () => {
   it("the §2.2 demands: mutating doors demand --actor, run demands --line, plan does not", () => {
     expect(GRAMMAR.plan.demanded).toStrictEqual(["assembly", "world"]);
     expect(GRAMMAR.run.demanded).toStrictEqual(["assembly", "world", "actor", "line"]);
+    // `changelog` is bare — not demanded, not repeatable — and its value
+    // shape is a boolean, so the §2.2 run row's own entry keeps it there.
+    expect(GRAMMAR.run.repeatable).toStrictEqual(["intent", "tag-namespace"]);
+    expect(GRAMMAR.run.boolean).toStrictEqual(["json", "changelog"]);
     expect(GRAMMAR.resume.demanded).toStrictEqual([
       "assembly",
       "world",
@@ -208,6 +213,22 @@ describe("§2.2 — the negative inventory, through the built bin (exit 64)", ()
       "hooks.json",
     ]);
     expect(result.stderr).toContain("unknown flag --declarations");
+  });
+
+  it("--changelog is refused with the memory assembly — the flag feeds the git assembly's artifact scheduler only", () => {
+    const result = expectUsageFault([
+      "run",
+      "--assembly",
+      "memory",
+      "--world",
+      "-",
+      "--actor",
+      "automation",
+      "--line",
+      "main",
+      "--changelog",
+    ]);
+    expect(result.stderr).toContain("--changelog feeds the git assembly only");
   });
 
   it("a demanded flag missing is a usage fault naming the flag", () => {

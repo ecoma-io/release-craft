@@ -37,7 +37,7 @@ release-craft <command> [flags]
 
   plan    --assembly memory|git [assembly flags] --world <path|-> [--intent <i>]...
   run     --assembly ... --world ... --actor <string> --line <lineId>
-          [--intent <i>]... [--max-retries <n>]
+          [--intent <i>]... [--max-retries <n>] [--changelog]
   resume  --assembly ... --world ... --actor <string>
           --plan <planId> --attempt <attemptId> [--line <lineId>]
   resolve --assembly ... --actor <string>

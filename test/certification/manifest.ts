@@ -746,7 +746,7 @@ export const MANIFEST: readonly ManifestRow[] = [
     refusal: {
       rule: "R1",
       scopes: ["CLI", "Action"],
-      note: "Any hook or artifact window (I3ext) on a process transport: the CLI v1 executes the empty declaration (phase 12 §2.6); the Action inherits it (phase 13 §2.3's refused `declarations`). The window is the boundary transport's, with declared injection.",
+      note: "Any hook or artifact window (I3ext) on a process transport: unproven there — the CLI's only declared step is the closed opt-in `--changelog` artifact (#327) and no built-bin test drives an extension-step crash through it, so the resume-once-more proof stays the boundary transport's (phase 10 §3.5); arbitrary declared injection stays refused (the CLI has no `--declarations` surface); the Action inherits the empty declaration (phase 13 §2.3's refused `declarations`).",
     },
   },
   {

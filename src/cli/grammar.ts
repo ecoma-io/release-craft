@@ -60,10 +60,10 @@ export const GRAMMAR: Readonly<Record<CommandName, CommandGrammar>> = {
     positionals: [],
   },
   run: {
-    flags: [...COMMON_FLAGS, "world", "intent", "actor", "line"],
+    flags: [...COMMON_FLAGS, "world", "intent", "actor", "line", "changelog"],
     demanded: ["assembly", "world", "actor", "line"],
     repeatable: ["intent", "tag-namespace"],
-    boolean: ["json"],
+    boolean: ["json", "changelog"],
     positionals: [],
   },
   resume: {
@@ -116,7 +116,7 @@ export const usageText = (): string =>
     "",
     "  plan    --assembly memory|git [assembly flags] --world <path|-> [--intent <i>]...",
     "  run     --assembly ... --world ... --actor <string> --line <lineId>",
-    "          [--intent <i>]... [--max-retries <n>]",
+    "          [--intent <i>]... [--max-retries <n>] [--changelog]",
     "  resume  --assembly ... --world ... --actor <string>",
     "          --plan <planId> --attempt <attemptId> [--line <lineId>]",
     "  resolve --assembly ... --actor <string>",

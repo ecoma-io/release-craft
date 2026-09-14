@@ -16,7 +16,7 @@
  * position prints the closed grammar (§2.2) on stdout and exits 0.
  */
 
-import type { StepKey } from "@ecoma-io/release-craft/execution";
+import type { ArtifactStep, StepKey } from "@ecoma-io/release-craft/execution";
 import { EXIT_FAULT, EXIT_USAGE, exitCodeFor, type DoorOutcome } from "./exit-codes.js";
 import { HELP_FLAGS, helpText, usageText } from "./grammar.js";
 import { overlayIntents } from "./intents.js";
@@ -25,6 +25,26 @@ import { renderHuman, renderJson } from "./render.js";
 import { selectEngine } from "./selection.js";
 import { deriveTargets } from "./targets.js";
 import { readWorldDocument } from "./world.js";
+
+/** The single changelog declaration behind `--changelog` (#327): exactly one
+ * `artifact:changelog` step, anchored after the claim is held and before the
+ * mint, answered by the binding's fallback `GitArtifactProducer` (no
+ * producers map — the engine wires `declared?.get(step.id) ?? wired`). The
+ * `id` is the one field `GitReleasePublication` matches (`publication.ts:65`),
+ * so it must stay `changelog`. `dependsOn` is empty — the self-release runs
+ * the empty declaration; the matrix's `package`/`binary` siblings do not
+ * exist here. `content-fingerprint-present` only, never `evidence-present`:
+ * the fallback producer returns no `evidence`, so `evidence-present` would
+ * fail-closed block every leg. */
+const CHANGELOG_DECLARATION: ArtifactStep = {
+  id: "changelog",
+  anchor: { stage: "tag", position: "after" },
+  guard: "release-line",
+  kind: "changelog",
+  coordinates: "CHANGELOG.md",
+  dependsOn: [],
+  postconditions: ["content-fingerprint-present"],
+};
 
 /** The doors, one command per door (§2.2). Cross-process doors
  * (`resume`/`resolve`/`abort`/`show`) render whatever the engine returns —
@@ -80,6 +100,11 @@ const execute = (invocation: Invocation): DoorOutcome => {
       ...(intents === undefined ? {} : { intents }),
     });
   }
+  // The opt-in changelog declaration: `--changelog` declares exactly the one
+  // artifact step; otherwise the empty declaration (the v1 posture, #327).
+  // The declaration rides `RunRequest.declarations` — frozen onto the attempt
+  // at open (`engine.ts:879`), walked by the artifact scheduler inside the run.
+  const declarations = invocation.changelog ? { artifacts: [CHANGELOG_DECLARATION] } : undefined;
   return engine.run({
     input: document,
     lineIds: [invocation.line],
@@ -90,6 +115,7 @@ const execute = (invocation: Invocation): DoorOutcome => {
     intents: overlayIntents(document.intents, invocation.intents) ?? [],
     actor: invocation.actor,
     targets: deriveTargets(document),
+    ...(declarations === undefined ? {} : { declarations }),
   });
 };
 
