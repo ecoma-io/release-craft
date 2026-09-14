@@ -312,16 +312,17 @@ The Action's inventory is a projection of the `run` command's grammar rows
 exact decided flags; nothing else exists. The Action drives **one door**:
 `run`.
 
-| Input               | Required | Default                   | Feeds (grammar row)                                                                           |
-| ------------------- | -------- | ------------------------- | --------------------------------------------------------------------------------------------- |
-| `world`             | yes      | —                         | `--world <inputs.world>` (a path; [§2.5](#25-the-world-document-in-ci-a-path-never-a-stream)) |
-| `line`              | yes      | —                         | `--line <inputs.line>` — `RunRequest.lineIds`, exactly one (M-02)                             |
-| `actor`             | yes      | —                         | `--actor <inputs.actor>` — `RunRequest.actor` ([§2.4](#24-the-actor-declared-one-layer-up))   |
-| `intents`           | no       | empty                     | one `--intent` per non-empty-spelling line (the repeatable row)                               |
-| `tag-namespaces`    | yes      | —                         | one `--tag-namespace` per line (the repeatable row; the git assembly demands at least one)    |
-| `repo`              | no       | `.`                       | `--repo <inputs.repo>` — `BindingConfig.repo`                                                 |
-| `max-retries`       | no       | `0`                       | `--max-retries <inputs.max-retries>` — `AssemblyConfig.maxRetries`                            |
-| `working-directory` | no       | `${{ github.workspace }}` | no flag — the invocation step's own cwd ([§4](#4-hermeticity-in-ci-the-two-lines))            |
+| Input               | Required | Default                   | Feeds (grammar row)                                                                                                                                                         |
+| ------------------- | -------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `world`             | yes      | —                         | `--world <inputs.world>` (a path; [§2.5](#25-the-world-document-in-ci-a-path-never-a-stream))                                                                               |
+| `line`              | yes      | —                         | `--line <inputs.line>` — `RunRequest.lineIds`, exactly one (M-02)                                                                                                           |
+| `actor`             | yes      | —                         | `--actor <inputs.actor>` — `RunRequest.actor` ([§2.4](#24-the-actor-declared-one-layer-up))                                                                                 |
+| `intents`           | no       | empty                     | one `--intent` per non-empty-spelling line (the repeatable row)                                                                                                             |
+| `tag-namespaces`    | yes      | —                         | one `--tag-namespace` per line (the repeatable row; the git assembly demands at least one)                                                                                  |
+| `repo`              | no       | `.`                       | `--repo <inputs.repo>` — `BindingConfig.repo`                                                                                                                               |
+| `max-retries`       | no       | `0`                       | `--max-retries <inputs.max-retries>` — `AssemblyConfig.maxRetries`                                                                                                          |
+| `changelog`         | no       | `false`                   | bare `--changelog` when `true`, omitted when `false`/empty, the value forwarded otherwise (the boolean row — a foreign spelling reaches the grammar and usage-faults aloud) |
+| `working-directory` | no       | `${{ github.workspace }}` | no flag — the invocation step's own cwd ([§4](#4-hermeticity-in-ci-the-two-lines))                                                                                          |
 
 The multiline rule: `intents` and `tag-namespaces` are newline-separated,
 one value per line, lines forwarded verbatim as one flag occurrence each —
@@ -344,6 +345,17 @@ question 4 — fail closed; a bound exhausted renders the explicit `conflict`,
 never a silent retry) made explicit in argv rather than implied by omission.
 A consumer who wants the kernel's bounded re-acquisition raises the number in
 their `with:` block, visibly in their own workflow file.
+
+The `changelog` row is the inventory's one boolean: the grammar's flag takes
+no value, so the metadata's string transports to a bare flag — `"true"`
+declares the artifact, `"false"` and the empty string omit the row, and any
+other spelling forwards the value with the flag so the grammar's refusal
+(exit 64, annotated) surfaces the author's typo. A silent absorption into
+the default — `changelog: "1"` running as `false` — would be the misspelled
+key's fate the #191 amendment refuses, reapplied to a value; the projection
+stays value-blind in the same spirit the inventory is (the closed grammar is
+the values' only validation), so the refusal is the grammar's, not the
+program's.
 
 The demanded rows (`world`, `line`, `actor`, `tag-namespaces`) are declared
 `required` in the metadata — and the metadata is _not_ the enforcement
@@ -383,6 +395,7 @@ inputs:
   intents:          { default: "", description: "Operator intents, one per line" }
   repo:             { default: ".", description: "Repository path the binding walks" }
   max-retries:      { default: "0", description: "Claim sequence retry bound" }
+  changelog:        { default: "false", description: "Declare the CHANGELOG.md artifact in the run" }
   working-directory:{ default: "${{ github.workspace }}", description: "Where the run stands" }
 runs:
   using: composite
@@ -504,6 +517,7 @@ node <action>/dist/src/cli/index.js run \
   --intent <i₁> [--intent <i₂>…] \
   --actor <inputs.actor> \
   --line <inputs.line> \
+  [--changelog] \
   --json
 ```
 

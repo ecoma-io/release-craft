@@ -93,13 +93,14 @@ const projectedArgv = (
 };
 
 describe("fixture: the argv projection is §2.7's command, exactly", () => {
-  it("every input lands in order — assembly pinned, retries forwarded, --json pinned", () => {
+  it("every input lands in order — assembly pinned, retries forwarded, the changelog declaration bare, --json pinned", () => {
     expect(
       projectedArgv({
         repo: "client/checkout",
         tagNamespaces: "5.0.0\n",
         intents: "release\nprerelease:beta:main\n",
         maxRetries: "2",
+        changelog: "true",
       }),
     ).toStrictEqual([
       "run",
@@ -121,11 +122,12 @@ describe("fixture: the argv projection is §2.7's command, exactly", () => {
       "the-release-author",
       "--line",
       "main",
+      "--changelog",
       "--json",
     ]);
   });
 
-  it("the declared defaults hold: max-retries 0 always forwarded, repo ., no intents channel", () => {
+  it("the declared defaults hold: max-retries 0 always forwarded, repo ., no intents channel, no changelog declaration", () => {
     const argv = projectedArgv();
     expect(argv).toStrictEqual([
       "run",
@@ -145,6 +147,20 @@ describe("fixture: the argv projection is §2.7's command, exactly", () => {
       "main",
       "--json",
     ]);
+  });
+
+  it("an undecodable changelog spelling is forwarded with its value — the grammar refuses it aloud", () => {
+    // The boolean row takes no value, so a foreign spelling cannot be
+    // absorbed into a silent `false` (the #191 posture, applied to a
+    // value): the projection forwards the tag + value, and the closed
+    // grammar's usage fault (exit 64, annotated) is the author's typo
+    // surfaced — never a defaulted run differing from the intent.
+    expect(projectedArgv({ changelog: "1" })).toContain("--changelog");
+    expect(projectedArgv({ changelog: "1" })).toContain("1");
+    // The transport's own spellings: "false" and the empty string omit
+    // the row entirely, exactly the declared default's two faces.
+    expect(projectedArgv({ changelog: "false" })).not.toContain("--changelog");
+    expect(projectedArgv({ changelog: "" })).not.toContain("--changelog");
   });
 });
 
@@ -568,7 +584,7 @@ describe("fixture: an undeclared input key is refused, a declared name changes n
       expect(drive.stdout.toString("utf8")).toBe("");
       expect(drive.stderr.toString("utf8")).toContain('undeclared action input "intent"');
       expect(drive.stderr.toString("utf8")).toContain(
-        "world, line, actor, tag-namespaces, intents, repo, max-retries, working-directory",
+        "world, line, actor, tag-namespaces, intents, repo, max-retries, changelog, working-directory",
       );
       expect(drive.outputs).toHaveLength(0);
     });
@@ -584,6 +600,7 @@ describe("fixture: an undeclared input key is refused, a declared name changes n
           INPUT_INTENTS: "release-anyway",
           "INPUT_WORKING-DIRECTORY": "/somewhere",
           "INPUT_TAG-NAMESPACES": "v",
+          INPUT_CHANGELOG: "true",
         },
       });
       // The echo bin's stdout is no envelope, so the script still concludes

@@ -285,7 +285,7 @@ and its
 [`dogfood.yml`](../.github/workflows/dogfood.yml) is the living example of
 every spelling on this page.
 
-The eight inputs
+The nine inputs
 ([phase 13 §2.3](design/phase13-github-action-contract.md#23-the-inputs-action-metadata-onto-the-closed-grammar)),
 each mapping onto exactly one `run`-command flag:
 
@@ -298,6 +298,7 @@ each mapping onto exactly one `run`-command flag:
 | `intents`           | no       | empty                     | one `--intent` per non-empty line                                                                  |
 | `repo`              | no       | `.`                       | `--repo` — the repository the binding walks                                                        |
 | `max-retries`       | no       | `0`                       | `--max-retries` — the claim retry bound                                                            |
+| `changelog`         | no       | `false`                   | bare `--changelog` — declares the CHANGELOG.md artifact the run mints                              |
 | `working-directory` | no       | `${{ github.workspace }}` | the invocation step's own cwd                                                                      |
 
 `intents` and `tag-namespaces` are newline-separated, one value per line. The
@@ -338,7 +339,7 @@ names and refuses an unknown one before any engine runs. Executed on this
 head with `INPUT_INTENT` planted:
 
 ```text
-action-invoke: undeclared action input "intent" — the declared inputs are world, line, actor, tag-namespaces, intents, repo, max-retries, working-directory; the runner passes undeclared `with:` keys through, so a misspelled key would silently run on the default
+action-invoke: undeclared action input "intent" — the declared inputs are world, line, actor, tag-namespaces, intents, repo, max-retries, changelog, working-directory; the runner passes undeclared `with:` keys through, so a misspelled key would silently run on the default
 ```
 
 Exit 1, empty stdout, the `outcome` output never written. A workflow-level
