@@ -95,7 +95,31 @@ describe("parse — the accepted spellings, as typed invocations", () => {
         maxRetries: 0,
       },
       json: false,
+      changelog: false,
     });
+  });
+
+  it("run over git with --changelog carries the opt-in declaration; without it the flag is false", () => {
+    const base = [
+      "run",
+      "--assembly",
+      "git",
+      "--repo",
+      "/tmp/somewhere",
+      "--tag-namespace",
+      "",
+      "--world",
+      "world.json",
+      "--actor",
+      "automation",
+      "--line",
+      "main",
+    ];
+    expect(parseArgv([...base, "--changelog"])).toMatchObject({
+      command: "run",
+      changelog: true,
+    });
+    expect(parseArgv(base)).toMatchObject({ command: "run", changelog: false });
   });
 
   it("an inline `=` value is one spelling of the same flag", () => {
@@ -260,6 +284,51 @@ describe("parse — every refusal is a UsageFault naming its cause", () => {
       negative(
         ["plan", "--assembly", "memory", "--world", ""],
         "flag --world refuses the empty string as a value",
+      ),
+    ];
+    const verdicts = refusalsOf(cases);
+    const messages = verdicts.map(faultMessage);
+    expect(verdicts.every((thrown) => thrown instanceof UsageFault)).toBe(true);
+    cases.forEach(({ fragment }, index) => {
+      expect(messages[index]).toContain(fragment);
+    });
+  });
+
+  it("--changelog refuses the memory assembly and refuses a value — the git-only boolean (the memory refusal lands BEFORE the change is exported, so the flag + @assembly memory is the named UsageFault, never the engine's exit-70)", () => {
+    const cases = [
+      negative(
+        [
+          "run",
+          "--assembly",
+          "memory",
+          "--world",
+          "-",
+          "--actor",
+          "a",
+          "--line",
+          "main",
+          "--changelog",
+        ],
+        "--changelog feeds the git assembly only",
+      ),
+      negative(
+        [
+          "run",
+          "--assembly",
+          "git",
+          "--repo",
+          "/r",
+          "--tag-namespace",
+          "",
+          "--world",
+          "-",
+          "--actor",
+          "a",
+          "--line",
+          "main",
+          "--changelog=true",
+        ],
+        "flag --changelog takes no value",
       ),
     ];
     const verdicts = refusalsOf(cases);

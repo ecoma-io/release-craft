@@ -60,6 +60,11 @@ export type Invocation =
       readonly line: string;
       readonly intents: readonly OperatorIntent[];
       readonly selection: AssemblySelection;
+      /** The opt-in changelog declaration: `--changelog` declares exactly one
+       * `artifact:changelog` step (git assembly only) so the run mints the
+       * generation record `GitReleasePublication` reads. False by default —
+       * the empty declaration stays the v1 posture. */
+      readonly changelog: boolean;
       readonly json: boolean;
     }
   | {
@@ -291,7 +296,18 @@ export const parseArgv = (argv: readonly string[]): Invocation => {
         selection,
         json,
       };
-    case "run":
+    case "run": {
+      // The opt-in changelog declaration feeds the git assembly's artifact
+      // scheduler. The memory assembly wires no producer — `producer: null` —
+      // so a declared artifact there would be the kernel's exit-70 fault
+      // ("the engine never invents user code") instead of a clean refusal.
+      // Fail at the surface: the flag is refused alongside --repo and
+      // --tag-namespace (the memory half's existing refusals, §2.2).
+      if (tokens.booleans.has("changelog") && selection.assembly === "memory") {
+        throw new UsageFault(
+          "--changelog feeds the git assembly only — the memory assembly declares no changelog artifact",
+        );
+      }
       return {
         command,
         world: string("world"),
@@ -299,8 +315,10 @@ export const parseArgv = (argv: readonly string[]): Invocation => {
         line: string("line"),
         intents: parseIntents(tokens.repeats.get("intent") ?? []),
         selection,
+        changelog: tokens.booleans.has("changelog"),
         json,
       };
+    }
     case "resume":
       return {
         command,
