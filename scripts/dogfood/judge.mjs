@@ -110,6 +110,35 @@ export const PROMOTE_CELLS = [
 ];
 
 /**
+ * The changelog declaration the self-release's invoke step declares
+ * (`changelog: "true"` — the run's `artifact:changelog` step, class 3's
+ * declared posture): the one extension the certified walk carries. The
+ * completed record rides the git binding's producer attribution verbatim
+ * (ADR-0008 decision 2 — `GitArtifactProducer`,
+ * `src/adapters/git/producer-git.ts`, answers `{attemptId, actor:
+ * "automation"}`), and the recorded guard is the declaration's
+ * `release-line`, never a postcondition name. `judge.test.mjs` cross-pins
+ * these copies against the CLI's declaration and the producer's source so
+ * neither can drift.
+ *
+ * @type {Readonly<{stepKey: string, guard: string, coordinates: string, producerActor: string}>}
+ */
+export const CHANGELOG_ARTIFACT = {
+  stepKey: "artifact:changelog",
+  guard: "release-line",
+  coordinates: "CHANGELOG.md",
+  producerActor: "automation",
+};
+
+/**
+ * The recorded position of the changelog pair: immediately after the tag
+ * cell's completion (the declaration's anchor, stage `tag` position
+ * `after`), so the pair sits between `tag` and `channel-transition` and the
+ * cells past the anchor shift by two records.
+ */
+const CHANGELOG_ANCHOR_AFTER = PROMOTE_CELLS.indexOf("tag") + 1;
+
+/**
  * The cells whose completed records carry the claim token — every
  * claim-guarded cell of the walk. The `claim` cell itself mints the token and
  * carries only `claim-held`; the cells after it re-verify before recording
@@ -633,7 +662,7 @@ export function judge(options) {
       if (!tail.ok) {
         fail(rows, 3, "tail readable", tail.stderr);
       } else {
-        judgeProjection(rows, tail.records, /** @type {any} */ (envelope), actor, attemptId);
+        judgeProjection(rows, tail.records, /** @type {any} */ (envelope), actor, attemptId, repo);
 
         // The walk's product, at the tag boundary: the minted tag the
         // published kind names must exist in the judged repository. (That it
@@ -673,25 +702,47 @@ export function judge(options) {
 }
 
 /**
- * Class 3's projection: the promote walk's recorded shape, oldest first —
- * the plan record, then started→completed pairs for the nine cells in walk
- * order — cross-checked against the envelope's drives.
+ * Class 3's projection: the walk's recorded shape, oldest first — the plan
+ * record, then started→completed pairs for the nine cells in walk order,
+ * cross-checked against the envelope's drives. When the run declared the
+ * changelog artifact (the self-release's `changelog: "true"`), the
+ * `artifact:changelog` pair anchors between `tag` and `channel-transition`
+ * — the closed 21-record shape, the pair asserted in full, and the recorded
+ * tree the digest names resolved — and the cells past the anchor shift by
+ * two records.
  *
  * @param {Row[]} rows
  * @param {object[]} records chronological tail
  * @param {any} envelope the parsed envelope
  * @param {string} actor the declared actor
  * @param {string} attemptId the envelope's attempt id
+ * @param {string} repo the repository whose recorded substrate is judged
  * @returns {void}
  */
-function judgeProjection(rows, records, envelope, actor, attemptId) {
+function judgeProjection(rows, records, envelope, actor, attemptId, repo) {
+  // The declared posture, detected from the recorded evidence itself: the
+  // changelog declaration records its `artifact:changelog` pair anchored
+  // after `tag`. Undecorated runs project byte-identically to the
+  // pre-declaration judge; declared runs project the closed 21-record shape.
+  const declared = records.some((entry) => {
+    const candidate =
+      /** @type {any} */ (entry)?.kind === "step" ? /** @type {any} */ (entry)?.record : null;
+    return candidate?.stepKey === CHANGELOG_ARTIFACT.stepKey;
+  });
   const identityOk = records.every((entry) => {
     const record =
       /** @type {any} */ (entry).kind === "step" ? /** @type {any} */ (entry).record : entry;
+    const artifactStep = record?.stepKey === CHANGELOG_ARTIFACT.stepKey;
     return (
       record?.attemptId === attemptId &&
-      record?.attribution?.actor === actor &&
-      record?.attribution?.attemptId === attemptId
+      record?.attribution?.attemptId === attemptId &&
+      // Artifact completions carry the producer's own attribution (ADR-0008
+      // decision 2: the seam records the observation verbatim), so the
+      // actor equality binds the walk's cells only; the artifact pair's
+      // attribution is asserted in full below.
+      (artifactStep
+        ? typeof record?.attribution?.actor === "string" && record.attribution.actor !== ""
+        : record?.attribution?.actor === actor)
     );
   });
   if (identityOk) {
@@ -699,7 +750,10 @@ function judgeProjection(rows, records, envelope, actor, attemptId) {
       rows,
       3,
       "every record carries the declared identity",
-      `attempt ${attemptId}, actor "${actor}"`,
+      `attempt ${attemptId}, actor "${actor}"` +
+        (declared
+          ? " (artifact records ride the producer's attribution, asserted in the changelog pair row)"
+          : ""),
     );
   } else {
     fail(
@@ -710,13 +764,15 @@ function judgeProjection(rows, records, envelope, actor, attemptId) {
     );
   }
 
-  const expected = 1 + PROMOTE_CELLS.length * 2;
+  const expected = 1 + PROMOTE_CELLS.length * 2 + (declared ? 2 : 0);
   if (records.length !== expected) {
     fail(
       rows,
       3,
       "tail length is the walk's",
-      `${records.length} records; the promote walk projects ${expected} (the plan record + started/completed for ${PROMOTE_CELLS.length} cells)`,
+      `${records.length} records; the promote walk projects ${expected} (the plan record + started/completed for ${PROMOTE_CELLS.length} cells${
+        declared ? " + the declared changelog pair" : ""
+      })`,
     );
     return;
   }
@@ -748,8 +804,9 @@ function judgeProjection(rows, records, envelope, actor, attemptId) {
   let shapeHeld = true;
   for (let index = 0; index < PROMOTE_CELLS.length; index += 1) {
     const cell = /** @type {string} */ (PROMOTE_CELLS[index]);
-    const started = /** @type {any} */ (records[1 + index * 2]);
-    const done = /** @type {any} */ (records[2 + index * 2]);
+    const offset = declared && index >= CHANGELOG_ANCHOR_AFTER ? 2 : 0;
+    const started = /** @type {any} */ (records[1 + index * 2 + offset]);
+    const done = /** @type {any} */ (records[2 + index * 2 + offset]);
     if (
       started?.kind !== "step" ||
       started.record?.stepKey !== cell ||
@@ -811,6 +868,94 @@ function judgeProjection(rows, records, envelope, actor, attemptId) {
       "the nine cells project started→completed in walk order",
       "every guard passed; the claim chain rides the claimed cells; validate under the tag-absent precondition; verify under the tag boundary",
     );
+  }
+
+  if (declared) {
+    const pairAt = 1 + CHANGELOG_ANCHOR_AFTER * 2;
+    const started = /** @type {any} */ (records[pairAt]);
+    const done = /** @type {any} */ (records[pairAt + 1]);
+    const digest = /** @type {any} */ (done)?.record?.artifact?.digest;
+    const startedOk =
+      started?.kind === "step" &&
+      started.record?.stepKey === CHANGELOG_ARTIFACT.stepKey &&
+      started.record?.from === "pending" &&
+      started.record?.to === "started" &&
+      deepEqual(started.record?.guards, [{ guard: CHANGELOG_ARTIFACT.guard, passed: true }]) &&
+      started.record?.attribution?.attemptId === attemptId &&
+      started.record?.attribution?.actor === actor;
+    const doneOk =
+      done?.kind === "step" &&
+      done.record?.stepKey === CHANGELOG_ARTIFACT.stepKey &&
+      done.record?.from === "started" &&
+      done.record?.to === "completed" &&
+      deepEqual(done.record?.guards, [{ guard: CHANGELOG_ARTIFACT.guard, passed: true }]) &&
+      done.record?.contentFingerprint === digest &&
+      !("claim" in (done.record ?? {})) &&
+      typeof digest === "string" &&
+      digest !== "" &&
+      deepEqual(done.record?.artifact, {
+        kind: "changelog",
+        coordinates: CHANGELOG_ARTIFACT.coordinates,
+        digest,
+      }) &&
+      done.record?.attribution?.attemptId === attemptId &&
+      done.record?.attribution?.actor === CHANGELOG_ARTIFACT.producerActor;
+    if (startedOk && doneOk) {
+      pass(
+        rows,
+        3,
+        "the declared changelog pair sits between tag and channel-transition",
+        `the pair records the ${CHANGELOG_ARTIFACT.guard} guard on both legs, the changelog triple, and the producer's own attribution`,
+      );
+    } else {
+      fail(
+        rows,
+        3,
+        "the declared changelog pair sits between tag and channel-transition",
+        "the artifact pair must be exactly pending→started then started→completed with the declaration's guard on both records, the completion carrying the changelog triple and the producer's attribution, and no claim token",
+      );
+    }
+
+    // The recorded digest names the tree the coordinates resolve in — the
+    // declaration's artifact is "the file at CHANGELOG.md in the recorded
+    // tree" (`git-tree:<sha>` from the git binding's producer), and the
+    // release publication reads exactly that file from exactly that tree. A
+    // record whose coordinates resolve to nothing is a lie the certification
+    // exists to catch.
+    const treePrefix = "git-tree:";
+    const tree =
+      typeof digest === "string" && digest.startsWith(treePrefix)
+        ? digest.slice(treePrefix.length)
+        : "";
+    if (tree === "") {
+      fail(
+        rows,
+        3,
+        "the declared changelog resolves at the recorded tree",
+        `the recorded digest must be a git-tree selector, got ${
+          typeof digest === "string" ? JSON.stringify(digest) : String(digest)
+        }`,
+      );
+    } else {
+      const listed = git(repo, ["ls-tree", tree, CHANGELOG_ARTIFACT.coordinates]);
+      if (listed.ok && listed.stdout !== "") {
+        pass(
+          rows,
+          3,
+          "the declared changelog resolves at the recorded tree",
+          `CHANGELOG.md is present in the recorded tree ${tree.slice(0, 16)}…`,
+        );
+      } else {
+        fail(
+          rows,
+          3,
+          "the declared changelog resolves at the recorded tree",
+          `the recorded tree ${tree.slice(0, 16)}… does not carry ${CHANGELOG_ARTIFACT.coordinates}${
+            listed.stderr === "" ? "" : ` (${listed.stderr.trim()})`
+          }`,
+        );
+      }
+    }
   }
 
   const drives = envelope?.drives;

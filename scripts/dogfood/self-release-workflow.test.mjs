@@ -186,12 +186,13 @@ describe("the self-release workflow's law", () => {
     assert.notEqual(uses, null, "the run door is not pinned to a full 40-character SHA");
   });
 
-  it("passes exactly the Action's eight declared inputs — none invented, none misspelled", () => {
+  it("passes exactly the Action's nine declared inputs — none invented, none misspelled", () => {
     const invoke = stepBlock("Invoke the run door");
     const withBlock = invoke.split(/with:\n/)[1] ?? "";
     const keys = [...withBlock.matchAll(/^\s{10}([a-z-]+):/gm)].map((match) => match[1]);
     assert.deepEqual(keys.sort(), [
       "actor",
+      "changelog",
       "intents",
       "line",
       "max-retries",
@@ -199,7 +200,8 @@ describe("the self-release workflow's law", () => {
       "tag-namespaces",
       "world",
       // working-directory stays at its declared default — the eight names
-      // phase 13 §2.3 declares, and nothing beside them
+      // phase 13 §2.3 declares, plus the #332 changelog declaration, and
+      // nothing beside them
     ]);
   });
 });
