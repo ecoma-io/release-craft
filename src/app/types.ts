@@ -107,6 +107,40 @@ export interface MemoryStores {
   readonly channels?: ChannelStore;
 }
 
+/** The publication port's create outcome (audit §7.1; D87): the boundary's
+ * own vocabulary — `ok` carries the release URL, a determinate refusal
+ * carries its words, and the two indeterminate writes carry an optional
+ * `detail` (a transport that answered with status 0 has nothing to quote).
+ * The shape is the adapter door's outcome conformed structurally, never
+ * imported: the boundary names no remote concept (invariant 2.11) and
+ * the shell composition wires the door behind this port. */
+export type PublicationOutcome =
+  | { readonly kind: "ok"; readonly url: string }
+  | { readonly kind: "refused"; readonly detail: string }
+  | { readonly kind: "transport-failure"; readonly detail?: string }
+  | { readonly kind: "ambiguous"; readonly detail?: string };
+
+/** The publication port's verify outcome (audit §7.1; D87; the adapter's
+ * `absent` carried up, ADR-0010 decision 9): a read carries no
+ * `ambiguous` — that class names a write whose landing is unknown, and
+ * verification is never a write. Absence is a determinate read. */
+export type PublicationVerificationOutcome =
+  | { readonly kind: "verified" }
+  | { readonly kind: "refused"; readonly detail: string }
+  | { readonly kind: "absent" }
+  | { readonly kind: "transport-failure"; readonly detail?: string };
+
+/** The publication port a shell composition wires (audit §7.1; D87): the
+ * two doors that create and verify the release object for the minted tag.
+ * The doors project the body from the binding's recorded tail, never from
+ * a re-plan (ADR-0010 decision 6); the engine consumes the pair exactly as
+ * it consumes the tag door alone — composed in the assembly, never opened
+ * by the walk. */
+export interface ReleasePublicationPort {
+  readonly publishRelease: (tag: string) => PublicationOutcome;
+  readonly verifyRelease: (tag: string) => PublicationVerificationOutcome;
+}
+
 /** The assembled ports the engine value runs through (§2.3's table, filled):
  * one bundle per factory, never re-owned, never re-opened, never shared
  * between engines. Internal — the surface exposes the `Engine` value, never
@@ -124,6 +158,12 @@ export interface EnginePorts {
    * fallback under the run declarations' producers map (ADR-0008 decision
    * 2; §2.3's wiring row). */
   readonly producer: ArtifactProducer | null;
+  /** The publication port, wired from a release-remote assembly only (audit
+   * §7.1; D87) — the release create and verify read over the minted tag.
+   * Null for memory and pure-git assemblies: those runs keep the recorded
+   * publish/verify fingerprint gates and the published transition at the
+   * mint, exactly as before. */
+  readonly publication: ReleasePublicationPort | null;
 }
 
 /** The opened git binding a git assembly consumes (§2.2): `openGitBinding`
@@ -240,7 +280,14 @@ export interface RunOutcomeContext {
  * never translated). A caller discriminates on `kind` as on any other
  * row. */
 export type RunOutcome =
-  | ({ readonly kind: "published"; readonly tag: string | null } & RunOutcomeContext)
+  | ({
+      readonly kind: "published";
+      readonly tag: string | null;
+      /** The release object's URL when a wired publication port created
+       * and verified it (audit §7.1; D87) — absent when the assembly wires
+       * no port, the tag's evidence being the minted ref alone. */
+      readonly releaseUrl?: string;
+    } & RunOutcomeContext)
   /* `tag` is the release's tag identity — the plan's own. With a wired tag
    * door it is the mint's returned name (the ref the world gained); a memory
    * assembly reports the plan's tag without a minted ref, the caller owning

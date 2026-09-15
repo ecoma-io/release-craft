@@ -849,6 +849,25 @@ stop-band posture's expected conclusion: the `blocked` /
 `released-version-observed` record at the planning boundary — no claim,
 no mint, no second attempt.
 
+**The publication leg (issue #334, decision-log D87):** the engine half of
+the canonical publish path now exists. `openPublicationDriver` wires the
+opened adapter's publish/verify doors, the completion creates the release
+from the recorded body after the mint and lands `published` with the
+release URL, a refused create returns `refused` with the attempt untouched
+(the minted ref stands), and an absent / ambiguous / unavailable write
+blocks with a recorded cause whose recorded resolution (naming the
+recorded `publish` step) re-arms the resume — the same-target idempotent
+re-mint and read-before-write create land exactly one release. Against the
+not-demand list above, "a GitHub Release … left the runner" is therefore
+now reachable **through the boundary transport**: the fixture's transport-1
+class ([§2.2](#22-the-transports-three-public-surfaces-no-fourth)) seats
+the remote at the port seam and pins the create / verify / resume classes
+without anything leaving the runner. The honest v1 sentence stands only
+for the Action leg, whose token ingress is its own review unit over the
+same campaign — the world publish block, the child-env allowlist (exactly
+{PATH, HOME} today), and the phase 13 §2.8 hermeticity amendment — and the
+crash-resume and failure-path legs above are untouched by this slice.
+
 ## 8. What the fixture never does
 
 The never-does inventory, each row with its enforcement:

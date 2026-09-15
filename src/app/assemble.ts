@@ -23,6 +23,7 @@ import {
   type Engine,
   type EnginePorts,
   type MemoryStores,
+  type ReleasePublicationPort,
 } from "./types.js";
 
 /**
@@ -52,7 +53,8 @@ const validatedConfig = (config: AssemblyConfig): AssemblyConfig => {
  * channel store wired means §2.4's pre-walk refusal for any plan that
  * declares moves; no tag door wired means a completed walk publishes
  * without minting; no producer wired means the run declarations must name
- * one per declared artifact id.
+ * one per declared artifact id; no publication port wired means the
+ * publish/verify stages stay the walk's fingerprint gates.
  */
 export const assembleMemoryStores = (stores: MemoryStores, config: AssemblyConfig): Engine =>
   createEngine(
@@ -63,10 +65,38 @@ export const assembleMemoryStores = (stores: MemoryStores, config: AssemblyConfi
       channels: stores.channels ?? null,
       mint: null,
       producer: null,
+      publication: null,
     },
     validatedConfig(config),
   );
-
+/**
+ * The publication factory (audit §7.1; D87): consumes an opened git
+ * binding and the already-opened publication port, wiring every engine
+ * port from the binding's own plus the pair from the port — the release
+ * create and its verify read, keyed on the minted tag and projected from
+ * the binding's recorded tail, never a re-plan (ADR-0010 decision 6).
+ * The port arrives opened, exactly as `assembleGitBinding` consumes an
+ * opened binding (ADR-0010 decision 2). The boundary names no remote
+ * concept (invariant 2.11): a shell composition wires the adapter doors
+ * behind this port where the port bundle is assembled.
+ */
+export const assemblePublicationBinding = (
+  binding: GitBinding,
+  publication: ReleasePublicationPort,
+  config: AssemblyConfig,
+): Engine =>
+  createEngine(
+    {
+      register: binding.register,
+      ledger: binding.ledger,
+      claims: binding.claims,
+      channels: binding.channels,
+      mint: binding.mintTag,
+      producer: binding.producer,
+      publication,
+    } satisfies EnginePorts,
+    validatedConfig(config),
+  );
 /**
  * The git factory (§2.2): consumes an opened binding, wiring each engine
  * port from the binding's own — ledger, register, claims, the channel
@@ -85,6 +115,7 @@ export const assembleGitBinding = (binding: GitBinding, config: AssemblyConfig):
       channels: binding.channels,
       mint: binding.mintTag,
       producer: binding.producer,
+      publication: null,
     } satisfies EnginePorts,
     validatedConfig(config),
   );

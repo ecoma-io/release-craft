@@ -69,5 +69,13 @@ export * from "@ecoma-io/release-craft/adapters/node-workspace";
 // a host composes the gate through the front door, never by hand.
 export * from "./release-pr-driver.js";
 
+// The publication port's production composition (audit §7.1; D87): the
+// real GitHub release doors wired into the application assembly. Composed
+// here, in the package shell — `type-package` is the one tag whose
+// boundary row reaches both the app layer and the GitHub adapter — and
+// re-exported so a host composes the assembly through the front door,
+// never by hand.
+export * from "./publication-driver.js";
+
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;
