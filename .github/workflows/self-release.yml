@@ -163,7 +163,8 @@ jobs:
           git for-each-ref --format='%(refname) %(objectname)' > local-refs-before.txt
 
       # A consumer's invocation, spelled as the dogfood spells it — the
-      # same eight declared inputs, the every-tag namespace root as ONE
+      # same eight the dogfood forwards, plus the declared changelog flag —
+      # the every-tag namespace root as ONE
       # EMPTY LINE, the FULL 40-character SHA this workflow certifies
       # (§2.1: one commit, one behavior; re-pinned by reviewed commits, as
       # the dogfood's pin is). The actor is the dispatch's invoking
@@ -173,7 +174,7 @@ jobs:
       # human maintainer's name.
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@7f7d70253ac0a453a3ca6c063343783479844385
+        uses: ecoma-io/release-craft@a00c9e8db4672da9e3838d4b8c10f9340433e118
         with:
           world: world.json
           line: main
@@ -182,6 +183,7 @@ jobs:
           intents: release
           repo: .
           max-retries: "0"
+          changelog: "true"
 
       # — the publish — the one step the dogfood refuses by design. The
       # authority to push is the envelope's rendered kind (never the

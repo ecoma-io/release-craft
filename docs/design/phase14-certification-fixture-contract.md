@@ -688,7 +688,10 @@ harness — so the standard is class-shaped, not byte-shaped:
    `drives` context. (Its bytes are the repository's own, not the fixture's.)
 3. **The ledger-projection class** — the recorded tail after the run matches
    the projected record sequence for the run's walk class (the promote walk's
-   cells, `git-01`/`git-06`, are the shape).
+   cells, `git-01`/`git-06`, are the shape; a changelog-declared walk projects
+   21 records — the `artifact:changelog` pair between `tag` and
+   `channel-transition` — and the recorded tree the digest names must carry
+   `CHANGELOG.md`).
 4. **The Action leg** — the output-write replay re-proven on the runner
    itself, with the compared bytes stated exactly so a conforming Action
    cannot fail the standard: the written output begins with the canonical
@@ -780,12 +783,22 @@ credentials, and zero remote writes proven by hashing `git ls-remote`
 before and after — because "published" through the Action means the walk
 completed and the tag exists in the runner's copy (phase 13 §2.8's
 decided-empty token journey), not that anything left the runner.
-`self-release.yml` is the real leg beside it, and it grows nothing on the
-Action itself: the same `workflow_dispatch`-only trigger, the same
+`self-release.yml` is the real leg beside it, and beyond the changelog
+declaration it grows nothing on the Action itself: the same
 caller-side world closure, the same pinned Action at a full SHA, the same
 in-job judgment — plus the caller-side steps the read-only dogfood has no
 counterpart for: the shared claims-register integration fetch (#274,
 decision-log D65), the publish step, and the origin leg below. Two of the
+
+**The declared changelog (issue #332, decision-log D86):** the
+self-release's invoke passes the ninth declared input, `changelog: "true"`,
+and the walk records the `artifact:changelog` pair — kind `changelog`,
+coordinates `CHANGELOG.md` over the recorded tree, the digest riding the git
+binding's producer attribution (`actor: automation`, ADR-0008 decision 2).
+The class-3 projection's declared posture reads the pair in full and
+resolves the coordinates at the recorded tree — a record-not-bytes bound:
+the digest names the tree the mint reads back, and `CHANGELOG.md` must exist
+in it.
 three touch no origin state — the fetch, which brings
 `refs/release-craft/claims/*` into the checkout before the run
 (caller-side substrate posture, the engine discovering nothing), and the

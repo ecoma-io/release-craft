@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, it } from "node:test";
 
-import { CONCLUSION_BANDS, EXIT_ZERO_KINDS, PROMOTE_CELLS } from "./judge.mjs";
+import { CHANGELOG_ARTIFACT, CONCLUSION_BANDS, EXIT_ZERO_KINDS, PROMOTE_CELLS } from "./judge.mjs";
 
 const JUDGE = fileURLToPath(new URL("./judge.mjs", import.meta.url));
 
@@ -65,9 +65,14 @@ const GUARDS = {
  * byte-shaped, and detail bytes must never judge a run.
  *
  * @param {string} detailSeed the guards' detail bytes — varying them must never move a verdict
+ * @param {string} changelogTree the sha of a real tree carrying CHANGELOG.md — when given, the
+ *   tail gains the declared `artifact:changelog` pair after `tag` (the 21-record shape)
  * @returns {{ tail: object[], envelope: object }}
  */
-function honestCapture(detailSeed = "detail bytes the judge must stay blind to") {
+function honestCapture(
+  detailSeed = "detail bytes the judge must stay blind to",
+  changelogTree = "",
+) {
   /** @type {object[]} */
   const tail = [];
   const attribution = { actor: ACTOR, attemptId: ATTEMPT_ID };
@@ -106,6 +111,37 @@ function honestCapture(detailSeed = "detail bytes the judge must stay blind to")
     };
     tail.push({ kind: "step", record });
     completed.push(record);
+    if (changelogTree !== "" && cell === "tag") {
+      const changelogDigest = `git-tree:${changelogTree}`;
+      tail.push({
+        kind: "step",
+        record: {
+          attemptId: ATTEMPT_ID,
+          attribution,
+          from: "pending",
+          guards: [{ guard: CHANGELOG_ARTIFACT.guard, passed: true }],
+          stepKey: CHANGELOG_ARTIFACT.stepKey,
+          to: "started",
+        },
+      });
+      tail.push({
+        kind: "step",
+        record: {
+          attemptId: ATTEMPT_ID,
+          attribution: { attemptId: ATTEMPT_ID, actor: CHANGELOG_ARTIFACT.producerActor },
+          artifact: {
+            kind: "changelog",
+            coordinates: CHANGELOG_ARTIFACT.coordinates,
+            digest: changelogDigest,
+          },
+          contentFingerprint: changelogDigest,
+          from: "started",
+          guards: [{ guard: CHANGELOG_ARTIFACT.guard, passed: true }],
+          stepKey: CHANGELOG_ARTIFACT.stepKey,
+          to: "completed",
+        },
+      });
+    }
   }
   const envelope = {
     kind: "published",
@@ -121,15 +157,16 @@ function honestCapture(detailSeed = "detail bytes the judge must stay blind to")
 }
 
 /**
- * Commits the tail into a real temporary repository — one `record` blob per
- * commit under the ledger ref the binding writes (colons percent-encoded) —
- * and mints the envelope's tag.
+ * Initializes a real temporary repository the fixture commits into — one
+ * `record` blob per commit under the ledger ref the binding writes (colons
+ * percent-encoded). `seed` writes named files and records their tree with
+ * `write-tree`, never a commit: the ledger ref's every commit must carry
+ * `record`, so a seed commit would break the judge's tail walk.
  *
- * @param {object[]} tail chronological records
- * @param {{ mintTag?: boolean, extraAttempt?: boolean }} options
- * @returns {string} the repository path
+ * @param {{ seed?: Record<string, string> }} options
+ * @returns {{ repo: string, git: (args: string[]) => string, seedTree: string | null }}
  */
-function buildLedgerRepo(tail, { mintTag = true, extraAttempt = false } = {}) {
+function initLedgerRepo({ seed = {} } = {}) {
   const repo = mkdtempSync(join(tmpdir(), "rc-judge-"));
   /** @param {string[]} args */
   const git = (args) => {
@@ -165,6 +202,28 @@ function buildLedgerRepo(tail, { mintTag = true, extraAttempt = false } = {}) {
     return result.stdout;
   };
   git(["init", "-q"]);
+  let seedTree = null;
+  for (const [name, content] of Object.entries(seed)) {
+    writeFileSync(join(repo, name), content);
+  }
+  if (Object.keys(seed).length > 0) {
+    git(["add", "."]);
+    seedTree = git(["write-tree"]).trim();
+  }
+  return { repo, git, seedTree };
+}
+
+/**
+ * Commits the tail into the staged ledger, one `record` blob per commit, and
+ * mints the envelope's tag.
+ *
+ * @param {{ repo: string, git: (args: string[]) => string, seedTree: string | null }} staged
+ * @param {object[]} tail chronological records
+ * @param {{ mintTag?: boolean, extraAttempt?: boolean }} options
+ * @returns {void}
+ */
+function commitLedgerTail(staged, tail, { mintTag = true, extraAttempt = false } = {}) {
+  const { repo, git } = staged;
   for (const entry of tail) {
     writeFileSync(join(repo, "record"), JSON.stringify(entry));
     git(["add", "record"]);
@@ -179,7 +238,20 @@ function buildLedgerRepo(tail, { mintTag = true, extraAttempt = false } = {}) {
   if (mintTag) {
     git(["tag", TAG]);
   }
-  return repo;
+}
+
+/**
+ * The whole fixture in one call: a fresh repository carrying the tail's
+ * ledger and the envelope's tag.
+ *
+ * @param {object[]} tail chronological records
+ * @param {{ mintTag?: boolean, extraAttempt?: boolean }} options
+ * @returns {string} the repository path
+ */
+function buildLedgerRepo(tail, options = {}) {
+  const staged = initLedgerRepo();
+  commitLedgerTail(staged, tail, options);
+  return staged.repo;
 }
 
 /**
@@ -459,6 +531,177 @@ describe("the judge bites — the planted bad captures", () => {
   });
 });
 
+describe("the declared changelog posture", () => {
+  it("certifies an honest declared capture — the pair and the recorded tree in full", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 0, run.stdout + run.stderr);
+      assert.match(run.stdout, /verdict: CERTIFIED/);
+      assert.equal(rowState(run.stdout, "tail length is the walk's"), "PASS");
+      assert.equal(rowState(run.stdout, "every record carries the declared identity"), "PASS");
+      assert.equal(
+        rowState(run.stdout, "the declared changelog pair sits between tag and channel-transition"),
+        "PASS",
+      );
+      assert.equal(
+        rowState(run.stdout, "the declared changelog resolves at the recorded tree"),
+        "PASS",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a changelog pair anchored somewhere else — the pair row binds its position", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    const moved = captured.tail.splice(13, 2);
+    captured.tail.push(...moved);
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(
+        rowState(run.stdout, "the declared changelog pair sits between tag and channel-transition"),
+        "FAIL",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a foreign artifact key wearing the pair's place", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    /** @type {any} */ (captured.tail[13]).record.stepKey = "artifact:package";
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(
+        rowState(run.stdout, "the declared changelog pair sits between tag and channel-transition"),
+        "FAIL",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a completion whose attribution is not the producer's own", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    /** @type {any} */ (captured.tail[14]).record.attribution.actor = "someone-else";
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(
+        rowState(run.stdout, "the declared changelog pair sits between tag and channel-transition"),
+        "FAIL",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a completion whose guard is a postcondition, not the declaration's guard", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    /** @type {any} */ (captured.tail[14]).record.guards = [
+      { guard: "content-fingerprint-present", passed: true },
+    ];
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(
+        rowState(run.stdout, "the declared changelog pair sits between tag and channel-transition"),
+        "FAIL",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a changelog completion carrying a claim token", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    /** @type {any} */ (captured.tail[14]).record.claim = CLAIM;
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(
+        rowState(run.stdout, "the declared changelog pair sits between tag and channel-transition"),
+        "FAIL",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a recorded tree that lacks the declared coordinates", () => {
+    const staged = initLedgerRepo({ seed: { "README.md": "no changelog here\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(
+        rowState(run.stdout, "the declared changelog resolves at the recorded tree"),
+        "FAIL",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a digest that is not a git-tree selector", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    /** @type {any} */ (captured.tail[14]).record.artifact.digest = "sha256:deadbeef";
+    /** @type {any} */ (captured.tail[14]).record.contentFingerprint = "sha256:deadbeef";
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(
+        rowState(run.stdout, "the declared changelog resolves at the recorded tree"),
+        "FAIL",
+      );
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("the honest boundary", () => {
   it("a usage fault exits 64 and invents no evidence", () => {
     const run = spawnSync(process.execPath, [JUDGE, "--repo", ".", "--expect-kind", "published"], {
@@ -528,5 +771,27 @@ describe("the judge's contract copies are cross-pinned", () => {
       PROMOTE_CELLS,
       stdout.drives.map(/** @param {any} drive */ (drive) => drive.stepKey),
     );
+  });
+
+  it("the changelog declaration's copies equal the CLI's declaration and the producer's source", () => {
+    const declaration = readFileSync(
+      fileURLToPath(new URL("../../src/cli/index.ts", import.meta.url)),
+      "utf8",
+    );
+    const declarationBlock = /CHANGELOG_DECLARATION[\s\S]*?\n};/.exec(declaration);
+    assert.ok(declarationBlock, "CHANGELOG_DECLARATION not found in src/cli/index.ts");
+    const block = declarationBlock[0];
+    assert.match(block, /id: "changelog"/);
+    assert.match(block, /anchor: \{ stage: "tag", position: "after" \}/);
+    assert.match(block, /guard: "release-line"/);
+    assert.match(block, /coordinates: "CHANGELOG.md"/);
+    const producer = readFileSync(
+      fileURLToPath(new URL("../../src/adapters/git/producer-git.ts", import.meta.url)),
+      "utf8",
+    );
+    const actor = /actor:\s*"([^"]+)"/.exec(producer);
+    assert.ok(actor, "no producer actor literal in src/adapters/git/producer-git.ts");
+    assert.equal(CHANGELOG_ARTIFACT.producerActor, actor[1]);
+    assert.match(producer, /digest: `git-tree:/);
   });
 });
