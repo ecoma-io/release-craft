@@ -63,6 +63,9 @@ const runLines = (outcome: RunOutcome): string[] => {
   switch (outcome.kind) {
     case "published":
       lines.push(`tag ${outcome.tag ?? "none"}`);
+      if (outcome.releaseUrl !== undefined) {
+        lines.push(`release ${outcome.releaseUrl}`);
+      }
       break;
     case "refused":
     case "conflict":

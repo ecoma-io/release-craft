@@ -634,9 +634,77 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     if (result.kind === "conflict") {
       return { kind: "conflict", detail: result.detail, ...base };
     }
-    entry.attempt = transition(entry.attempt, "published");
+    // The re-entry is the same-target idempotent re-mint: the door's CAS
+    // (GitTagDoor, "same target is the idempotent re-mint") returns
+    // `minted` when the ref the world gained points at the resolved
+    // target, so a completion re-entry — a blocked publication resumed —
+    // reaches the publication effects, never a refusal. The ref is the
+    // durable evidence, not this process's memory.
     entry.tags.push(result.tag);
-    return { kind: "published", tag: result.tag, ...base };
+    const mintedTag = result.tag;
+    if (ports.publication === null) {
+      entry.attempt = transition(entry.attempt, "published");
+      return { kind: "published", tag: mintedTag, ...base };
+    }
+    // §2.5 steps 5–6 with a wired publication port (audit §7.1; D87):
+    // after the minted ref lands, the release object for that tag is
+    // created from the binding's recorded tail — never a re-plan, the
+    // doors project the body from recorded state only (ADR-0010 decision
+    // 6) — then re-read. Only a verified release reaches the `published`
+    // terminal when the port is wired. A determinate refusal is the
+    // returned outcome with the attempt exactly as the walk left it
+    // (claim held, resumable); an indeterminate write — ambiguous,
+    // transport-failure, or a verify that finds no release — suspends the
+    // attempt `blocked` with the cause, so the operator's recorded
+    // resolution resumes the read-before-write create, whose same-target
+    // idempotency lands on the existing release. The effect appends no
+    // stage record: the remote release object and the terminal attempt
+    // state are the evidence, exactly as the minted ref is the mint's
+    // (the one-record-per-step invariant, phase 5 §2.8).
+    const publication = ports.publication.publishRelease(mintedTag);
+    switch (publication.kind) {
+      case "ok": {
+        const verification = ports.publication.verifyRelease(mintedTag);
+        if (verification.kind === "verified") {
+          entry.attempt = transition(entry.attempt, "published");
+          return { kind: "published", tag: mintedTag, releaseUrl: publication.url, ...base };
+        }
+        if (verification.kind === "absent") {
+          const cause =
+            `publication-absent: the release for ${mintedTag} was created but the verify read ` +
+            `found no release — the idempotent create re-runs on resume`;
+          entry.attempt = block(entry.attempt, cause);
+          return { kind: "blocked", cause, ...base };
+        }
+        if (verification.kind === "transport-failure") {
+          const cause =
+            `publication-verify-unavailable: the release for ${mintedTag} was created but the ` +
+            `verify read failed on transport — the idempotent verify re-runs on resume`;
+          entry.attempt = block(entry.attempt, cause);
+          return { kind: "blocked", cause, ...base };
+        }
+        // verified-refused: the verify read refused — nothing landed
+        // through the re-check, the run refuses, the attempt stays.
+        return { kind: "refused", detail: verification.detail, ...base };
+      }
+      case "refused":
+        return { kind: "refused", detail: publication.detail, ...base };
+      case "ambiguous": {
+        const cause =
+          `publication-ambiguous: the release create for ${mintedTag} returned no readable ` +
+          `answer — the write may have landed, and the idempotent read-before-write create ` +
+          `resolves it on resume`;
+        entry.attempt = block(entry.attempt, cause);
+        return { kind: "blocked", cause, ...base };
+      }
+      case "transport-failure": {
+        const cause =
+          `publication-unavailable: the release create for ${mintedTag} failed on transport — ` +
+          `nothing landed, the idempotent create re-runs on resume`;
+        entry.attempt = block(entry.attempt, cause);
+        return { kind: "blocked", cause, ...base };
+      }
+    }
   };
 
   /** A stage stop's row (§2.8): a suspended attempt is `blocked`; otherwise
@@ -859,6 +927,21 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
         `line ${lineId}'s plan mints ${plannedTag} over an assembly that wired the tag door, ` +
           `but the request supplies no recorded target for the line — the mint target is a ` +
           `plan-run value carried by the caller, never ambient HEAD (phase 8 §2.3)`,
+        planId,
+        null,
+      );
+    }
+    // The publication port's own pre-walk rule: the release object is
+    // created for exactly the minted tag, so a port wired without the tag
+    // door would publish nothing the plan recorded (D87; audit §7.1). The
+    // same defensive posture as the channel rule above — no current
+    // factory can compose the pair apart, but the engine does not rely on
+    // the factories' discipline to hold.
+    if (ports.publication !== null && ports.mint === null && plannedTag !== null) {
+      return refusedOutcome(
+        `line ${lineId}'s plan mints ${plannedTag} over an assembly that wired the ` +
+          `publication port but no tag door — publication publishes a minted tag's release, ` +
+          `so the run refuses before the walk starts, naming the missing port (D87)`,
         planId,
         null,
       );

@@ -75,6 +75,7 @@ tasks:
     inputs:
       - "src/index.ts"
       - "src/release-pr-driver.ts"
+      - "src/publication-driver.ts"
       - "test/**/*"
       - "action/**/*"
       - "e2e/**/*"
@@ -105,6 +106,7 @@ tasks:
     inputs:
       - "src/index.ts"
       - "src/release-pr-driver.ts"
+      - "src/publication-driver.ts"
       - "test/**/*"
       - "action/**/*"
       - "e2e/**/*"
@@ -128,6 +130,7 @@ tasks:
     inputs:
       - "src/index.ts"
       - "src/release-pr-driver.ts"
+      - "src/publication-driver.ts"
       - "project://core-domain?group=sources"
       - "project://planner?group=sources"
       - "project://execution?group=sources"

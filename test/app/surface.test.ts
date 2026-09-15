@@ -217,6 +217,7 @@ describe("obligation 2 — the surface is doors and records, never a store or a 
       "ReleasePRScopeError",
       "assembleGitBinding",
       "assembleMemoryStores",
+      "assemblePublicationBinding",
       "claimScopeForLine",
       "openReleasePRGate",
       "parseIdentityClaim",
