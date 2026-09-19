@@ -44,7 +44,7 @@ import type {
   PlanningInput,
   PlanningOutcome,
 } from "@ecoma-io/release-craft/planner";
-import type { GitBinding, TagMint } from "@ecoma-io/release-craft/adapters/git";
+import type { GitBinding, ReleaseCommit, TagMint } from "@ecoma-io/release-craft/adapters/git";
 
 // ---------------------------------------------------------------------------
 // §2.2 — the assembly config, closed
@@ -154,6 +154,11 @@ export interface EnginePorts {
   /** The tag door, wired from a git binding only — called once per run, at
    * the walk's mint step, target from the run request (§2.5). */
   readonly mint: TagMint | null;
+  /** The commit door, wired from a git binding only — called once per run,
+   * at the walk's completion, before the mint (issue #339): the completed
+   * mutation files land on the recorded base commit, and the mint targets
+   * the committed oid — the tag never outruns the commit it names. */
+  readonly commit: ReleaseCommit | null;
   /** The artifact producer, wired from a git binding only — the per-id
    * fallback under the run declarations' producers map (ADR-0008 decision
    * 2; §2.3's wiring row). */

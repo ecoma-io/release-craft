@@ -25,18 +25,19 @@ remote). Mocks and dry-runs do **not** count as production evidence.
 These capabilities are proven by tests against a **real** substrate (real git,
 real CAS, real cross-process signals), not by fake transports:
 
-| Capability                                                        | Class                   | Evidence                                                                                                                                                                                                                                                                                                                                                      |
-| ----------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Deterministic planning                                            | tested                  | `src/planner/*` pure; double-run deep-equal + goldens pinned to scenario docs (`test/planner/plan.golden.test.ts`, `test/planner/assemble.test.ts`); `Date.now`/`new Date(`/`Math.random(`/`process[.[]`/`globalThis`/`Intl`/`toLocale*` banned by an executable static gate (`test/planner/isolation.test.ts:163-199`)                                       |
-| Plan identity (`plan_sha256`, `inputs_sha256`)                    | tested + dogfood-tested | Canonical serializer is key-sorted, whitespace-free, deterministic (`src/planner/identity.ts:65`); **#319 fix holds at `identity.ts:204`** (empty `intents` === absent — one semantic fact, one fingerprint); plan/inputs fingerprints stable across the D82 shadow windows                                                                                   |
-| Claim-before-mutation                                             | tested                  | Real-git CAS (`src/adapters/git/claim-store-git.ts:380-434` via `git update-ref` old-value compare-and-set); a hostile `git` PATH shim kills the process mid-CAS (`test/adapters/git/claim-register.test.ts:448`); two-clone exclusion race pinned (`:947-1010`); the engine refuses to mutate claimless (`src/app/engine.ts:923-930`, mint door `:606-614`)  |
-| Execution ledger (durability/resume)                              | tested                  | Write-ahead start-before-effect (`src/app/engine.ts:430-448`); content-aware tip dedup absorbs crash-restart (`src/adapters/git/ledger-git.ts:158-193`, #185); forward-only CAS fails closed; a fresh binding reloads the tail and classifies identically (`test/vertical/github-vertical.test.ts:716-748`)                                                   |
-| Attempt state machine + supersession terminality                  | tested                  | Closed edge table, empty terminal rows (`src/execution/attempt.ts:49-58`); no revival edge; abandonment is a durable record (`src/app/engine.ts:996-1003`), the tail — not process-local value — is authority (`test/execution/abandonment-record.test.ts:197-330`)                                                                                           |
-| Tag mint                                                          | tested + dogfood-tested | `src/adapters/git/tag-door.ts` (existence CAS, same-target idempotent `minted` / different-target `conflict`); live-minted on origin (self-release run 34635157220 pushed `0.2.0`)                                                                                                                                                                            |
-| Idempotent retry                                                  | tested in parts         | Same-attemptId resume re-runs an effect exactly once (`test/app/resume.test.ts:311-369`); completed steps replay `noop`; ledger tip dedup; tag re-mint never rewrites the ref (`test/adapters/git/claims-mint.test.ts:269`); release create is read-before-write with an ambiguous-on-lost-response classifier (`src/adapters/github/publication.ts:266-310`) |
-| Provider isolation (kernel purity)                                | tested                  | `core/domain` imports only itself; archkeep bans every external import (`module-boundaries.config.mjs:72-76`); no provider vocabulary in kernel value names (`test/provider-isolation.test.ts:151-206`)                                                                                                                                                       |
-| Release-PR gate identity + live gate legs                         | dogfood-tested          | Body claim-marker identity, never title/label (`src/app/release-pr.ts:49-77`); six live legs on PR #313 (`e2e/evidence/release-pr-e2e-2026-09-12.jsonl`); D83 draft PR #528 on a real foreign consumer, tags byte-identical                                                                                                                                   |
-| Self-release workflow orchestrates the engine (no special-casing) | implemented + tested    | No `if: repository == release-craft` conditional anywhere in `.github/workflows/`; both workflows invoke the pinned public Action `ecoma-io/release-craft@<sha>` exactly as any consumer would — `self-release.yml:174-184`, `dogfood.yml:112-122`                                                                                                            |
+| Capability                                                        | Class                   | Evidence                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deterministic planning                                            | tested                  | `src/planner/*` pure; double-run deep-equal + goldens pinned to scenario docs (`test/planner/plan.golden.test.ts`, `test/planner/assemble.test.ts`); `Date.now`/`new Date(`/`Math.random(`/`process[.[]`/`globalThis`/`Intl`/`toLocale*` banned by an executable static gate (`test/planner/isolation.test.ts:163-199`)                                                                                          |
+| Plan identity (`plan_sha256`, `inputs_sha256`)                    | tested + dogfood-tested | Canonical serializer is key-sorted, whitespace-free, deterministic (`src/planner/identity.ts:65`); **#319 fix holds at `identity.ts:204`** (empty `intents` === absent — one semantic fact, one fingerprint); plan/inputs fingerprints stable across the D82 shadow windows                                                                                                                                      |
+| Claim-before-mutation                                             | tested                  | Real-git CAS (`src/adapters/git/claim-store-git.ts:380-434` via `git update-ref` old-value compare-and-set); a hostile `git` PATH shim kills the process mid-CAS (`test/adapters/git/claim-register.test.ts:448`); two-clone exclusion race pinned (`:947-1010`); the engine refuses to mutate claimless (`src/app/engine.ts:923-930`, mint door `:606-614`)                                                     |
+| Execution ledger (durability/resume)                              | tested                  | Write-ahead start-before-effect (`src/app/engine.ts:430-448`); content-aware tip dedup absorbs crash-restart (`src/adapters/git/ledger-git.ts:158-193`, #185); forward-only CAS fails closed; a fresh binding reloads the tail and classifies identically (`test/vertical/github-vertical.test.ts:716-748`)                                                                                                      |
+| Attempt state machine + supersession terminality                  | tested                  | Closed edge table, empty terminal rows (`src/execution/attempt.ts:49-58`); no revival edge; abandonment is a durable record (`src/app/engine.ts:996-1003`), the tail — not process-local value — is authority (`test/execution/abandonment-record.test.ts:197-330`)                                                                                                                                              |
+| Tag mint                                                          | tested + dogfood-tested | `src/adapters/git/tag-door.ts` (existence CAS, same-target idempotent `minted` / different-target `conflict`); live-minted on origin (self-release run 34635157220 pushed `0.2.0`)                                                                                                                                                                                                                               |
+| Idempotent retry                                                  | tested in parts         | Same-attemptId resume re-runs an effect exactly once (`test/app/resume.test.ts:311-369`); completed steps replay `noop`; ledger tip dedup; tag re-mint never rewrites the ref (`test/adapters/git/claims-mint.test.ts:269`); release create is read-before-write with an ambiguous-on-lost-response classifier (`src/adapters/github/publication.ts:266-310`)                                                    |
+| Provider isolation (kernel purity)                                | tested                  | `core/domain` imports only itself; archkeep bans every external import (`module-boundaries.config.mjs:72-76`); no provider vocabulary in kernel value names (`test/provider-isolation.test.ts:151-206`)                                                                                                                                                                                                          |
+| Release-PR gate identity + live gate legs                         | dogfood-tested          | Body claim-marker identity, never title/label (`src/app/release-pr.ts:49-77`); six live legs on PR #313 (`e2e/evidence/release-pr-e2e-2026-09-12.jsonl`); D83 draft PR #528 on a real foreign consumer, tags byte-identical                                                                                                                                                                                      |
+| Self-release workflow orchestrates the engine (no special-casing) | implemented + tested    | No `if: repository == release-craft` conditional anywhere in `.github/workflows/`; both workflows invoke the pinned public Action `ecoma-io/release-craft@<sha>` exactly as any consumer would — `self-release.yml:174-184`, `dogfood.yml:112-122`                                                                                                                                                               |
+| Version-carrying commit door (#339)                               | tested                  | `src/adapters/git/commit-door.ts` — a deterministic `commit-tree` over the recorded base: base entries kept byte-equal, produced mutation bytes overlaid, same input → identical oid (idempotent replay, no CAS); unclaimed and foreign-token attempts refused, an unresolvable base throws `GitFaultError` (exit-70 posture, D39) — `test/adapters/git/commit-door.test.ts`, 7 rows over real temp repositories |
 
 ## 2. What is incomplete (implemented but never wired to a production path)
 
@@ -314,3 +315,90 @@ commits since `a1de69d`: #222, #223, #230, #235, #237, #250, #253, #262.
 | Live publish leg (transport, token ingress)       | absent | absent (#336)                             |
 | Publication ordering invariant (tag→expected SHA) | absent | absent — now named, release-blocking      |
 | Plan→mutation→commit→tag chain                    | absent | absent — now named, release-blocking      |
+
+## 9. Re-audit addendum — the #339 working tree (2026-09-20)
+
+Method: the #339 slice (issue
+[#339](https://github.com/ecoma-io/release-craft/issues/339) — the
+version-carrying self-release engine half) was delta-audited against §2's
+three incomplete rows — **Version mutation**, **Changelog renderer**,
+**Commit** — on the branch's working tree, and the new seams were re-read at
+their source and re-run in their suites.
+
+### What changed since §8
+
+- **The git binding gained a `commit` port.** `GitCommitDoor`
+  (`src/adapters/git/commit-door.ts`) is a pure, deterministic
+  `commit-tree`: `ls-tree -r` over the recorded base (raw paths), the
+  completed updater steps' produced bytes overlaid, a recursive `mktree` in
+  git ordering, and one `commit-tree` whose message names the release —
+  tag, line, plan. No index, no worktree, no ref move. Content addressing
+  makes replay idempotent: the same recorded tail re-derives the same oid,
+  so resume needs no CAS. §2's "no adapter creates a release commit" row is
+  answered at the adapter tier.
+- **The engine wired it before the mint.** `completeRun` calls the port
+  when the assembly declares one and the ledger tail holds completed
+  updater steps; the mint's target resolves from the **committed** oid —
+  the release names a commit that carries its own bump bytes, never ambient
+  `HEAD`. Zero updater steps skips the door (byte-identical memory runs:
+  memory assembly declares no commit port). A mutation path the declared
+  seam cannot re-read is a **fail-closed refusal before any commit**; the
+  pre-walk also refuses a committed-but-untagged finished attempt and an
+  uncommitted mint with commit-anchored mutations.
+- **The version-carrying driver exists** (`src/version-mutation-driver.ts`):
+  plan → `version-bump` + `changelog-render` mutations → commit → mint →
+  publication, composed as a package-shell factory (the publication-driver
+  precedent). `planLine.changes` stays untouched — **#291's
+  change-shape binding is not part of this slice**, stated deliberately.
+
+### New ground truth this addendum records
+
+- **The committed tree is the produced tree.** The vertical driver test
+  asserts the tagged tree's `VERSION` and `CHANGELOG.md` byte-equal to the
+  driver's own produced values and the recorded base entry byte-equal to
+  the base blob — the release commit carries exactly its mutations, nothing
+  ambient (class 1).
+- **The changelog mint is the release body's seam (class 3).** The
+  changelog artifact producer mints a `git-tree:` digest of a
+  single-entry tree holding the rendered changelog at its path; the
+  publication resolver reads the recorded digest through
+  `binding.content.file(digest, "CHANGELOG.md")`. The vertical driver test
+  proves that read returns the **same bytes the commit carried** — recorded
+  tree and committed tree agree by construction, byte-equal (the created
+  release object itself is the publication-port suite's proof on the
+  identical assembly and resolver).
+- **The commit is the release's auditable identity.** Its subject is
+  `release-craft: release <tag> for <line> (<planId>)` verbatim; the
+  vertical test pins the full subject, tying the minted tag to the recorded
+  plan through the commit's message. (The extraction-classification of the
+  release's own commits — D11's trailer-namespace rule governs the
+  `Release-Craft:` trailer, not this subject — is a subsequent slice's
+  recorded question, not decided here.)
+
+### Defect census delta at this tree
+
+- **#289 (no plan→mutation binding)** — partially answered: the driver
+  derives `version-bump` and `changelog-render` mutations from the plan's
+  recorded line (its version), the middle term §2 names; `planLine.changes`
+  (#291) is deliberately not consumed — the change-shape binding remains
+  open.
+- **#291 (renderChangelog has no production caller)** — answered at the
+  driver tier: the changelog-render mutation's producer and the changelog
+  artifact producer are production callers; the release-pr.ts hand-rolled
+  projection is unchanged and stays #291-scoped.
+- Re-verified present, unchanged by this slice: #288, #294, #299, #307,
+  #311, #233, #248, and the carried #222/#223/#230/#235/#237/#250/#253/#262.
+
+### Posture delta over §1–§3
+
+| Capability                                        | Was    | Now                                            |
+| ------------------------------------------------- | ------ | ---------------------------------------------- |
+| Version mutation (producer exists)                | absent | implemented + tested (driver #339)             |
+| Changelog renderer (production caller)            | absent | implemented + tested (driver #339)             |
+| Release commit                                    | absent | implemented + tested (real git)                |
+| Commit→mint ordering (tag names the bump commit)  | absent | present — mint target is the committed oid     |
+| Publication port (engine half)                    | absent | implemented + tested (fake transport)          |
+| Changelog artifact declaration                    | absent | implemented (bytes stale until #291/#294)      |
+| Live publish leg (transport, token ingress)       | absent | absent (#336)                                  |
+| Publication ordering invariant (tag→expected SHA) | absent | absent — now named, release-blocking           |
+| Plan→mutation→commit→tag chain                    | absent | present through the commit door (driver scope) |

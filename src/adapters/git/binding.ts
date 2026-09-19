@@ -30,9 +30,10 @@ import { GitAttemptRegister } from "./register-git.js";
 import { openGitRun, type GitRun } from "./git-run.js";
 import { GitRefRead } from "./refs-read.js";
 import { GitTagDoor, type TagMint } from "./tag-door.js";
+import { GitCommitDoor, type ReleaseCommit } from "./commit-door.js";
 
 /** The binding the assembly receives (contract §2.6): the three ports and
- * the two doors, all bound to one repository. */
+ * the three doors, all bound to one repository. */
 export interface GitBinding {
   /** The git-backed execution ledger. */
   readonly ledger: ExecutionLedger;
@@ -47,6 +48,11 @@ export interface GitBinding {
    * `unclaimed`, `foreign-token`) and conflict outcomes are returned
    * values, never exceptions. */
   readonly mintTag: TagMint;
+  /** The binding's own door — the release commit (issue #339): the
+   *  mutation files overlaid on the recorded base tree, committed with
+   *  the release's own identity and message. Refused outcomes are
+   *  returned values, never exceptions; the commit moves no ref. */
+  readonly commit: ReleaseCommit;
   /** The git-backed channel store (ADR-0012 decision 6) — the
    * deliverability pointer's durable half, the port the application layer
    * drives the `channel-transition` stage's recorded moves through. The
@@ -104,6 +110,7 @@ export function openGitBinding(config: BindingConfig): GitBinding {
     claims,
     channels: new GitChannelStore(config.repo),
     mintTag: GitTagDoor(git, config.tagNaming),
+    commit: GitCommitDoor(git, config.tagNaming),
     producer: GitArtifactProducer(config.repo),
     repo: config.repo,
     refs: GitRefRead(git, config.tagNaming.namespaces),

@@ -76,6 +76,14 @@ export * from "./release-pr-driver.js";
 // re-exported so a host composes the assembly through the front door,
 // never by hand.
 export * from "./publication-driver.js";
+// The version-carrying self-release's mutation producer (issue #339): the
+// version bump and changelog render as the engine's declared mutations,
+// their committed bytes the release's tree, and the rendered changelog's
+// digest the release body's seam. Composed here, in the package shell —
+// `type-package` is the one tag whose boundary row reaches both the app
+// layer and the planner — and re-exported so a host composes the
+// self-release through the front door, never by hand.
+export * from "./version-mutation-driver.js";
 
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;
