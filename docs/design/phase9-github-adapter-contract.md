@@ -280,9 +280,17 @@ recorded state:
 - Release creation: the tag name + the changelog digest (the binding's
   generation record holds it as `contentFingerprint`, §2.8) is the key.
 
-The adapter verifies idempotency before write: if the remote already
-satisfies the write, the adapter returns `ok` without making a remote
-call.
+The adapter verifies idempotency before write: a release whose read
+already matches the recorded changelog satisfies the write — but its
+`ok` is earned only after re-asserting the recorded tag against the
+remote git ref (issue #351): a satisfied release whose tag moved or
+vanished is the `release-tag-mismatch`/`release-tag-missing` refusal,
+never a silent acceptance. The create's 201 returns `ok` the same way —
+the gate's read and the create's POST are separate requests, so the tag
+is re-asserted after the 201; a determinate post-create divergence
+refuses naming it, and an unreadable re-assert stays the ambiguous class
+(the write landed, its tag state unknown — the resumed idempotent read
+resolves it).
 
 ### 2.5 Authentication boundary
 

@@ -388,13 +388,33 @@ export function GitReleasePublication(
         if (url === undefined || remoteBody === undefined) {
           return { kind: "transport-failure" };
         }
-        return remoteBody === recorded.body
-          ? { kind: "ok", url }
-          : {
-              kind: "refused",
-              reason: "release-conflict",
-              detail: `the remote release for ${tag} does not match the recorded changelog (${recorded.digest})`,
-            };
+        if (remoteBody !== recorded.body) {
+          return {
+            kind: "refused",
+            reason: "release-conflict",
+            detail: `the remote release for ${tag} does not match the recorded changelog (${recorded.digest})`,
+          };
+        }
+        // The satisfied-release path re-asserts the recorded tag before
+        // returning ok (audit §10 ground truth 2b): a release whose tag
+        // no longer answers the binding's recorded target is not the
+        // recorded publication — the ok the engine would refuse at the
+        // verify half anyway, refused here so the port's ok stands
+        // alone. A moved or deleted tag is this gate's own refusal,
+        // never a silent acceptance.
+        const reassertTarget = recordedTagTarget(binding, tag);
+        if (!reassertTarget.ok) {
+          return {
+            kind: "refused",
+            reason: reassertTarget.reason,
+            detail: reassertTarget.detail,
+          };
+        }
+        const reassert = tagRefVerdict(transport, credentials, tag, reassertTarget.target);
+        if (reassert.kind !== "proceed") {
+          return reassert;
+        }
+        return { kind: "ok", url };
       }
       if (existing.status !== 404) {
         return failureTail(existing);
@@ -404,11 +424,7 @@ export function GitReleasePublication(
       // GitHub's create-release API otherwise creates the missing tag at
       // the default branch's HEAD, the wrong-commit hazard. The binding's
       // recorded target is the truth the sync pushes; the remote git ref
-      // must answer exactly it, or the create never fires. (The
-      // existing-release idempotency path above never reaches here — a
-      // re-run of a succeeded publication does not re-assert the tag, so
-      // a tag moved or deleted after the fact cannot turn the idempotent
-      // re-run into a refusal.)
+      // must answer exactly it, or the create never fires.
       const recordedTarget = recordedTagTarget(binding, tag);
       if (!recordedTarget.ok) {
         return { kind: "refused", reason: recordedTarget.reason, detail: recordedTarget.detail };
@@ -442,7 +458,34 @@ export function GitReleasePublication(
       );
       if (created.status === 201) {
         const url = releaseUrl(created.body);
-        return url === undefined ? { kind: "transport-failure" } : { kind: "ok", url };
+        if (url === undefined) {
+          return { kind: "transport-failure" };
+        }
+        // The post-create re-assert (audit §10 ground truth 2a): the
+        // gate's read and the create's POST are separate requests, and a
+        // tag moved between them mints the release over the moved commit
+        // — the wrong-commit hazard #338 closed, reachable once more
+        // through this window. The create returned 201, so the write
+        // determinately landed; whether it landed over the recorded tag
+        // is now re-read before ok. A determinate divergence is the
+        // refusal naming it (the release exists — the operator sees
+        // both sides); an unreadable re-assert is the ambiguous window
+        // (201 seen, tag state unknown — the idempotent re-run's
+        // satisfied-path gate resolves it on resume).
+        const reassert = tagRefVerdict(transport, credentials, tag, recordedTarget.target);
+        if (reassert.kind === "proceed") {
+          return { kind: "ok", url };
+        }
+        if (reassert.kind === "refused") {
+          return {
+            kind: "refused",
+            reason: reassert.reason,
+            detail: `the release for ${tag} was created, but ${reassert.detail}`,
+          };
+        }
+        return reassert.detail === undefined
+          ? { kind: "ambiguous" }
+          : { kind: "ambiguous", detail: reassert.detail };
       }
       if (created.status === 0) {
         // The ambiguous window stays the class (the write may have
