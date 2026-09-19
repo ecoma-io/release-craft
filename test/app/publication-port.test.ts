@@ -31,6 +31,7 @@ import { openPublicationDriver, type LedgerRecord, type RunRequest } from "../..
 import { liveWorld } from "../vertical/matrix.js";
 import {
   CHANGELOG_BODY,
+  DIVERGENT_BODY,
   type FakeRemote,
   type GitHubVerticalState,
   openFakeRemote,
@@ -224,6 +225,58 @@ describe("§2.2/§2.5 — the wired publication port (audit §7.1; D87)", () => 
         expect(resumed.tag).toBe("5.0.0-beta.1");
         expect(resumed.releaseUrl).toBe(remote.releaseUrls.get("5.0.0-beta.1"));
         expect(remote.releases.get("5.0.0-beta.1")).toBe(CHANGELOG_BODY);
+      });
+    },
+  );
+  it(
+    "create lands server-side with a diverged body, 201 lost: blocked publication-ambiguous, the resume's idempotent read refuses release-conflict — the landed release stands, never re-created",
+    { timeout: 120_000 },
+    () => {
+      withGitHubVertical("app-pub-landed-lost-diverged", (vertical) => {
+        const remote = openFakeRemote();
+        seedRemoteTag(vertical, remote);
+        // The create's write lands server-side with another body — a
+        // landed release the recorded tail does not match — and the
+        // create answer is lost (status 0): the divergence surfaces
+        // only on the resume's idempotent read, never as a duplicate
+        // re-create (issue #354).
+        remote.armLandedLost201(DIVERGENT_BODY);
+        const engine = openPublicationDriver(
+          vertical.state.binding,
+          vertical.adapter(remote.transport),
+          { maxRetries: 2 },
+        );
+        const request = wiredRun(vertical);
+        const blocked = engine.run(request);
+        expect(blocked.kind).toBe("blocked");
+        if (blocked.kind !== "blocked" || blocked.handle === null) {
+          throw new Error("expected a blocked outcome with a handle");
+        }
+        expect(blocked.cause).toContain("publication-ambiguous");
+        expect(remote.landedLost201Fired()).toBe(true);
+        // The diverged release really landed — exactly one object.
+        expect(remote.releases.size).toBe(1);
+        expect(remote.releases.get("5.0.0-beta.1")).toBe(DIVERGENT_BODY);
+        const resolved = engine.resolve(blocked.handle, "publish", {
+          kind: "revalidation",
+          planFingerprint: blocked.planId ?? "",
+        });
+        expect(resolved.kind).toBe("resolved");
+        const resumed = engine.resume(blocked.handle, request);
+        expect(resumed.kind).toBe("refused");
+        if (resumed.kind !== "refused") {
+          throw new Error("expected a refused outcome");
+        }
+        // The refused read names the divergence — the recorded
+        // conflict decision, never a silent acceptance or a second
+        // create.
+        expect(resumed.detail).toContain("does not match the recorded changelog");
+        expect(remote.releases.size).toBe(1);
+        const observation = engine.observe({ kind: "attempt", handle: blocked.handle });
+        if (observation.kind !== "attempt") {
+          throw new Error(`expected an attempt observation, got ${observation.kind}`);
+        }
+        expect(observation.state).toBe("executing");
       });
     },
   );

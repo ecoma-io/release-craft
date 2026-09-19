@@ -140,6 +140,18 @@ export interface FakeRemote {
   armConcurrentWriter(body: string): void;
   /** Whether the armed writer fired. */
   readonly concurrentWriterFired: () => boolean;
+  /** Arms the server-side-landed + lost-response create arm (issue
+   * #354): the next create the publication door issues is performed
+   * server-side — the release lands in the remote's own map exactly as
+   * a real create (the remote constructs the metadata: the door's
+   * body — or `body`'s override — and the remote's URL) — and the
+   * create answers status 0, the lost 201. The class the status-0 arms
+   * (nothing lands) and the concurrent writer (a determinate 422)
+   * cannot reach: the write determinately landed, yet the caller saw
+   * no answer. Fires once (the fired-flag world). */
+  armLandedLost201(body?: string): void;
+  /** Whether the armed landed-lost create fired. */
+  readonly landedLost201Fired: () => boolean;
 }
 
 /** The listings paginate (D32): a small fixed page size forces the walk
@@ -186,6 +198,10 @@ export const openFakeRemote = (): FakeRemote => {
   /** The armed concurrent writer's body — landed in the create window. */
   let armed: string | null = null;
   let fired = false;
+  /** The landed-lost arm (issue #354): `undefined` unarmed, `null`
+   * arming with the door's own body, a string arming with that body. */
+  let landedLost: string | null | undefined = undefined;
+  let landedLostFired = false;
   const tagRow = (name: string, sha: string): unknown => ({ name, commit: { sha } });
   const releaseRow = (tag: string): unknown => ({ tag_name: tag });
   const listResponse = (rows: readonly unknown[], query: string, base: string): GitHubResponse => {
@@ -293,6 +309,19 @@ export const openFakeRemote = (): FakeRemote => {
           fired = true;
           return { status: 422, headers: {}, body: JSON.stringify({ message: "already_exists" }) };
         }
+        if (landedLost !== undefined) {
+          // Issue #354: the create is performed server-side — the
+          // release lands exactly as a real create (the remote
+          // constructs the metadata: the door's body — or the armed
+          // override — and the remote's URL) — but the create answer
+          // is lost (status 0): the server-side-landed + lost-response
+          // class, distinct from the concurrent writer's determinate
+          // 422 above. Fires once; everything after delegates.
+          createRelease(tag, landedLost ?? body);
+          landedLost = undefined;
+          landedLostFired = true;
+          return { status: 0, headers: {}, body: "" };
+        }
         return createRelease(tag, body);
       }
       throw new Error(`fixture broken: the fake remote serves no route for ${path}`);
@@ -323,6 +352,11 @@ export const openFakeRemote = (): FakeRemote => {
       fired = false;
     },
     concurrentWriterFired: () => fired,
+    armLandedLost201: (landingBody) => {
+      landedLost = landingBody ?? null;
+      landedLostFired = false;
+    },
+    landedLost201Fired: () => landedLostFired,
   };
 };
 

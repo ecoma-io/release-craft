@@ -269,6 +269,43 @@ describe("audit §7.3 — crash-window recovery over the publication effects win
       expect(crashed).toStrictEqual(clean);
     },
   );
+  it(
+    "create lands server-side, 201 lost: blocked publication-ambiguous over the landed release, the resolution + resume's idempotent read verifies it — one release object, never a second create, byte-equal the uninterrupted run",
+    { timeout: 120_000 },
+    () => {
+      const crashed = crashedTrace(
+        "w1b-create-landed-lost",
+        (remote) => {
+          // The first create is performed server-side — the release
+          // lands in the remote's own map with the metadata the remote
+          // constructs, the door's own body — but the create answer is
+          // lost (status 0): the server-side-landed + lost-response
+          // class (issue #354), which the status-0 arms above leave
+          // unlanded and the concurrent writer's determinate 422 never
+          // reaches. The arm fires once; everything after delegates, so
+          // the resumed idempotent read finds the landed release.
+          remote.armLandedLost201();
+          return remote.transport;
+        },
+        "publish",
+        (cause, remote) => {
+          expect(cause).toContain("publication-ambiguous");
+          // Exactly one create was issued — and it landed: the release
+          // object is on the remote despite the lost answer.
+          expect(remote.landedLost201Fired()).toBe(true);
+          expect(
+            remote.calls.filter(
+              (call) => call.init?.method === "POST" && call.path.endsWith("/releases"),
+            ),
+          ).toHaveLength(1);
+          expect(remote.releases.size).toBe(1);
+          expect(remote.releases.get(TAG)).toBe(CHANGELOG_BODY);
+        },
+      );
+      const clean = cleanTrace("w1b-create-landed-lost-clean");
+      expect(crashed).toStrictEqual(clean);
+    },
+  );
 
   it(
     "verify transport-failure after a landed create: blocked publication-verify-unavailable over an existing release, the resolution + resume re-verify without re-creating, byte-equal the uninterrupted run",
