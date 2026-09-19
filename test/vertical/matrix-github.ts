@@ -205,6 +205,25 @@ export const openFakeRemote = (): FakeRemote => {
       const route = queryStart < 0 ? path : path.slice(0, queryStart);
       const query = queryStart < 0 ? "" : path.slice(queryStart);
       const base = route.slice(0, route.lastIndexOf("/"));
+      if (route.includes("/git/refs/tags/")) {
+        // The publication door's create precondition (issue #338):
+        // `GET /repos/{owner}/{repo}/git/refs/tags/{tag}` — the tag's
+        // object as origin holds it, answered from the seeded `tags`
+        // map (name → sha). A ref origin does not hold is the 404 the
+        // door discriminates. (Slash-bearing tag names arrive
+        // percent-encoded, so the last slash still ends the name —
+        // the same shape the releases route reads below.)
+        const name = decodeURIComponent(route.slice(route.lastIndexOf("/") + 1));
+        const sha = tags.get(name);
+        if (sha === undefined) {
+          return { status: 404, headers: {}, body: JSON.stringify({ message: "Not Found" }) };
+        }
+        return {
+          status: 200,
+          headers: {},
+          body: JSON.stringify({ ref: `refs/tags/${name}`, object: { sha, type: "commit" } }),
+        };
+      }
       if (route.endsWith("/tags")) {
         if (tagFault !== null) {
           return { status: tagFault.status, headers: tagFault.headers, body: "" };

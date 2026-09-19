@@ -29,6 +29,14 @@
  *   race-loss the idempotent re-run resolves; issue #178), and
  *   the create's 404 is the unobservable repository (#176) — a
  *   determinate non-land, never the retryable class;
+ * - the create's precondition (issue #338): the remote git ref for the
+ *   tag is read before any write — a ref origin does not hold is
+ *   `refused("release-tag-missing")` over an observable repository (the
+ *   create-release API otherwise creates a missing tag at the default
+ *   branch's HEAD, the wrong-commit hazard), a ref answering a
+ *   different object is `refused("release-tag-mismatch")`, and the
+ *   create carries the recorded target as `target_commitish` — the
+ *   create never fires unverified;
  * - `verifyRelease` reports a release that does not exist as `absent`
  *   (issue #60; D28): a determinate read, and the caller's action is the
  *   publication itself. The verdict is discriminated before it is
@@ -199,6 +207,84 @@ const request = (
   path: string,
   init?: GitHubRequestInit,
 ): GitHubResponse => guardedRequest(transport, path, init);
+const refPath = (credentials: GitHubCredentials, tag: string): string =>
+  `/repos/${credentials.owner}/${credentials.repo}/git/refs/tags/${encodeURIComponent(tag)}`;
+
+/** The git-ref response's object sha — what origin holds the tag at.
+ *  The engine mints lightweight tags (the mint door's `--no-sign`), so
+ *  the ref's object is the commit itself, and the sha compares directly
+ *  against the binding's recorded target; a response without it is no
+ *  observation (the transport-failure class, like a release read's
+ *  unreadable body). */
+const tagRefSha = (body: string): string | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (
+    parsed !== null &&
+    typeof parsed === "object" &&
+    "object" in parsed &&
+    typeof parsed.object === "object" &&
+    parsed.object !== null &&
+    "sha" in parsed.object &&
+    typeof parsed.object.sha === "string"
+  ) {
+    return parsed.object.sha.length > 0 ? parsed.object.sha : undefined;
+  }
+  return undefined;
+};
+
+/** The verdict the create's precondition reads (issue #338): the remote
+ *  git ref for the tag is observed against the binding's recorded
+ *  target before any write — a release may only be created over the tag
+ *  origin already holds at the recorded commit (GitHub's create-release
+ *  API otherwise creates a missing tag at the default branch's HEAD).
+ *  `proceed` is exactly "200 naming the recorded target". The ref's 404
+ *  is discriminated before it is claimed (#176's discipline): the
+ *  repository probe decides the determinate `release-tag-missing` over
+ *  an observable repository, the probe's own refusal otherwise. Any
+ *  other status is the read tail's one taxonomy. */
+type TagRefVerdict =
+  | { readonly kind: "proceed" }
+  | { readonly kind: "refused"; readonly reason: RefusalReason; readonly detail: string }
+  | { readonly kind: "transport-failure"; readonly detail?: string };
+
+const tagRefVerdict = (
+  transport: GitHubTransport,
+  credentials: GitHubCredentials,
+  tag: string,
+  recordedTarget: string,
+): TagRefVerdict => {
+  const ref = request(transport, refPath(credentials, tag));
+  if (ref.status === 200) {
+    const sha = tagRefSha(ref.body);
+    if (sha === undefined) {
+      return { kind: "transport-failure" };
+    }
+    return sha === recordedTarget
+      ? { kind: "proceed" }
+      : {
+          kind: "refused",
+          reason: "release-tag-mismatch",
+          detail: `origin holds the tag ${tag} at ${sha}, not the recorded target ${recordedTarget}`,
+        };
+  }
+  if (ref.status === 404) {
+    const probe = request(transport, repoPath(credentials));
+    if (probe.status === 200) {
+      return {
+        kind: "refused",
+        reason: "release-tag-missing",
+        detail: `origin holds no tag ${tag} — the recorded target ${recordedTarget} is unpushed`,
+      };
+    }
+    return failureTail(probe);
+  }
+  return failureTail(ref);
+};
 
 /** Projects the tag's changelog out of the binding's recorded state
  *  (§2.8): tag → minting claim → holding attempt → the completed
@@ -247,6 +333,30 @@ const recordedChangelog = (binding: GitBinding, tag: string): RecordedChangelog 
     detail: `no recorded claim derives the tag ${tag}`,
   };
 };
+/** The binding's recorded target for the tag (issue #338): the commit
+ *  the recorded mint names — the truth the remote git ref is asserted
+ *  against, the sync's own push its resolution. A tag the binding
+ *  records no ref for is the recorded-state gap class
+ *  (`changelog-unrecorded`): unreachable through the engine, whose
+ *  doors mint before publishing, but a determinate refusal at the
+ *  boundary all the same. */
+const recordedTagTarget = (
+  binding: GitBinding,
+  tag: string,
+):
+  | { readonly ok: true; readonly target: string }
+  | { readonly ok: false; readonly reason: RefusalReason; readonly detail: string } => {
+  for (const row of binding.refs.tags()) {
+    if (row.ref === `refs/tags/${tag}`) {
+      return { ok: true, target: row.target };
+    }
+  }
+  return {
+    ok: false,
+    reason: "changelog-unrecorded",
+    detail: `the binding records no tag ref refs/tags/${tag}`,
+  };
+};
 
 /**
  * Opens the release publication on an already-opened binding, the open
@@ -289,6 +399,24 @@ export function GitReleasePublication(
       if (existing.status !== 404) {
         return failureTail(existing);
       }
+      // The create's precondition (issue #338): the release may only be
+      // created over a tag origin already holds at the recorded commit —
+      // GitHub's create-release API otherwise creates the missing tag at
+      // the default branch's HEAD, the wrong-commit hazard. The binding's
+      // recorded target is the truth the sync pushes; the remote git ref
+      // must answer exactly it, or the create never fires. (The
+      // existing-release idempotency path above never reaches here — a
+      // re-run of a succeeded publication does not re-assert the tag, so
+      // a tag moved or deleted after the fact cannot turn the idempotent
+      // re-run into a refusal.)
+      const recordedTarget = recordedTagTarget(binding, tag);
+      if (!recordedTarget.ok) {
+        return { kind: "refused", reason: recordedTarget.reason, detail: recordedTarget.detail };
+      }
+      const gate = tagRefVerdict(transport, credentials, tag, recordedTarget.target);
+      if (gate.kind !== "proceed") {
+        return gate;
+      }
       // The create: the one write this unit performs. A lost response is
       // ambiguous, never a silent success (§2.3) — status 0 after the
       // write is that class. A determinate answer classifies: a 404 is
@@ -303,7 +431,12 @@ export function GitReleasePublication(
         `/repos/${credentials.owner}/${credentials.repo}/releases`,
         {
           method: "POST",
-          body: JSON.stringify({ tag_name: tag, name: tag, body: recorded.body }),
+          body: JSON.stringify({
+            tag_name: tag,
+            name: tag,
+            body: recorded.body,
+            target_commitish: recordedTarget.target,
+          }),
           headers: { "Content-Type": "application/json" },
         },
       );
@@ -359,13 +492,26 @@ export function GitReleasePublication(
       if (remoteBody === undefined) {
         return { kind: "transport-failure" };
       }
-      return remoteBody === recorded.body
-        ? { kind: "verified" }
-        : {
-            kind: "refused",
-            reason: "release-conflict",
-            detail: `the remote release for ${tag} does not match the recorded changelog (${recorded.digest})`,
-          };
+      if (remoteBody !== recorded.body) {
+        return {
+          kind: "refused",
+          reason: "release-conflict",
+          detail: `the remote release for ${tag} does not match the recorded changelog (${recorded.digest})`,
+        };
+      }
+      // The verification asserts the tag too (issue #338): a release
+      // whose body matches while origin holds the tag elsewhere (or not
+      // at all) is not the recorded publication verified — the same
+      // precondition the create's gate ran, the same verdicts.
+      const recordedTarget = recordedTagTarget(binding, tag);
+      if (!recordedTarget.ok) {
+        return { kind: "refused", reason: recordedTarget.reason, detail: recordedTarget.detail };
+      }
+      const gate = tagRefVerdict(transport, credentials, tag, recordedTarget.target);
+      if (gate.kind !== "proceed") {
+        return gate;
+      }
+      return { kind: "verified" };
     },
   };
 }

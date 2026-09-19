@@ -31,6 +31,7 @@ import { openPublicationDriver, type LedgerRecord, type RunRequest } from "../..
 import { liveWorld } from "../vertical/matrix.js";
 import {
   CHANGELOG_BODY,
+  type FakeRemote,
   type GitHubVerticalState,
   openFakeRemote,
   withGitHubVertical,
@@ -51,6 +52,21 @@ const wiredRun = (vertical: GitHubVerticalState): RunRequest => {
   };
 };
 
+/** Seeds the fake remote's git-ref surface with the tag the run mints —
+ * the create's precondition (issue #338) reads the remote ref at the
+ * binding's recorded target before any write, and verification asserts it
+ * again. The engine records the minted ref inside the run, so the seed
+ * must be in place before the run starts: the remote has nothing the run
+ * would push (issue #338's own posture — the sync is the push, and these
+ * port tests exercise the publication door alone). */
+const seedRemoteTag = (vertical: GitHubVerticalState, remote: FakeRemote): void => {
+  const target = vertical.state.lineHeads.main;
+  if (target === undefined) {
+    throw new Error("fixture broken: no recorded head for main");
+  }
+  remote.putTag("5.0.0-beta.1", target);
+};
+
 describe("§2.2/§2.5 — the wired publication port (audit §7.1; D87)", () => {
   it(
     "ok: the completion creates the release from the recorded body and publishes with the release URL",
@@ -58,6 +74,7 @@ describe("§2.2/§2.5 — the wired publication port (audit §7.1; D87)", () => 
     () => {
       withGitHubVertical("app-pub-ok", (vertical) => {
         const remote = openFakeRemote();
+        seedRemoteTag(vertical, remote);
         const engine = openPublicationDriver(
           vertical.state.binding,
           vertical.adapter(remote.transport),
@@ -124,6 +141,7 @@ describe("§2.2/§2.5 — the wired publication port (audit §7.1; D87)", () => 
     () => {
       withGitHubVertical("app-pub-refused", (vertical) => {
         const remote = openFakeRemote();
+        seedRemoteTag(vertical, remote);
         // The provider refuses the create: 422 (release-conflict class).
         remote.failReleases(422, {});
         const engine = openPublicationDriver(
@@ -159,6 +177,7 @@ describe("§2.2/§2.5 — the wired publication port (audit §7.1; D87)", () => 
     () => {
       withGitHubVertical("app-pub-ambiguous", (vertical) => {
         const remote = openFakeRemote();
+        seedRemoteTag(vertical, remote);
         // The first create answers with a lost response (status 0 = the
         // ambiguous class); everything else delegates to the fake remote,
         // so the resumed read-before-write create lands on the real one.
@@ -215,6 +234,7 @@ describe("§2.2/§2.5 — the wired publication port (audit §7.1; D87)", () => 
     () => {
       withGitHubVertical("app-pub-transport", (vertical) => {
         const remote = openFakeRemote();
+        seedRemoteTag(vertical, remote);
         // The provider's server fails: 5xx → the transport-failure class.
         remote.failReleases(500, {});
         const engine = openPublicationDriver(

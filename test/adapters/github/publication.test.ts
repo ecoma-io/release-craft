@@ -37,6 +37,7 @@ const ATTEMPT = "attempt_sha256:publish-a";
 const RELEASE_URL = "https://github.com/ecoma-io/release-craft/releases/tags/v1.2.3";
 const RELEASE_PATH = "/repos/ecoma-io/release-craft/releases/tags/v1.2.3";
 const REPO_PATH = "/repos/ecoma-io/release-craft";
+const REF_PATH = "/repos/ecoma-io/release-craft/git/refs/tags/v1.2.3";
 
 const credentials: GitHubCredentials = {
   owner: "ecoma-io",
@@ -113,6 +114,25 @@ const createdResponse = (): GitHubResponse => ({
   headers: {},
   body: JSON.stringify({ html_url: RELEASE_URL }),
 });
+const tagRefResponse = (sha: string): GitHubResponse => ({
+  status: 200,
+  headers: {},
+  body: JSON.stringify({ ref: `refs/tags/${TAG}`, object: { sha, type: "commit" } }),
+});
+
+/** The recorded target the seed minted the tag at — what the remote git
+ *  ref must answer for the create's precondition (issue #338) to pass. */
+const recordedTagTarget = (fixture: PublicationRepo): string => {
+  const rows = fixture
+    .binding()
+    .refs.tags()
+    .filter((row) => row.ref === `refs/tags/${TAG}`);
+  const [row] = rows;
+  if (row === undefined) {
+    throw new Error("fixture broken: the seed recorded no tag");
+  }
+  return row.target;
+};
 
 interface PublicationRepo {
   readonly repo: string;
@@ -216,9 +236,14 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
   it("creates the release with the recorded changelog body (R-04)", () => {
     withPublicationRepo("create", (fixture) => {
       seed(fixture);
-      const { transport, calls } = fakeTransport((call) =>
-        call.init?.method === "POST" ? createdResponse() : notFoundResponse(),
-      );
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.init?.method === "POST") {
+          return createdResponse();
+        }
+        return call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : notFoundResponse();
+      });
       const outcome: ReleaseOutcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "ok", url: RELEASE_URL });
       const posts = calls.filter((call) => call.init?.method === "POST");
@@ -226,9 +251,11 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const payload = JSON.parse(posts[0]?.init?.body ?? "{}") as {
         tag_name: string;
         body: string;
+        target_commitish: string;
       };
       expect(payload.tag_name).toBe(TAG);
       expect(payload.body).toBe(CHANGELOG_BODY);
+      expect(payload.target_commitish).toBe(recordedTagTarget(fixture));
     });
   });
 
@@ -239,6 +266,12 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "ok", url: RELEASE_URL });
       expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+      // The idempotent satisfied-release path is the one re-run of a
+      // succeeded publication: it consults nothing but the release read
+      // — the tag gate guards the create, and a tag moved or deleted
+      // after the fact must not turn the idempotent re-run into a
+      // refusal (#338).
+      expect(calls.map((call) => call.path)).toStrictEqual([RELEASE_PATH]);
     });
   });
 
@@ -448,6 +481,9 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
             }),
           };
         }
+        if (call.path === REF_PATH) {
+          return tagRefResponse(recordedTagTarget(fixture));
+        }
         return raced ? okResponse(CHANGELOG_BODY) : notFoundResponse();
       });
       const first = fixture.adapter(transport).publishRelease(TAG);
@@ -482,7 +518,9 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
                 errors: [{ resource: "Release", code: "missing_field", field: "tag_name" }],
               }),
             }
-          : notFoundResponse(),
+          : call.path === REF_PATH
+            ? tagRefResponse(recordedTagTarget(fixture))
+            : notFoundResponse(),
       );
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
@@ -499,7 +537,9 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport } = fakeTransport((call) =>
         call.init?.method === "POST"
           ? { status: 409, headers: {}, body: JSON.stringify({ message: "Conflict" }) }
-          : notFoundResponse(),
+          : call.path === REF_PATH
+            ? tagRefResponse(recordedTagTarget(fixture))
+            : notFoundResponse(),
       );
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
@@ -536,7 +576,11 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("ambiguous", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport((call) =>
-        call.init?.method === "POST" ? { status: 0, headers: {}, body: "" } : notFoundResponse(),
+        call.init?.method === "POST"
+          ? { status: 0, headers: {}, body: "" }
+          : call.path === REF_PATH
+            ? tagRefResponse(recordedTagTarget(fixture))
+            : notFoundResponse(),
       );
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "ambiguous" });
@@ -546,7 +590,11 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
   it("verifies a matching remote release (R-05's verify half)", () => {
     withPublicationRepo("verify-ok", (fixture) => {
       seed(fixture);
-      const { transport } = fakeTransport(() => okResponse(CHANGELOG_BODY));
+      const { transport } = fakeTransport((call) =>
+        call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : okResponse(CHANGELOG_BODY),
+      );
       const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({ kind: "verified" });
     });
@@ -678,10 +726,97 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport } = fakeTransport((call) =>
         call.init?.method === "POST"
           ? { status: 201, headers: {}, body: "{}" }
-          : notFoundResponse(),
+          : call.path === REF_PATH
+            ? tagRefResponse(recordedTagTarget(fixture))
+            : notFoundResponse(),
       );
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "transport-failure" });
+    });
+  });
+  it("refuses when origin holds no tag at the recorded target — release-tag-missing — and the create never fires (#338)", () => {
+    withPublicationRepo("missing-tag", (fixture) => {
+      seed(fixture);
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.path === REF_PATH) {
+          return notFoundResponse();
+        }
+        return call.path === REPO_PATH ? observableRepoResponse() : notFoundResponse();
+      });
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-tag-missing",
+        detail: detailContaining("origin holds no tag"),
+      });
+      if (outcome.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${outcome.kind}`);
+      }
+      expect(outcome.detail).toContain("unpushed");
+      // The gate never lets the create fire: no write may land over a
+      // tag the origin does not hold.
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+      // The absence verdict is discriminated on the wire (issue #176):
+      // the ref read 404'd, and the repository probe answered before
+      // the determinate `release-tag-missing` was claimed.
+      expect(calls.map((call) => call.path)).toEqual([RELEASE_PATH, REF_PATH, REPO_PATH]);
+    });
+  });
+
+  it("refuses when origin's tag answers a different object — release-tag-mismatch — and the create never fires (#338)", () => {
+    withPublicationRepo("mismatched-tag", (fixture) => {
+      seed(fixture);
+      const target = recordedTagTarget(fixture);
+      const { transport, calls } = fakeTransport((call) =>
+        call.path === REF_PATH ? tagRefResponse("a".repeat(40)) : notFoundResponse(),
+      );
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-tag-mismatch",
+        detail: detailContaining("not the recorded target"),
+      });
+      if (outcome.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${outcome.kind}`);
+      }
+      // The refusal names both the remote sha and the recorded target —
+      // the operator sees exactly the divergence.
+      expect(outcome.detail).toContain("a".repeat(40));
+      expect(outcome.detail).toContain(target);
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+    });
+  });
+
+  it("verifyRelease refuses when origin holds no tag at the recorded target (#338)", () => {
+    withPublicationRepo("verify-missing-tag", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) => {
+        if (call.path === REF_PATH) {
+          return notFoundResponse();
+        }
+        return call.path === REPO_PATH ? observableRepoResponse() : okResponse(CHANGELOG_BODY);
+      });
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-tag-missing",
+        detail: detailContaining("origin holds no tag"),
+      });
+    });
+  });
+
+  it("verifyRelease refuses when origin holds the tag at a different object (#338)", () => {
+    withPublicationRepo("verify-mismatched-tag", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.path === REF_PATH ? tagRefResponse("b".repeat(40)) : okResponse(CHANGELOG_BODY),
+      );
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-tag-mismatch",
+        detail: detailContaining("not the recorded target"),
+      });
     });
   });
 });
@@ -693,6 +828,7 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
    *  doors. */
   const hostileTransport = (
     on: (call: Call) => boolean,
+    answer?: (call: Call) => GitHubResponse,
   ): { transport: GitHubTransport; calls: Call[] } => {
     const calls: Call[] = [];
     return {
@@ -704,7 +840,7 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
           if (on(call)) {
             throw new Error("hostile transport");
           }
-          return notFoundResponse();
+          return answer === undefined ? notFoundResponse() : answer(call);
         },
       },
     };
@@ -727,13 +863,19 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
   it("a throw on the create is ambiguous — a response lost mid-write may have landed", () => {
     withPublicationRepo("hostile-create", (fixture) => {
       seed(fixture);
-      // The idempotency read answers 404 (nothing to match), then the
-      // create's transport throws. A throw is indistinguishable from a
-      // lost connection: the write may have landed unseen, so the
-      // outcome is §2.3's ambiguous window, never a determinate
-      // failure and never an escape — and the thrown words ride the
-      // outcome's detail, naming the write surface they escaped from.
-      const { transport, calls } = hostileTransport((call) => call.init?.method === "POST");
+      // The idempotency read 404s (nothing to match), the create's
+      // precondition reads the tag at its recorded target (the gate
+      // passes), then the create's transport throws. A throw is
+      // indistinguishable from a lost connection: the write may have
+      // landed unseen, so the outcome is §2.3's ambiguous window, never
+      // a determinate failure and never an escape — and the thrown
+      // words ride the outcome's detail, naming the write surface they
+      // escaped from.
+      const { transport, calls } = hostileTransport(
+        (call) => call.init?.method === "POST",
+        (call) =>
+          call.path === REF_PATH ? tagRefResponse(recordedTagTarget(fixture)) : notFoundResponse(),
+      );
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
         kind: "ambiguous",
@@ -743,7 +885,7 @@ describe("the transport contract's no-throw law, enforced at the boundary (§2.3
         throw new Error("unreachable");
       }
       expect(outcome.detail).toContain("POST /repos/ecoma-io/release-craft/releases");
-      expect(calls).toHaveLength(2);
+      expect(calls).toHaveLength(3);
     });
   });
 

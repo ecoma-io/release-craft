@@ -23,7 +23,8 @@ export interface GitHubCredentials {
  * recorded decision the caller observes: operator intervention for
  * `auth-expired`, `rate-limited`, `permission-denied`, and
  * `unobservable-remote`; a recorded conflict decision for
- * `already-pushed-different-target` and `release-conflict`.
+ * `already-pushed-different-target`, `release-conflict`,
+ * `release-tag-missing`, and `release-tag-mismatch`.
  *
  * `permission-denied` (issue #178) — the credential authenticated and the
  * provider declined the request's authorization: the fine-grained-token
@@ -37,6 +38,16 @@ export interface GitHubCredentials {
  * resources invisible to the caller. An observation that never happened
  * is never a determinate absence (`absent` is claimed only over a
  * repository the adapter observably reached).
+ *
+ * `release-tag-missing` and `release-tag-mismatch` (issue #338) — the
+ * create's precondition: a release may only be created over a tag origin
+ * already holds at the recorded commit (the create-release API otherwise
+ * creates a missing tag at the default branch's HEAD). The git-ref read's
+ * 404 over an observable repository is the determinate
+ * `release-tag-missing`; a ref answering a different object than the
+ * binding records for the tag is `release-tag-mismatch`. Neither fires
+ * the create — the record the caller owes the operator, the sync's own
+ * push the resolution.
  */
 export type RefusalReason =
   | "already-pushed-different-target"
@@ -45,7 +56,9 @@ export type RefusalReason =
   | "rate-limited"
   | "permission-denied"
   | "unobservable-remote"
-  | "release-conflict";
+  | "release-conflict"
+  | "release-tag-missing"
+  | "release-tag-mismatch";
 
 /**
  * The refusal reasons a listing's observation can carry (issue #66;
