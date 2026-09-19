@@ -59,9 +59,16 @@ permissions: read-all
 concurrency:
   group: review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
-
 jobs:
+  # Disabled temporarily (issue #343): triage/review dogfood legs were
+  # blocking the ALLGREEN merge queue while the glm-5.3-flash triage leg
+  # hard-failed every attempt on reasoning-only completions (content null).
+  # Review itself passes on glm-5.3; the pair is disabled together so the
+  # queue is free and the posture is one visible switch. Re-enable (drop
+  # the `if`) once action-agents lands the triage corrective re-ask.
+  # https://github.com/ecoma-io/action-agents/issues/499
   review:
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The action's own needs: the working tree is the review's subject, and

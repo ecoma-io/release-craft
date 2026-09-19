@@ -36,7 +36,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Disabled temporarily (issue #343): the glm-5.3-flash endpoint answers
+  # reasoning-only (content null) and the pinned triage action hard-fails
+  # that shape — the queue's ALLGREEN grouping blocks every PR while the
+  # leg is red. Re-enable (drop the `if`) once action-agents lands the
+  # triage corrective re-ask for reasoning-only completions.
+  # https://github.com/ecoma-io/action-agents/issues/499
   triage:
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
