@@ -24,6 +24,7 @@
  */
 import {
   CANONICAL_STAGES,
+  InvalidExecutionTransitionError,
   abort as abortAttempt,
   attemptIdentity,
   block,
@@ -51,6 +52,7 @@ import {
   type MutationOutcome,
   type ReleaseAttempt,
   type RequestStepOutcome,
+  type ResumeOutcome,
   type StageKey,
   type StepKey,
   isUpdaterStepKey,
@@ -560,6 +562,125 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
       };
     }
     return { entry };
+  };
+  /** The cross-process resume seam (issue #355, phase 11 contract §2.8): the
+   * ledger-entry reconstruction — the fresh process's ONLY way back into a
+   * SIGKILLed walk. The `attempts` store is the assembly's process-local
+   * bookkeeping, never authority (§2.7), so a resume whose plan the fresh
+   * assembly never carried refuses through `carriedEntry` — and the resume
+   * door then asks the durable record instead of stopping there. The
+   * gate: the ledger's plan record must name the handle's plan id — no
+   * record, wrong plan, or a re-derived plan that disagrees with the
+   * handle keeps the refusal (the door's byte-identical completed/unknown
+   * refusal IS the face a fresh engine answers a stranger handle with,
+   * and the foreign-handle clause below mirrors `carriedEntry`'s for the
+   * same reason). The entry: the plan re-derived from the request's OWN
+   * input (the closed planning input — invariant 2.2's closed world — the
+   * resume host reads the run's input as the plan document; the recorded
+   * plan id is then the equality proof (E-05) that the derivation matches
+   * the killed walk's plan byte-for-byte), the attempt's line required as
+   * the request's exactly-one line id (the attempt's own line, not the
+   * whole plan — doRun's one-line posture, §2.5 step 1: the resume door
+   * sends the handle's plan and nothing else, and a line-less request is
+   * the unknown face, never a guess), and the attempt itself re-posed
+   * with the killed walk's identity, the recorded fingerprint, and state
+   * `executing` — the state an open attempt records at its only crossing,
+   * carried forward from then. Anything else the fresh process needs —
+   * the hooks, artifacts, and mutations frozen with the attempt at
+   * `openAttempt` — is state the resume door's request already carries
+   * (`request.declarations`), because a resume that names a line's plan
+   * names the whole declaration that ran with it. */
+  const durableEntry = (
+    handle: AttemptHandle,
+    request: RunRequest,
+  ): { readonly entry: AttemptEntry; readonly from: StepKey } | { readonly refusal: string } => {
+    const recorded = ports.ledger.planFingerprint(handle.attemptId);
+    if (recorded === null || recorded !== handle.planId) {
+      return {
+        refusal:
+          `unknown attempt — the engine carries no attempt for plan ${handle.planId}; the ` +
+          `refused handle names ${handle.attemptId} (phase 11 contract §2.7)`,
+      };
+    }
+    const lineId = request.lineIds.length === 1 ? request.lineIds[0] : undefined;
+    if (lineId === undefined) {
+      return {
+        refusal:
+          `unknown attempt — the engine carries no attempt for plan ${handle.planId}; the ` +
+          `refused handle names ${handle.attemptId} (phase 11 contract §2.7)`,
+      };
+    }
+    const planning = planRelease(request.input);
+    if (planning.kind === "refused") {
+      return {
+        refusal:
+          `unknown attempt — the engine carries no attempt for plan ${handle.planId}; the ` +
+          `refused handle names ${handle.attemptId} (phase 11 contract §2.7)`,
+      };
+    }
+    const assembled = planning.plan;
+    if (assembled.planId !== handle.planId) {
+      return {
+        refusal:
+          `the recorded plan for attempt ${handle.attemptId} is ${handle.planId}, not ` +
+          `${assembled.planId} — refusing to continue over a foreign handle (phase 11 contract §2.7)`,
+      };
+    }
+    const planLine = assembled.lines.find((candidate) => candidate.lineId === lineId);
+    if (planLine === undefined) {
+      return {
+        refusal:
+          `the plan ${handle.planId} assembles no line ${lineId} — the request's lineIds name a line ` +
+          `the plan does not carry`,
+      };
+    }
+    const attempt: ReleaseAttempt = {
+      attemptId: handle.attemptId,
+      planId: handle.planId,
+      planFingerprint: recorded,
+      state: "executing",
+      ...(request.declarations?.hooks === undefined ? {} : { hooks: request.declarations.hooks }),
+      ...(request.declarations?.artifacts === undefined
+        ? {}
+        : { artifacts: request.declarations.artifacts }),
+      ...(request.declarations?.mutations === undefined
+        ? {}
+        : { mutations: request.declarations.mutations }),
+    };
+    // The continuation gate — §2.6's own classification over the
+    // reconstructed attempt, once, here: ONLY a tail the classifier answers
+    // `resume` may continue. A completed tail stays the fresh process's
+    // unknown refusal (a finished attempt has nothing to continue — E-01's
+    // done-ness reads the recorded steps, never the caller's intent), an
+    // escalated tail is recorded state a human must judge (§2.3), and an
+    // abandonment raises the classifier's contract violation, answered as
+    // the same refusal — the fresh engine answers a stranger handle with
+    // the same face it always did; the seam only ever continues a walk the
+    // durable record proves was mid-flight.
+    let verdict: ResumeOutcome;
+    try {
+      verdict = classifyResume(attempt, ports.ledger);
+    } catch (error) {
+      if (error instanceof InvalidExecutionTransitionError) {
+        return {
+          refusal:
+            `unknown attempt — the engine carries no attempt for plan ${handle.planId}; the ` +
+            `refused handle names ${handle.attemptId} (phase 11 contract §2.7)`,
+        };
+      }
+      throw error;
+    }
+    if (verdict.kind !== "resume") {
+      return {
+        refusal:
+          `unknown attempt — the engine carries no attempt for plan ${handle.planId}; the ` +
+          `refused handle names ${handle.attemptId} (phase 11 contract §2.7)`,
+      };
+    }
+    return {
+      entry: { attempt, planLine, claim: null, tags: [] },
+      from: verdict.from,
+    };
   };
 
   /** One acquisition's rows, when it did not land (§2.8's table). */
@@ -1125,10 +1246,26 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
 
   const doResume = (handle: AttemptHandle, request: RunRequest): RunOutcome => {
     const found = carriedEntry(handle);
+    let entry: AttemptEntry;
+    let durableFrom: StepKey | null = null;
     if ("refusal" in found) {
-      return refusedOutcome(found.refusal, handle.planId, handle);
+      // The fresh assembly's refusal is the honest face — and the durable
+      // seam (issue #355) then asks the recorded state instead of stopping
+      // there: carried as the request the host read for the run, the
+      // attempt's own line required, the plan re-derived from the closed
+      // input and proven against the recorded fingerprint, the entry
+      // reconstructed, and only a continuing walk admitted (durableEntry's
+      // gate) — a killed mid-flight walk's continuation, walked from the
+      // classifier's `from` with the same work a carried resume does.
+      const durable = durableEntry(handle, request);
+      if ("refusal" in durable) {
+        return refusedOutcome(durable.refusal, handle.planId, handle);
+      }
+      entry = durable.entry;
+      durableFrom = durable.from;
+    } else {
+      entry = found.entry;
     }
-    const { entry } = found;
     const scope = claimScopeForLine(entry.planLine);
     if (scope === null) {
       return refusedOutcome(
@@ -1141,6 +1278,16 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     const denial = acquireFor(entry, scope, handle);
     if (denial !== null) {
       return denial;
+    }
+    if (durableFrom !== null) {
+      return driveFrom(
+        entry,
+        handle,
+        request.declarations ?? {},
+        durableFrom,
+        plannedTagOf(entry.planLine),
+        request.targets?.[entry.planLine.lineId],
+      );
     }
     return continueRun(
       entry,

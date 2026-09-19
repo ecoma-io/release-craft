@@ -27,7 +27,9 @@ import { freshStores, GOLDEN, liveWorld, matrixHooks } from "../vertical/matrix.
 import {
   CapturingLedger,
   FOREIGN_PLAN,
+  ShiftingLedger,
   beta,
+  rc,
   freshAssembly,
   fullDeclaration,
   runRequest,
@@ -412,5 +414,213 @@ describe("obligation 5 — the loser path recovers from the recorded tail", () =
     expect(outcome.tag).toBe(GOLDEN.ladder[0]);
     const tail = stores.ledger.tail(outcome.handle.attemptId);
     expect(recordedTos(tail, "commit")).toStrictEqual(["started", "completed"]);
+  });
+});
+
+describe("issue #355 — the fresh-process seam: a fresh engine continues a SIGKILLed walk from the ledger tail", () => {
+  /** One raw store bundle under a capture wrapper, and the SECOND engine
+   * the fresh process would bind: the durable stores are shared, the
+   * `attempts` store is not (never was — `freshStores` has no handle on
+   * the other assembly's map). A resume on the fresh engine MUST refuse
+   * through `carriedEntry` first — the recorded-state seam is the only
+   * way it can continue. */
+  function seamAssembly() {
+    const stores = freshStores();
+    const ledger = new CapturingLedger(stores.ledger);
+    const died = assembleMemoryStores(
+      {
+        register: stores.register,
+        ledger,
+        claims: stores.claims,
+        channels: stores.channels,
+      },
+      { maxRetries: 2 },
+    );
+    const fresh = assembleMemoryStores(
+      {
+        register: stores.register,
+        ledger,
+        claims: stores.claims,
+        channels: stores.channels,
+      },
+      { maxRetries: 2 },
+    );
+    return { stores, ledger, died, fresh };
+  }
+
+  /** The mid-flight tail a SIGKILL leaves: a throwing effect escapes the
+   * door after the write-ahead start is durable (the crash window's own
+   * shape), so the recorded walk is started-but-not-completed — the state
+   * a killed process leaves, without needing a kill. Returns the handle a
+   * fresh process recovers from the captured writes. */
+  function killedMidWalk(
+    assembly: ReturnType<typeof seamAssembly>,
+    declaration: RunDeclarations,
+  ): AttemptHandle {
+    const effects = new Map(declaration.hookEffects ?? []);
+    let invocations = 0;
+    effects.set("announce", (input) => {
+      invocations += 1;
+      if (invocations === 1) {
+        throw new Error("the walk died mid-flight (issue #355's SIGKILL)");
+      }
+      return {
+        attribution: { attemptId: input.attemptId, actor: "automation" },
+        evidence: "evidence:announce",
+      };
+    });
+    const world = liveWorld();
+    const crashed = () =>
+      assembly.died.run(
+        runRequest(world, "main", [beta], { ...declaration, hookEffects: effects }),
+      );
+    expect(crashed).toThrow("the walk died mid-flight (issue #355's SIGKILL)");
+    const attemptId = assembly.ledger.attemptIds[0];
+    const planId = assembly.ledger.planIds[0];
+    if (attemptId === undefined || planId === undefined) {
+      throw new Error("fixture broken: the ledger captured no attempt write");
+    }
+    expect(assembly.stores.ledger.step(attemptId, "hook:announce")).toBe("started");
+    return { planId, attemptId, actor: "automation" };
+  }
+
+  it("the killed walk continues to the published terminal: the fresh engine re-enters at the recorded stop, runs the effect once more, and mints the same tag", () => {
+    const assembly = seamAssembly();
+    const declaration = fullDeclaration();
+    const handle = killedMidWalk(assembly, declaration);
+
+    // The fresh engine's resume: carriedEntry refuses (empty map), the
+    // durable seam reconstructs the entry and the classifier's `from`, and
+    // the walk continues from the recorded stop — the announce hook's
+    // write-ahead start — to completion with the second (fresh-process)
+    // invocation of the effect.
+    const outcome = assembly.fresh.resume(
+      handle,
+      runRequest(liveWorld(), "main", [beta], declaration),
+    );
+    expect(outcome.kind).toBe("published");
+    if (outcome.kind !== "published" || outcome.handle === null) {
+      throw new Error("expected a published outcome");
+    }
+    expect(outcome.tag).toBe(GOLDEN.ladder[0]);
+    const tail = assembly.stores.ledger.tail(handle.attemptId);
+    expect(recordedTos(tail, "hook:announce")).toStrictEqual(["started", "completed"]);
+  });
+
+  it("a completed attempt stays the fresh process's unknown refusal — the seam's continuation gate answers the same face x-01 pins", () => {
+    const assembly = seamAssembly();
+    const world = liveWorld();
+    const first = assembly.died.run(runRequest(world, "main", [beta], fullDeclaration()));
+    expect(first.kind).toBe("published");
+    const attemptId = assembly.ledger.attemptIds[0];
+    const planId = assembly.ledger.planIds[0];
+    if (attemptId === undefined || planId === undefined) {
+      throw new Error("fixture broken: the first run left no attempt write");
+    }
+
+    const outcome = assembly.fresh.resume(
+      { planId, attemptId, actor: "automation" },
+      runRequest(world, "main", [beta], fullDeclaration()),
+    );
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") {
+      throw new Error("expected a refused outcome");
+    }
+    expect(outcome.detail).toContain("unknown attempt");
+  });
+
+  it("a line-less resume of a recorded mid-flight walk is the unknown face — the seam needs the attempt's own line", () => {
+    const assembly = seamAssembly();
+    const declaration = fullDeclaration();
+    const handle = killedMidWalk(assembly, declaration);
+
+    const outcome = assembly.fresh.resume(handle, {
+      ...runRequest(liveWorld(), "main", [beta], declaration),
+      lineIds: [],
+    });
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") {
+      throw new Error("expected a refused outcome");
+    }
+    expect(outcome.detail).toContain("unknown attempt");
+  });
+
+  it("a resume whose input re-plans a different plan is refused as a foreign handle — the re-derived plan must equal the recorded plan", () => {
+    const assembly = seamAssembly();
+    const declaration = fullDeclaration();
+    const handle = killedMidWalk(assembly, declaration);
+
+    const outcome = assembly.fresh.resume(
+      handle,
+      runRequest(liveWorld(), "main", [rc], declaration),
+    );
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") {
+      throw new Error("expected a refused outcome");
+    }
+    expect(outcome.detail).toContain("foreign handle");
+  });
+
+  it("a resume naming a line the re-derived plan does not carry is refused", () => {
+    const assembly = seamAssembly();
+    const declaration = fullDeclaration();
+    const handle = killedMidWalk(assembly, declaration);
+
+    const outcome = assembly.fresh.resume(handle, {
+      ...runRequest(liveWorld(), "main", [beta], declaration),
+      lineIds: ["other-line"],
+    });
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") {
+      throw new Error("expected a refused outcome");
+    }
+    expect(outcome.detail).toContain("assembles no line");
+  });
+
+  it("a ledger that reports a mismatched recorded fingerprint refuses the reconstructed attempt — the equality proof's other side", () => {
+    const stores = freshStores();
+    const ledger = new CapturingLedger(stores.ledger);
+    const died = assembleMemoryStores(
+      {
+        register: stores.register,
+        ledger,
+        claims: stores.claims,
+        channels: stores.channels,
+      },
+      { maxRetries: 2 },
+    );
+    const world = liveWorld();
+    const declaration = fullDeclaration();
+    const effects = new Map(declaration.hookEffects ?? []);
+    effects.set("announce", () => {
+      throw new Error("the walk died mid-flight");
+    });
+    expect(() =>
+      died.run(runRequest(world, "main", [beta], { ...declaration, hookEffects: effects })),
+    ).toThrow("the walk died mid-flight");
+    const attemptId = ledger.attemptIds[0];
+    const planId = ledger.planIds[0];
+    if (attemptId === undefined || planId === undefined) {
+      throw new Error("fixture broken: the ledger captured no attempt write");
+    }
+
+    const fresh = assembleMemoryStores(
+      {
+        register: stores.register,
+        ledger: new ShiftingLedger(stores.ledger),
+        claims: stores.claims,
+        channels: stores.channels,
+      },
+      { maxRetries: 2 },
+    );
+    const outcome = fresh.resume(
+      { planId, attemptId, actor: "automation" },
+      runRequest(world, "main", [beta], fullDeclaration()),
+    );
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") {
+      throw new Error("expected a refused outcome");
+    }
+    expect(outcome.detail).toContain("unknown attempt");
   });
 });
