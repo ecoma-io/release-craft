@@ -339,9 +339,13 @@ export interface TransitionRecord {
    * must name what that HOW operated on, or a consumer holding only the
    * ledger cannot answer "which file did `updater:<id>` move" — the
    * sibling artifact record states its coordinates for the same reason.
-   * Present only on a completed updater step's record; the scheduler
-   * writes it, never a stage or a hook. The record states the path;
-   * verifying the write stays the write-verify gate's job (issue #203). */
+   * Present on a completed updater step's record when the constructor
+   * that completed it recorded the coordinate: the scheduler writes it on
+   * a fresh completion, and adoption (ADR-0006 decision 6, issue #307)
+   * carries the adopted source record's recorded path verbatim — never a
+   * stage or a hook, never invented, and a source that recorded none is
+   * carried as none. The record states the path; verifying the write
+   * stays the write-verify gate's job (issue #203). */
   readonly targetPath?: string;
 }
 

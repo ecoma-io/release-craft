@@ -134,6 +134,93 @@ describe("adoption (phase 5 §2.5, E-06, AR-05, AR-06)", () => {
     expect(ledger.tail(source.attemptId)).toEqual(sourceTailBefore);
   });
 
+  it("carries the adopted source's recorded target path onto the updater completion (issue #307)", () => {
+    const register = new MemoryAttemptRegister();
+    const ledger = new MemoryLedger();
+    const source = attempt(register);
+    const adopting = attempt(register);
+    const fingerprint = contentFingerprint({ "CHANGELOG.md": "## 1.6.0" });
+    const attribution = actor(source.attemptId, "automation");
+    ledger.appendStart(source, "updater:mut-1", attribution, fingerprint);
+    ledger.append({
+      kind: "step",
+      record: {
+        attemptId: source.attemptId,
+        stepKey: "updater:mut-1",
+        from: "started",
+        to: "completed",
+        guards: [],
+        attribution,
+        contentFingerprint: fingerprint,
+        targetPath: "CHANGELOG.md",
+      },
+    });
+    const dispositions = new MemoryDispositionStore();
+
+    const outcome = adopt(
+      adopting,
+      "updater:mut-1",
+      source.attemptId,
+      ledger,
+      {
+        attribution: actor(source.attemptId, "human:maintainer"),
+        evidence: "evidence:git:abc123",
+        contentFingerprint: fingerprint,
+      },
+      dispositions,
+    );
+
+    expect(outcome.kind).toBe("adopted");
+    const completion = ledger.tail(adopting.attemptId)[2];
+    if (completion?.kind !== "step") throw new Error("expected the completion record");
+    expect(completion.record.to).toBe("completed");
+    expect(completion.record.targetPath).toBe("CHANGELOG.md");
+    expect(completion.record.contentFingerprint).toBe(fingerprint);
+    expect(dispositions.entries()).toEqual([]);
+  });
+
+  it("carries none when the adopted source recorded none — never invents a coordinate (issue #307)", () => {
+    const register = new MemoryAttemptRegister();
+    const ledger = new MemoryLedger();
+    const source = attempt(register);
+    const adopting = attempt(register);
+    const fingerprint = contentFingerprint({ "CHANGELOG.md": "## 1.6.0" });
+    const attribution = actor(source.attemptId, "automation");
+    ledger.appendStart(source, "updater:mut-1", attribution, fingerprint);
+    ledger.append({
+      kind: "step",
+      record: {
+        attemptId: source.attemptId,
+        stepKey: "updater:mut-1",
+        from: "started",
+        to: "completed",
+        guards: [],
+        attribution,
+        contentFingerprint: fingerprint,
+      },
+    });
+    const dispositions = new MemoryDispositionStore();
+
+    const outcome = adopt(
+      adopting,
+      "updater:mut-1",
+      source.attemptId,
+      ledger,
+      {
+        attribution: actor(source.attemptId, "human:maintainer"),
+        evidence: "evidence:git:abc123",
+        contentFingerprint: fingerprint,
+      },
+      dispositions,
+    );
+
+    expect(outcome.kind).toBe("adopted");
+    const completion = ledger.tail(adopting.attemptId)[2];
+    if (completion?.kind !== "step") throw new Error("expected the completion record");
+    expect(completion.record.targetPath).toBeUndefined();
+    expect(dispositions.entries()).toEqual([]);
+  });
+
   it("stale draft overwrite: conflicting fingerprint escalates, observation preserved verbatim (AR-06)", () => {
     const register = new MemoryAttemptRegister();
     const ledger = new MemoryLedger();

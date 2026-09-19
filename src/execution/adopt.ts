@@ -185,6 +185,12 @@ export const adopt = (
       ...(observation.contentFingerprint === undefined
         ? {}
         : { contentFingerprint: observation.contentFingerprint }),
+      // Issue #307: a completed updater step's record names the file
+      // coordinate its content fingerprint was derived over — the source
+      // recorded the path (D77's fresh-completion law), the adoption
+      // carries it verbatim; never invented, and a source that recorded
+      // none is carried as none.
+      ...(source.targetPath === undefined ? {} : { targetPath: source.targetPath }),
     },
   });
   const record = ledger.append({
