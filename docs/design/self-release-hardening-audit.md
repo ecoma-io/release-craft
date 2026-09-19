@@ -402,3 +402,166 @@ their source and re-run in their suites.
 | Live publish leg (transport, token ingress)       | absent | absent (#336)                                  |
 | Publication ordering invariant (tag→expected SHA) | absent | absent — now named, release-blocking           |
 | Plan→mutation→commit→tag chain                    | absent | present through the commit door (driver scope) |
+
+## 10. Re-audit addendum — merged HEAD `b286796` (2026-09-20)
+
+Method: the Wave 1c merge (issue
+[#339](https://github.com/ecoma-io/release-craft/issues/339), PR #348 →
+`b286796`) is the first slice that landed through the org gate, so this
+addendum re-measures the audit's posture at the **merged** HEAD rather than a
+working tree. Four read-only reconnaissance agents (adapters, surfaces,
+execution, issues) delta-audited each subsystem, then this lead re-read the
+load-bearing seams directly — the publication create, the commit-door
+filter, the assembly selection, the module-boundary law, the invocation
+environment — and re-measured the repository facts (tags, releases, package,
+PR #337 state). Every "absent"/"present" below was re-verified at this HEAD,
+not carried from §8 or §9.
+
+### What changed since §9
+
+- **Wave 1c is merged and CI-verified.** The version-carrying commit door
+  (`src/adapters/git/commit-door.ts`), the version-mutation driver
+  (`src/version-mutation-driver.ts`), their tests, and this audit's §9
+  posture delta landed as PR #348 (`b286796`); issue #339 closed. The
+  engine's commit→mint→publication chain (§9's "release commit",
+  "commit→mint ordering", "plan→mutation→commit→tag chain" rows) is now
+  main's state, not a branch's. The `pnpm check` bar for that merge (1905
+  tests, 92.75% statements) is the baseline every subsequent slice must
+  hold.
+- **PR #337 is an empty gate commit, not the publish leg.** The #336
+  publish-leg wiring (§8 row "live publish leg", tracked as PR #337) has
+  **zero file changes**: its only commit `c3c53b6` is a gate commit whose
+  tree equals its parent `f89c0f7`. The branch is also based on
+  `f89c0f7`, before Wave 1c — a diff against current `main` shows 22 files
+  of _deletions_ that are main's later work. Neither the tenth `publish`
+  input, nor the token env amendment, nor the judge's release attestation
+  exists anywhere. Planning must not treat #336 as partially landed.
+
+### New ground truth this addendum records
+
+1. **The create POST carries `target_commitish` and a tag-ref precondition
+   at this HEAD — the §8 "wrong-commit hazard" claim is closed.**
+   `publishRelease` reads the existing release first (idempotency,
+   `src/adapters/github/publication.ts:384-401`), then — only on a 404 —
+   derives the recorded tag target (`recordedTagTarget`,
+   `:343-359`), gates the create on the remote tag ref answering that
+   recorded SHA (`tagRefVerdict`, `:255-287`: 200 + `object.sha ===
+recordedTarget` → `proceed`; 404 → `release-tag-missing` over an
+   observable repository; other → the read taxonomy), and only then POSTs
+   `{tag_name, name, body, target_commitish: recordedTarget.target}`
+   (`:429-441`). §8's cited lines (`:301-309`, `:335-369`) described the
+   pre-#338 state. Verified by direct read at this HEAD.
+2. **Two tag-gate windows remain open.** (a) **TOCTOU**: the
+   `tagRefVerdict` GET and the create POST are separate requests with no
+   re-assertion between them — and after the create returns 201 nothing
+   re-reads the tag or the release (the `verifyRelease` half is a separate
+   engine phase; the create's own `releaseUrl` is trusted as returned).
+   (b) **Idempotent-ok skips the gate entirely**: on the 200-match path
+   (`:391-398`) the function returns `ok` without consulting the tag ref —
+   the comment at `:407-411` states this deliberately ("a re-run of a
+   succeeded publication does not re-assert the tag"). A tag deleted or
+   moved after first publication (or a release deleted and re-created with
+   the same body) is therefore **silently accepted** by the idempotent
+   re-run. Phase 1's close-the-transaction work must decide and seal these
+   two windows.
+3. **No REST/API transport exists in `src/` — the publication port is
+   still unproven against the real provider.** `GitHubTransport` is an
+   injected interface (`src/adapters/github/adapter-types.ts:329-334`,
+   "the implementation supplies the fetch mechanics"); grep across
+   `src/adapters/github/` finds the interface and its fake consumers
+   (tests) only — no `fetch(`, no `node:http`, no `https.request`. Every
+   publication/release-pr/reconciliation test injects a fake. The git-ref
+   transport (`GitRemoteSync`, `src/adapters/github/sync.ts`) is real and
+   live-capable, but no **GitHub Release object has ever been created on
+   any recorded leg** — the self-release workflow's publish step pushes
+   git refs only (`scripts/dogfood/publish-mint.mjs`), and its verification
+   reads `git ls-remote` only (`scripts/dogfood/verify-origin.mjs`). This
+   is the single largest unproven surface on the path to a real
+   self-release: a live REST transport implementation + one live create
+   leg.
+4. **The CLI/Action surfaces cannot reach the publication port — no token
+   ingress, no assembly.** `selectEngine` offers exactly the two
+   null-publication factories (`src/cli/selection.ts:36-57`); the module
+   boundary law pins CLI dependencies to
+   `app/execution/planner/adapters-git` and forbids the package front door
+   (`module-boundaries.config.mjs:33`, `type-cli` row) — the CLI
+   architecturally cannot compose the GitHub adapter. The Action's
+   invocation spawns the bin with an environment of exactly `{PATH, HOME}`
+   (`action/invoke.mjs:361-362`) and its declared inputs close at
+   `changelog` (`:181-190`). #336 (tenth `publish` input, token via the
+   step env, hermeticity amendment) is the required bridge — and it is not
+   implemented (ground truth 2 above).
+5. **Ledger/claims durability is proven at the git tier; the claims-register
+   fetch gap (#237) stands.** Ledger per-attempt refs with first-parent
+   record streams and CAS appends, whole-envelope CAS claim registers, and
+   ordinal registers are all durable and tested (fixture-1 reload
+   byte-exact, resume equivalence). But no engine/adapter code fetches the
+   remote claims register (#237): only `self-release.yml:132-140`
+   pre-fetches `+refs/release-craft/claims/*` before invoking the Action;
+   a plain consumer of the released Action runs against local claims only.
+6. **Adopted updater completions are invisible to the commit door (#307).**
+   `completedMutationFiles` filters ledger records on
+   `record.record.targetPath !== undefined`
+   (`src/app/engine.ts:589-624`) before feeding the commit door; `adopt()`
+   mints updater completions without a `targetPath` (no such field on the
+   adoption record), so an adopted update is silently omitted from any
+   release commit. Engine-tested paths (the version driver) flow through
+   the targetPath-carrying `updater` layer and are unaffected; the
+   adoption path is the gap.
+7. **Historical tags are rehearsal artifacts — no promotable evidence
+   exists.** Re-measured: `0.1.0` → `e6e85464`, `0.2.0` → `5eb04403` (both
+   on `main` history, `package.json` at `0.1.0`), `9.9.9` → `8587b13a`
+   (off-`main`, divergent rehearsal). `gh release list` is empty — zero
+   GitHub Release objects. Per goal §9's taint rule, none of these tags
+   can stand as evidence of a real self-release; the first real release
+   mints fresh identifiers and all of them must agree (version commit →
+   tag → release → changelog → ledger).
+8. **The completeRun ordering is commit-first, then mint, then verified
+   publication.** Re-verified at `src/app/engine.ts:636-800`: when the
+   walk recorded completed updater steps and the assembly declares a
+   commit port, the commit door runs before the mint (the mint target is
+   the committed oid, never ambient HEAD); the publication port runs after
+   the mint, and `published {tag, releaseUrl}` lands only on a verified
+   read — determinate refusals return `refused`, absent/ambiguous/transport
+   failures block the attempt with a resumable cause. This is the
+   transaction order Phase 1 must harden, not rebuild.
+
+### Defect census at this HEAD (issue #349 re-audit)
+
+All 27 tracked issues reconciled against merged HEAD `b286796` (read-only;
+each verdict cites the owning source or the measured command output):
+
+| Verdict             | Issues                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FIXED               | #339 (commit door + driver, merged #348), #206 (renderer, production caller), #204 (manifest door), #203 (updater layer), #205 (node-workspace detection)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| PARTIAL             | #336 (engine half merged; Action leg unwired — PR #337 empty), #294 (changelog bytes digest-sealed on the driver path only), #291 (rendered changelog reachable via driver; `planLine.changes` shape unchanged), #289 (driver binds its mutations; host-declared corridors plan-blind), #237 (workflow-level fetch only)                                                                                                                                                                                                                                                                                                                 |
+| UNRESOLVED          | #311 (release-pr tamper guard skips on derivation failure, `release-pr.ts:1176`), #307 (adopt completions lack targetPath — invisible to commit door, ground truth 6), #299 (isolation list lacks `localeCompare`/bare `Date()`), #262 (persist-credentials gate comment-satisfiable), #250 (CLI test harness inherits ambient env), #235 (PR template ships unchecked boxes the gate refuses), #230 (triage dry-run flag unshipped), #253 (test-stress.mjs in node's default glob), #223 (pre-read channel drift still silent), #222 (vertical fixture forges claim-held guard), #288 (release-pr records outside the execution ledger) |
+| DOC-ONLY            | #233 (phase14 R2 sentence truncated), #248 (phase12 §Layering contradicts the enforced boundary), #305 (changelog `##` vs `###` citation)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| FEATURE-NOT-STARTED | #208 (release-pr CLI/Action surface), #207 (bootstrap CLI door), #268 (harmonise English gate)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+### Reconciliations taken with this addendum
+
+- **PR #337** — recorded as empty (zero file changes) and re-based on a
+  pre-Wave-1c `f89c0f7`; the #336 work must be built fresh on `main` and
+  this PR superseded, not "finished".
+- **Scout divergences resolved in the lead's favor**: the §8-era "create
+  lacks `target_commitish`" claim (ScoutSurfaces repeated it) is closed at
+  this HEAD — the live source carries it plus the tag-ref gate (ground
+  truth 1). The audit doc, not the older workflow snapshot, is the
+  authority for the current contributor.
+
+### Posture delta over §1–§3
+
+| Capability                                        | Was (§8/§9)                           | Now (merged HEAD `b286796`)                            |
+| ------------------------------------------------- | ------------------------------------- | ------------------------------------------------------ |
+| Version mutation (producer exists)                | branch (working tree)                 | main, merged + CI-verified (#339/#348)                 |
+| Changelog renderer (production caller)            | branch (working tree)                 | main, merged (driver tier)                             |
+| Release commit                                    | branch (working tree)                 | main, merged (real git)                                |
+| Commit→mint ordering                              | branch (working tree)                 | main, merged — verified ordering                       |
+| Publication port (engine half)                    | implemented + tested (fake transport) | unchanged — still fake-transport only                  |
+| Create carries `target_commitish` + tag gate      | absent (§8 claim)                     | present at HEAD (`publication.ts:429-441`, `:255-287`) |
+| Tag-gate TOCTOU / idempotent-ok skip              | unnamed                               | named, open — Phase 1 scope                            |
+| Live publish leg (REST transport + token ingress) | absent (#336)                         | absent — PR #337 empty, work not started               |
+| #307 adopted-updater visibility to commit door    | named                                 | verified filter (`engine.ts:589-624`) — open           |
+| Claims-register fetch (#237)                      | absent (workflow-level fetch only)    | unchanged — open                                       |
+| GitHub Release object ever created (any leg)      | none recorded                         | none recorded — unproven surface                       |
