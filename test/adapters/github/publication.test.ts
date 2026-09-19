@@ -262,16 +262,137 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
   it("retries as ok through the verify, writing nothing further (R-05)", () => {
     withPublicationRepo("retry", (fixture) => {
       seed(fixture);
-      const { transport, calls } = fakeTransport(() => okResponse(CHANGELOG_BODY));
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.path === RELEASE_PATH) {
+          return okResponse(CHANGELOG_BODY);
+        }
+        return call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : notFoundResponse();
+      });
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({ kind: "ok", url: RELEASE_URL });
       expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
       // The idempotent satisfied-release path is the one re-run of a
-      // succeeded publication: it consults nothing but the release read
-      // — the tag gate guards the create, and a tag moved or deleted
-      // after the fact must not turn the idempotent re-run into a
-      // refusal (#338).
-      expect(calls.map((call) => call.path)).toStrictEqual([RELEASE_PATH]);
+      // succeeded publication: the release read found the recorded body,
+      // and the tag gate is re-asserted before the ok (issue #351) — a
+      // tag moved or deleted after the fact is this gate's own refusal,
+      // never a silent acceptance the port's ok would have to disown.
+      expect(calls.map((call) => call.path)).toStrictEqual([RELEASE_PATH, REF_PATH]);
+    });
+  });
+
+  it("refuses the idempotent re-run once the tag moved — release-tag-mismatch, no write (issue #351 window b)", () => {
+    withPublicationRepo("retry-moved", (fixture) => {
+      seed(fixture);
+      const target = recordedTagTarget(fixture);
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.path === RELEASE_PATH) {
+          return okResponse(CHANGELOG_BODY);
+        }
+        return call.path === REF_PATH ? tagRefResponse("a".repeat(40)) : notFoundResponse();
+      });
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-tag-mismatch",
+        detail: detailContaining("not the recorded target"),
+      });
+      if (outcome.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${outcome.kind}`);
+      }
+      // The refusal names both the remote sha and the recorded target —
+      // the operator sees exactly the divergence the re-run would
+      // otherwise have papered over.
+      expect(outcome.detail).toContain("a".repeat(40));
+      expect(outcome.detail).toContain(target);
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+      expect(calls.map((call) => call.path)).toStrictEqual([RELEASE_PATH, REF_PATH]);
+    });
+  });
+
+  it("refuses the idempotent re-run once the tag vanished — release-tag-missing, no write (issue #351 window b)", () => {
+    withPublicationRepo("retry-missing", (fixture) => {
+      seed(fixture);
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.path === RELEASE_PATH) {
+          return okResponse(CHANGELOG_BODY);
+        }
+        return call.path === REF_PATH ? notFoundResponse() : observableRepoResponse();
+      });
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-tag-missing",
+        detail: detailContaining("origin holds no tag"),
+      });
+      if (outcome.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${outcome.kind}`);
+      }
+      expect(outcome.detail).toContain("unpushed");
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+      expect(calls.map((call) => call.path)).toStrictEqual([RELEASE_PATH, REF_PATH, REPO_PATH]);
+    });
+  });
+
+  it("refuses when the tag moved between the gate and the create — release-tag-mismatch, one write that landed (issue #351 window a)", () => {
+    withPublicationRepo("create-raced-tag", (fixture) => {
+      seed(fixture);
+      let refReads = 0;
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.init?.method === "POST") {
+          return createdResponse();
+        }
+        if (call.path === REF_PATH) {
+          refReads += 1;
+          // The gate's read answers the recorded target; the post-create
+          // re-assert finds the tag at the moved commit — the race the
+          // two-request gate could not see by itself (issue #351).
+          return refReads === 1
+            ? tagRefResponse(recordedTagTarget(fixture))
+            : tagRefResponse("a".repeat(40));
+        }
+        return notFoundResponse();
+      });
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-tag-mismatch",
+        detail: detailContaining("was created, but"),
+      });
+      if (outcome.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${outcome.kind}`);
+      }
+      // The refusal names the divergence against the recorded target —
+      // the operator sees that the release exists over the wrong commit.
+      expect(outcome.detail).toContain("a".repeat(40));
+      expect(outcome.detail).toContain(recordedTagTarget(fixture));
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(1);
+    });
+  });
+
+  it("reports an unreadable post-create re-assert as ambiguous — one write landed, its tag state unknown (issue #351 window a)", () => {
+    withPublicationRepo("create-reassert-lost", (fixture) => {
+      seed(fixture);
+      let refReads = 0;
+      const { transport, calls } = fakeTransport((call) => {
+        if (call.init?.method === "POST") {
+          return createdResponse();
+        }
+        if (call.path === REF_PATH) {
+          refReads += 1;
+          return refReads === 1
+            ? tagRefResponse(recordedTagTarget(fixture))
+            : { status: 0, headers: {}, body: "" };
+        }
+        return notFoundResponse();
+      });
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      // The ambiguous class, not a silent ok: the create determinately
+      // landed (201 seen) but the tag's state after it is unverifiable —
+      // the idempotent re-run's satisfied-path gate resolves it.
+      expect(outcome).toEqual({ kind: "ambiguous" });
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(1);
     });
   });
 

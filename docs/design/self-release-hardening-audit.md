@@ -565,3 +565,52 @@ each verdict cites the owning source or the measured command output):
 | #307 adopted-updater visibility to commit door    | named                                 | verified filter (`engine.ts:589-624`) — open           |
 | Claims-register fetch (#237)                      | absent (workflow-level fetch only)    | unchanged — open                                       |
 | GitHub Release object ever created (any leg)      | none recorded                         | none recorded — unproven surface                       |
+
+## 11. Re-audit addendum — the tag-gate closure (issue #351, this PR)
+
+### What changed since §10
+
+- **Ground truth 2's two residual tag-gate windows are closed at the
+  fix's HEAD.** `publishRelease` now re-asserts the recorded tag on both
+  paths that return `ok`, and the post-create window's unreadable
+  re-assert is the `ambiguous` class, never a fabricated success or a
+  false `transport-failure` ("nothing landed" would be a lie — the 201
+  was seen). The engine half, the contract, and `verifyRelease` are
+  unchanged: the port's `ok` now means what the verify half enforces.
+
+### New ground truth this addendum records
+
+1. **The satisfied path gates.** The 200-match branch
+   (`src/adapters/github/publication.ts:385-418`) derives the recorded
+   tag target (`:405-412`) and re-runs `tagRefVerdict` (`:413-416`)
+   before `{kind:"ok"}`: a tag moved or deleted after first publication
+   is the `release-tag-mismatch`/`release-tag-missing` refusal, never a
+   silent acceptance. The skip §10 quoted as deliberate
+   (`:407-411` at `b286796`) is gone; the decision is D89.
+2. **The post-create re-assert closes the gate→create TOCTOU.** After
+   the 201 and the URL read (`:459-463`), the tag is re-asserted
+   (`:475-488`): `proceed` → `ok`; a determinate divergence →
+   `refused` with the divergence named, wrapped in "the release for
+   {tag} was created, but …" so the operator sees both sides of the
+   landed release; an unreadable re-assert → `{kind:"ambiguous"}` — the
+   write landed (201 seen), its tag state unknown, and the resumed
+   idempotent read (the satisfied path's new gate) resolves it. This is
+   the engine-visible arm the §10 defect census's Phase 1 ordered:
+   `publication-ambiguous` blocks resumably, the recorded resolution
+   re-arms, and the resumed run re-asserts.
+3. **The engine's outcome mapping is untouched.** `completeRun`
+   (`src/app/engine.ts:740-784`) saw no changes: refusals stay
+   `refused` (attempt as the walk left it), `ambiguous` stays the
+   resumable `blocked` cause. The engine had been masked by
+   `verifyRelease`'s own re-assert; the closure makes the port honest
+   for standalone callers (the future live REST leg) at the cost of one
+   extra git-ref read on the satisfied and post-create paths.
+
+### Posture delta over §10
+
+| Capability                                  | Was (§10)                                   | Now (this PR)                                     |
+| ------------------------------------------- | ------------------------------------------- | ------------------------------------------------- |
+| Tag-gate TOCTOU / idempotent-ok skip        | named, open — Phase 1 scope                 | closed — re-assert on both `ok` paths (#351, D89) |
+| Post-create re-assert unreadable            | unnamed (the TOCTOU half)                   | `ambiguous` — resumable, idempotent read resolves |
+| Engine outcome mapping                      | refusals `refused`, indeterminate `blocked` | unchanged                                         |
+| Live publish leg (REST transport + ingress) | absent (#336)                               | absent — still the largest unproven surface       |

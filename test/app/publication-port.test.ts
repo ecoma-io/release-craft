@@ -258,4 +258,121 @@ describe("§2.2/§2.5 — the wired publication port (audit §7.1; D87)", () => 
       });
     },
   );
+
+  it(
+    "post-create re-assert refused: the release landed over a moved tag, the run refuses with the divergence named (issue #351 window a)",
+    { timeout: 120_000 },
+    () => {
+      withGitHubVertical("app-pub-reassert-refused", (vertical) => {
+        const remote = openFakeRemote();
+        seedRemoteTag(vertical, remote);
+        // The gate's read photographs the recorded target; the create
+        // lands (201); the post-create re-assert finds the tag at the
+        // moved commit — the two-request race window (issue #351).
+        let refReads = 0;
+        const transport: GitHubTransport = {
+          request(path, init) {
+            const route = path.split("?")[0] as string;
+            if (route.includes("/git/refs/tags/")) {
+              refReads += 1;
+              if (refReads === 2) {
+                return {
+                  status: 200,
+                  headers: {},
+                  body: JSON.stringify({
+                    ref: "refs/tags/5.0.0-beta.1",
+                    object: { sha: "2".repeat(40), type: "commit" },
+                  }),
+                };
+              }
+            }
+            return remote.transport.request(path, init);
+          },
+        };
+        const engine = openPublicationDriver(vertical.state.binding, vertical.adapter(transport), {
+          maxRetries: 2,
+        });
+        const outcome = engine.run(wiredRun(vertical));
+        expect(outcome.kind).toBe("refused");
+        if (outcome.kind !== "refused" || outcome.handle === null) {
+          throw new Error("expected a refused outcome with a handle");
+        }
+        // The refusal wraps the create-side divergence: the release
+        // exists on the remote, but over the moved commit — both sides
+        // are visible to the operator.
+        expect(outcome.detail).toContain("was created, but");
+        expect(outcome.detail).toContain("2".repeat(40));
+        expect(remote.releases.size).toBe(1);
+        const observation = engine.observe({ kind: "attempt", handle: outcome.handle });
+        if (observation.kind !== "attempt") {
+          throw new Error(`expected an attempt observation, got ${observation.kind}`);
+        }
+        expect(observation.state).toBe("executing");
+      });
+    },
+  );
+
+  it(
+    "resumed re-run over a moved tag refuses — the satisfied path re-asserts the gate (issue #351 window b)",
+    { timeout: 120_000 },
+    () => {
+      withGitHubVertical("app-pub-resume-moved", (vertical) => {
+        const remote = openFakeRemote();
+        seedRemoteTag(vertical, remote);
+        // The create lands (the release is real on the remote), but the
+        // post-create re-assert read is lost → the ambiguous block, exactly
+        // as a response lost mid-write. The operator then moves the tag
+        // out-of-band; the resume's satisfied path must re-assert the gate
+        // and refuse — never silently re-accept the moved tag.
+        let refReads = 0;
+        const transport: GitHubTransport = {
+          request(path, init) {
+            const route = path.split("?")[0] as string;
+            if (route.includes("/git/refs/tags/")) {
+              refReads += 1;
+              if (refReads === 2) {
+                return { status: 0, headers: {}, body: "" };
+              }
+            }
+            return remote.transport.request(path, init);
+          },
+        };
+        const engine = openPublicationDriver(vertical.state.binding, vertical.adapter(transport), {
+          maxRetries: 2,
+        });
+        const request = wiredRun(vertical);
+        const blocked = engine.run(request);
+        expect(blocked.kind).toBe("blocked");
+        if (blocked.kind !== "blocked" || blocked.handle === null) {
+          throw new Error("expected a blocked outcome with a handle");
+        }
+        expect(blocked.cause).toContain("publication-ambiguous");
+        // The release really landed (the 201 was seen); its tag state
+        // after the create is what the re-assert could not confirm.
+        expect(remote.releases.size).toBe(1);
+        // Out-of-band tag movement before the operator re-arms the try.
+        remote.putTag("5.0.0-beta.1", "2".repeat(40));
+        const resolved = engine.resolve(blocked.handle, "publish", {
+          kind: "revalidation",
+          planFingerprint: blocked.planId ?? "",
+        });
+        expect(resolved.kind).toBe("resolved");
+        const resumed = engine.resume(blocked.handle, request);
+        expect(resumed.kind).toBe("refused");
+        if (resumed.kind !== "refused") {
+          throw new Error("expected a refused outcome");
+        }
+        expect(resumed.detail).toContain("not the recorded target");
+        expect(resumed.detail).toContain("2".repeat(40));
+        // The release object stays as it landed; the attempt remains
+        // resumable for the operator's recorded reconciliation.
+        expect(remote.releases.size).toBe(1);
+        const observation = engine.observe({ kind: "attempt", handle: blocked.handle });
+        if (observation.kind !== "attempt") {
+          throw new Error(`expected an attempt observation, got ${observation.kind}`);
+        }
+        expect(observation.state).toBe("executing");
+      });
+    },
+  );
 });
