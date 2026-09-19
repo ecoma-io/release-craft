@@ -85,5 +85,16 @@ export * from "./publication-driver.js";
 // self-release through the front door, never by hand.
 export * from "./version-mutation-driver.js";
 
+// The Release PR gate's durable record sink (issue #288): the git-backed
+// `ReleasePRRecordSink` the driver's required sink argument names. It
+// composes here, in the package shell, because the app barrel's surface
+// is closed to stores (obligation 2 — doors and records, never a store)
+// and the git binding must not import the app's record vocabulary: the
+// shell is the one row that reaches both, exactly as the driver beside
+// it does, and the sink's ref derivation stays module-private — the
+// package surface refuses the provider vocabulary naming it would
+// require (`ref`, invariant 15).
+export { GitReleasePRRecordSink } from "./release-pr-sink.js";
+
 /** The package identity, exactly as package.json declares it. */
 export const PACKAGE_NAME = "@ecoma-io/release-craft" as const;
