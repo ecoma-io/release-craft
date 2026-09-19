@@ -1,14 +1,18 @@
 /**
  * The certification fixture's A-cross-process cells (phase 14 contract
- * §3.5, `x-01` … `x-05`). The assembly's subject is the seam between two
+ * §3.5, `x-01` … `x-06`). The assembly's subject is the seam between two
  * processes over one repository: what a fresh process answers from the
  * durable record alone, how its answer relates to what a fresh ENGINE
  * answers — the pass-through equality (phase 12 §6.7's pin, cell-ized),
  * never a verdict of its own — and, live, what a takeover across two
- * running processes fences with (`x-05`).
+ * running processes fences with (`x-05`) and what a fresh process
+ * continues after a SIGKILLed walk (`x-06`, issue #355) — the durable
+ * re-entry.
  */
-
 import { describe, expect, it } from "vitest";
+
+import { existsSync, readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 import type { RunOutcome } from "../../src/index.js";
 import { GitChannelStore } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
@@ -27,6 +31,7 @@ import {
   rawClaimRegister,
   rawClaimRegisterCommitCount,
   rawLedgerPlanId,
+  rawLedgerTailBytes,
   runBin,
   seededHead,
   spawnBin,
@@ -36,6 +41,29 @@ import {
 
 /** The child's rendered outcome. */
 const rendered = (child: { stdout: string }): RunOutcome => JSON.parse(child.stdout) as RunOutcome;
+
+/** A SIGKILL leaves the dead process's git ref lock behind (git's lock
+ * protocol has no timeout), and a leftover lock would exhaust the
+ * assembly's ref-write retries — so the operator sweeps the recorded
+ * refs' stale `.lock` files before the next process writes. The sweep
+ * touches only the locks, never the durable state below them. */
+const removeStaleRefLocks = (repo: string): void => {
+  const root = join(repo, ".git", "refs", "release-craft");
+  if (!existsSync(root)) {
+    return;
+  }
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(path);
+      } else if (entry.name.endsWith(".lock")) {
+        rmSync(path, { force: true });
+      }
+    }
+  };
+  walk(root);
+};
 
 describe("the certification fixture · A-cross-process", () => {
   it(
@@ -384,6 +412,154 @@ describe("the certification fixture · A-cross-process", () => {
         // The end state: exactly the taker's tag minted — the superseded
         // holder never reaches its mint.
         expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0-beta.2"]);
+      });
+    },
+  );
+
+  it(
+    "x-06 · I1 · the SIGKILL continuation (issue #355) — a fresh process resumes a mid-flight walk whose process died at the recorded stop, re-lands the same published tag a clean run mints, and the line-less unknown face stays at exit 10",
+    { timeout: 45_000 },
+    async () => {
+      // The clean run's reference — a separate hermetic repository, the
+      // same closed input, the same ladder: the tag the continuation must
+      // land, and the tag the continued repo must read as equal. The
+      // seeding fixture runs its callback synchronously, and the expects
+      // below already pin a published outcome — the capture is a plain
+      // widened string, the comparisons that follow are the guard.
+      let controlTag = "";
+      withSeededRepo("cert-x-06-control", (repo, git, heads) => {
+        const control = runBin(gitRunArgs(repo, "main"), {
+          input: docBytes(gitBetaDocument(heads)),
+        });
+        expect(control.status).toBe(0);
+        expect(control.stderr).toBe("");
+        const controlOutcome = rendered(control);
+        expect(controlOutcome.kind).toBe("published");
+        if (controlOutcome.kind !== "published") {
+          throw new Error("expected a published outcome");
+        }
+        // `tag` is `string | null` by type (the plan can name no tag); the
+        // recorded-tags assertion above already pins the mint, so the
+        // capture falls back to a sentinel that the continuation's tag
+        // comparison still fails against — the guard is the assertions.
+        controlTag = controlOutcome.tag ?? "";
+        expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0-beta.1"]);
+      });
+
+      await withSeededRepoAsync("cert-x-06", async (repo, git, heads) => {
+        // The killed walk: a live child walks the same beta plan and is
+        // SIGKILLed mid-walk — after the walk's plan record is durable
+        // (the write-ahead crossing) and before the mint (the last
+        // stage), so the durable tail records a walk the process never
+        // finished. The bound is an iteration count over the recorded
+        // state, not a clock — the SIGKILL window is a real subprocess
+        // race, and the only clock the fixture reads is the inline
+        // settle the live-style cells already use (x-05's probe).
+        const holder = spawnBin(gitRunArgs(repo, "main"), docBytes(gitBetaDocument(heads)));
+        let attemptId: string | undefined;
+        for (let poll = 0; poll < 3000; poll += 1) {
+          attemptId = ledgerAttemptIds(repo)[0];
+          if (attemptId !== undefined && rawLedgerTailBytes(repo, attemptId).length >= 1) {
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        if (attemptId === undefined) {
+          throw new Error("fixture broken: the killed walk left no attempt ref");
+        }
+        if (recordedTags(git, naming.namespaces).length > 0) {
+          throw new Error(
+            "fixture broken: the walk minted before the kill — the SIGKILL window was missed",
+          );
+        }
+        if (!holder.child.kill("SIGKILL")) {
+          throw new Error(
+            "fixture broken: the walk ended before the kill — the SIGKILL window was missed",
+          );
+        }
+        const killed = await holder.done;
+        expect(killed.status).toBe(-1);
+        const planId = rawLedgerPlanId(repo, attemptId);
+
+        // The unknown face, re-asserted on the killed id: a fresh-process
+        // resume WITHOUT the attempt's line is the same refused unknown
+        // the fresh engine always answered (x-01's law) — the seam's line
+        // gate fires before any reconstruction, so even a line-less
+        // resume reads but never writes.
+        const lineless = runBin(
+          [
+            "resume",
+            "--assembly",
+            "git",
+            "--repo",
+            repo,
+            "--tag-namespace",
+            "",
+            "--max-retries",
+            "0",
+            "--world",
+            "-",
+            "--actor",
+            "automation",
+            "--plan",
+            planId,
+            "--attempt",
+            attemptId,
+            "--json",
+          ],
+          { input: docBytes(gitBetaDocument(heads)) },
+        );
+        expect(lineless.status).toBe(10);
+        expect(lineless.stderr).toBe("");
+        expect(rendered(lineless).kind).toBe("refused");
+
+        // Operator post-kill hygiene: a SIGKILL leaves the dead process's
+        // git ref lock behind (git's lock protocol has no timeout), and a
+        // leftover lock would exhaust the assembly's ref-write retries —
+        // so the operator sweeps the recorded refs' stale `.lock` files
+        // before the next process writes. Fixture-side only: the durable
+        // state itself is untouched, swept or not.
+        removeStaleRefLocks(repo);
+
+        // The fresh process's continuation: the resume names the killed
+        // attempt's plan and id and the attempt's line; the engine
+        // reconstructs the entry from the ledger tail (the durable
+        // re-entry seam) and the walk continues from the recorded stop to
+        // the same published ladder tag the clean run minted.
+        const resumed = runBin(
+          [
+            "resume",
+            "--assembly",
+            "git",
+            "--repo",
+            repo,
+            "--tag-namespace",
+            "",
+            "--max-retries",
+            "0",
+            "--world",
+            "-",
+            "--actor",
+            "automation",
+            "--plan",
+            planId,
+            "--attempt",
+            attemptId,
+            "--line",
+            "main",
+            "--json",
+          ],
+          { input: docBytes(gitBetaDocument(heads)) },
+        );
+        expect(resumed.status).toBe(0);
+        expect(resumed.stderr).toBe("");
+        const resumedOutcome = rendered(resumed);
+        expect(resumedOutcome.kind).toBe("published");
+        if (resumedOutcome.kind !== "published") {
+          throw new Error("expected a published outcome");
+        }
+        expect(resumedOutcome.tag).toBe(controlTag);
+        expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0-beta.1"]);
       });
     },
   );
