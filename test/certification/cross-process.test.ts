@@ -438,7 +438,11 @@ describe("the certification fixture · A-cross-process", () => {
         if (controlOutcome.kind !== "published") {
           throw new Error("expected a published outcome");
         }
-        controlTag = controlOutcome.tag;
+        // `tag` is `string | null` by type (the plan can name no tag); the
+        // recorded-tags assertion above already pins the mint, so the
+        // capture falls back to a sentinel that the continuation's tag
+        // comparison still fails against — the guard is the assertions.
+        controlTag = controlOutcome.tag ?? "";
         expect(recordedTags(git, naming.namespaces)).toStrictEqual(["5.0.0-beta.1"]);
       });
 
