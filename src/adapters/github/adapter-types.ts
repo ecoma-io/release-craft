@@ -24,7 +24,16 @@ export interface GitHubCredentials {
  * `auth-expired`, `rate-limited`, `permission-denied`, and
  * `unobservable-remote`; a recorded conflict decision for
  * `already-pushed-different-target`, `release-conflict`,
- * `release-tag-missing`, and `release-tag-mismatch`.
+ * `release-tag-missing`, `release-tag-mismatch`, and
+ * `release-metadata`.
+ *
+ * `release-metadata` (issue #353) — the verification's comparison
+ * decision: a release object whose `tag_name` names another tag, whose
+ * `target_commitish` disagrees with the binding's recorded target, or
+ * that answers `draft`/`prerelease` is not the recorded publication.
+ * The same comparison-decision class as `release-conflict` — a
+ * determinate read answered, and the caller owes the operator the
+ * divergence — never a provider read refusal.
  *
  * `permission-denied` (issue #178) — the credential authenticated and the
  * provider declined the request's authorization: the fine-grained-token
@@ -58,15 +67,17 @@ export type RefusalReason =
   | "unobservable-remote"
   | "release-conflict"
   | "release-tag-missing"
-  | "release-tag-mismatch";
+  | "release-tag-mismatch"
+  | "release-metadata";
 
 /**
  * The refusal reasons a listing's observation can carry (issue #66;
  * contract §2.3's read narrowing): the operator-intervention classes
  * only. The write-conflict and projection reasons name writes and
- * recorded-state decisions (`verifyRelease`'s `changelog-unrecorded` and
- * `release-conflict` are comparison decisions, not provider refusals) —
- * a listing never carries them. The read set widens with the vocabulary
+ * recorded-state decisions (`verifyRelease`'s `changelog-unrecorded`,
+ * `release-conflict`, and `release-metadata` are comparison decisions,
+ * not provider refusals) — a listing never carries them. The read set
+ * widens with the vocabulary
  * split (issues #176, #178): a 403 whose credential authenticated is
  * `permission-denied`, and a repo-scoped listing's 404 is
  * `unobservable-remote` — the collection exists whenever the repository

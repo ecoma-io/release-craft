@@ -242,7 +242,14 @@ export const openFakeRemote = (): FakeRemote => {
         return {
           status: 200,
           headers: {},
-          body: JSON.stringify({ html_url: urls.get(tag), body }),
+          body: JSON.stringify({
+            html_url: urls.get(tag),
+            body,
+            tag_name: tag,
+            target_commitish: tags.get(tag),
+            draft: false,
+            prerelease: false,
+          }),
         };
       }
       if (route.endsWith("/releases")) {

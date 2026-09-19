@@ -183,6 +183,56 @@ const releaseBody = (body: string): string | undefined => {
   }
   return undefined;
 };
+/** The release object's naming fields the verification asserts against
+ *  the recorded publication (issue #353): the create writes the tag's
+ *  name, the recorded target, and no draft/prerelease — so the read is
+ *  the object the create would have written only when all four answer
+ *  the same. A body-bearing object missing a naming field is unreadable
+ *  as a known release — the body-unreadable class. */
+type ReleaseMetadata = {
+  readonly tagName: string;
+  readonly targetCommitish: string;
+  readonly draft: boolean;
+  readonly prerelease: boolean;
+};
+
+/** The metadata read beside `releaseBody` (issue #353): parses the
+ *  release object once and asserts the naming fields are present and
+ *  non-empty — `undefined` when they are not, the transport-failure
+ *  class. `draft` and `prerelease` absent answer false: the create
+ *  never sets either. */
+const releaseMetadata = (body: string): ReleaseMetadata | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (
+    parsed !== null &&
+    typeof parsed === "object" &&
+    "tag_name" in parsed &&
+    typeof parsed.tag_name === "string" &&
+    parsed.tag_name.length > 0 &&
+    "target_commitish" in parsed &&
+    typeof parsed.target_commitish === "string" &&
+    parsed.target_commitish.length > 0
+  ) {
+    const object = parsed as {
+      tag_name: string;
+      target_commitish: string;
+      draft?: unknown;
+      prerelease?: unknown;
+    };
+    return {
+      tagName: object.tag_name,
+      targetCommitish: object.target_commitish,
+      draft: object.draft === true,
+      prerelease: object.prerelease === true,
+    };
+  }
+  return undefined;
+};
 
 const releasePath = (credentials: GitHubCredentials, tag: string): string =>
   `/repos/${credentials.owner}/${credentials.repo}/releases/tags/${encodeURIComponent(tag)}`;
@@ -542,14 +592,49 @@ export function GitReleasePublication(
           detail: `the remote release for ${tag} does not match the recorded changelog (${recorded.digest})`,
         };
       }
-      // The verification asserts the tag too (issue #338): a release
-      // whose body matches while origin holds the tag elsewhere (or not
-      // at all) is not the recorded publication verified — the same
-      // precondition the create's gate ran, the same verdicts.
+      // The verification asserts the release object's own metadata too
+      // (issue #353): the create wrote tag_name: the tag,
+      // target_commitish: the recorded target, and no draft/prerelease
+      // — so a body that matches while the object names another tag,
+      // sits on another commit, or is a draft or prerelease is not the
+      // recorded publication verified. A body-bearing object that lacks
+      // the naming fields is unreadable as a known release — the
+      // transport-failure class, like the body's own.
       const recordedTarget = recordedTagTarget(binding, tag);
       if (!recordedTarget.ok) {
         return { kind: "refused", reason: recordedTarget.reason, detail: recordedTarget.detail };
       }
+      const metadata = releaseMetadata(existing.body);
+      if (metadata === undefined) {
+        return { kind: "transport-failure" };
+      }
+      if (metadata.tagName !== tag) {
+        return {
+          kind: "refused",
+          reason: "release-metadata",
+          detail: `the remote release for ${tag} carries tag_name "${metadata.tagName}", not "${tag}"`,
+        };
+      }
+      if (metadata.targetCommitish !== recordedTarget.target) {
+        return {
+          kind: "refused",
+          reason: "release-metadata",
+          detail: `the remote release for ${tag} carries target_commitish "${metadata.targetCommitish}", not the recorded target "${recordedTarget.target}"`,
+        };
+      }
+      if (metadata.draft || metadata.prerelease) {
+        return {
+          kind: "refused",
+          reason: "release-metadata",
+          detail: metadata.draft
+            ? `the remote release for ${tag} is a draft, not the published release`
+            : `the remote release for ${tag} is a prerelease, not the published release`,
+        };
+      }
+      // The tag is asserted too (issue #338): a release whose body and
+      // metadata match while origin holds the tag elsewhere (or not at
+      // all) is not the recorded publication verified — the same
+      // precondition the create's gate ran, the same verdicts.
       const gate = tagRefVerdict(transport, credentials, tag, recordedTarget.target);
       if (gate.kind !== "proceed") {
         return gate;
