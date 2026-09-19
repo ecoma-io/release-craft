@@ -91,10 +91,32 @@ const fakeTransport = (
   };
 };
 
-const okResponse = (remoteBody: string): GitHubResponse => ({
+/** The release object the fakes answer — the body and the metadata the
+ *  verification asserts (issue #353): html_url, the name the create
+ *  wrote, the recorded target as the object's commitish, and no
+ *  draft/prerelease flags. The refusal tests diverge one field. */
+interface ReleaseObject {
+  readonly tagName: string;
+  readonly targetCommitish: string;
+  readonly draft?: boolean;
+  readonly prerelease?: boolean;
+}
+
+const releaseObject = (remoteBody: string, release: ReleaseObject): string =>
+  JSON.stringify({
+    html_url: RELEASE_URL,
+    name: release.tagName,
+    body: remoteBody,
+    tag_name: release.tagName,
+    target_commitish: release.targetCommitish,
+    draft: release.draft ?? false,
+    prerelease: release.prerelease ?? false,
+  });
+
+const okResponse = (remoteBody: string, release: ReleaseObject): GitHubResponse => ({
   status: 200,
   headers: {},
-  body: JSON.stringify({ html_url: RELEASE_URL, body: remoteBody }),
+  body: releaseObject(remoteBody, release),
 });
 
 const notFoundResponse = (): GitHubResponse => ({
@@ -109,10 +131,10 @@ const observableRepoResponse = (): GitHubResponse => ({
   body: JSON.stringify({ full_name: "ecoma-io/release-craft" }),
 });
 
-const createdResponse = (): GitHubResponse => ({
+const createdResponse = (remoteBody: string, release: ReleaseObject): GitHubResponse => ({
   status: 201,
   headers: {},
-  body: JSON.stringify({ html_url: RELEASE_URL }),
+  body: releaseObject(remoteBody, release),
 });
 const tagRefResponse = (sha: string): GitHubResponse => ({
   status: 200,
@@ -133,6 +155,14 @@ const recordedTagTarget = (fixture: PublicationRepo): string => {
   }
   return row.target;
 };
+
+/** The metadata every happy-path read answers — exactly what the create
+ *  wrote (issue #353): the queried tag's name and the seed's recorded
+ *  target, no draft/prerelease. */
+const happyRelease = (fixture: PublicationRepo): ReleaseObject => ({
+  tagName: TAG,
+  targetCommitish: recordedTagTarget(fixture),
+});
 
 interface PublicationRepo {
   readonly repo: string;
@@ -238,7 +268,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       seed(fixture);
       const { transport, calls } = fakeTransport((call) => {
         if (call.init?.method === "POST") {
-          return createdResponse();
+          return createdResponse(CHANGELOG_BODY, happyRelease(fixture));
         }
         return call.path === REF_PATH
           ? tagRefResponse(recordedTagTarget(fixture))
@@ -264,7 +294,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       seed(fixture);
       const { transport, calls } = fakeTransport((call) => {
         if (call.path === RELEASE_PATH) {
-          return okResponse(CHANGELOG_BODY);
+          return okResponse(CHANGELOG_BODY, happyRelease(fixture));
         }
         return call.path === REF_PATH
           ? tagRefResponse(recordedTagTarget(fixture))
@@ -288,7 +318,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const target = recordedTagTarget(fixture);
       const { transport, calls } = fakeTransport((call) => {
         if (call.path === RELEASE_PATH) {
-          return okResponse(CHANGELOG_BODY);
+          return okResponse(CHANGELOG_BODY, happyRelease(fixture));
         }
         return call.path === REF_PATH ? tagRefResponse("a".repeat(40)) : notFoundResponse();
       });
@@ -316,7 +346,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       seed(fixture);
       const { transport, calls } = fakeTransport((call) => {
         if (call.path === RELEASE_PATH) {
-          return okResponse(CHANGELOG_BODY);
+          return okResponse(CHANGELOG_BODY, happyRelease(fixture));
         }
         return call.path === REF_PATH ? notFoundResponse() : observableRepoResponse();
       });
@@ -341,7 +371,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       let refReads = 0;
       const { transport, calls } = fakeTransport((call) => {
         if (call.init?.method === "POST") {
-          return createdResponse();
+          return createdResponse(CHANGELOG_BODY, happyRelease(fixture));
         }
         if (call.path === REF_PATH) {
           refReads += 1;
@@ -377,7 +407,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       let refReads = 0;
       const { transport, calls } = fakeTransport((call) => {
         if (call.init?.method === "POST") {
-          return createdResponse();
+          return createdResponse(CHANGELOG_BODY, happyRelease(fixture));
         }
         if (call.path === REF_PATH) {
           refReads += 1;
@@ -400,7 +430,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("conflict", (fixture) => {
       seed(fixture);
       const { transport, calls } = fakeTransport(() =>
-        okResponse("# v1.2.3\n\n- someone else's body\n"),
+        okResponse("# v1.2.3\n\n- someone else's body\n", happyRelease(fixture)),
       );
       const outcome = fixture.adapter(transport).publishRelease(TAG);
       expect(outcome).toEqual({
@@ -605,7 +635,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
         if (call.path === REF_PATH) {
           return tagRefResponse(recordedTagTarget(fixture));
         }
-        return raced ? okResponse(CHANGELOG_BODY) : notFoundResponse();
+        return raced ? okResponse(CHANGELOG_BODY, happyRelease(fixture)) : notFoundResponse();
       });
       const first = fixture.adapter(transport).publishRelease(TAG);
       expect(first).toEqual({
@@ -714,7 +744,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       const { transport } = fakeTransport((call) =>
         call.path === REF_PATH
           ? tagRefResponse(recordedTagTarget(fixture))
-          : okResponse(CHANGELOG_BODY),
+          : okResponse(CHANGELOG_BODY, happyRelease(fixture)),
       );
       const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({ kind: "verified" });
@@ -724,7 +754,7 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
   it("refuses verification of a diverged release (R-06's verify half)", () => {
     withPublicationRepo("verify-conflict", (fixture) => {
       seed(fixture);
-      const { transport } = fakeTransport(() => okResponse("# diverged\n"));
+      const { transport } = fakeTransport(() => okResponse("# diverged\n", happyRelease(fixture)));
       const outcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({
         kind: "refused",
@@ -915,7 +945,9 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
         if (call.path === REF_PATH) {
           return notFoundResponse();
         }
-        return call.path === REPO_PATH ? observableRepoResponse() : okResponse(CHANGELOG_BODY);
+        return call.path === REPO_PATH
+          ? observableRepoResponse()
+          : okResponse(CHANGELOG_BODY, happyRelease(fixture));
       });
       const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({
@@ -930,7 +962,9 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
     withPublicationRepo("verify-mismatched-tag", (fixture) => {
       seed(fixture);
       const { transport } = fakeTransport((call) =>
-        call.path === REF_PATH ? tagRefResponse("b".repeat(40)) : okResponse(CHANGELOG_BODY),
+        call.path === REF_PATH
+          ? tagRefResponse("b".repeat(40))
+          : okResponse(CHANGELOG_BODY, happyRelease(fixture)),
       );
       const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
       expect(outcome).toEqual({
@@ -938,6 +972,126 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
         reason: "release-tag-mismatch",
         detail: detailContaining("not the recorded target"),
       });
+    });
+  });
+
+  it("verifyRelease refuses a release object naming another tag — release-metadata, naming both tags (#353)", () => {
+    withPublicationRepo("verify-other-tag", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : okResponse(CHANGELOG_BODY, {
+              tagName: "v9.9.9",
+              targetCommitish: recordedTagTarget(fixture),
+            }),
+      );
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-metadata",
+        detail: detailContaining("tag_name"),
+      });
+      if (outcome.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${outcome.kind}`);
+      }
+      expect(outcome.detail).toContain("v9.9.9");
+      expect(outcome.detail).toContain(TAG);
+    });
+  });
+
+  it("verifyRelease refuses a draft release — release-metadata, never the published release (#353)", () => {
+    withPublicationRepo("verify-draft", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : okResponse(CHANGELOG_BODY, { ...happyRelease(fixture), draft: true }),
+      );
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-metadata",
+        detail: detailContaining("draft"),
+      });
+    });
+  });
+
+  it("verifyRelease refuses a prerelease — release-metadata, never the published release (#353)", () => {
+    withPublicationRepo("verify-prerelease", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : okResponse(CHANGELOG_BODY, { ...happyRelease(fixture), prerelease: true }),
+      );
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-metadata",
+        detail: detailContaining("prerelease"),
+      });
+    });
+  });
+
+  it("verifyRelease refuses a release sitting on another commit — release-metadata, naming both commits (#353)", () => {
+    withPublicationRepo("verify-other-commit", (fixture) => {
+      seed(fixture);
+      const target = recordedTagTarget(fixture);
+      const { transport } = fakeTransport((call) =>
+        call.path === REF_PATH
+          ? tagRefResponse(target)
+          : okResponse(CHANGELOG_BODY, { tagName: TAG, targetCommitish: "a".repeat(40) }),
+      );
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "release-metadata",
+        detail: detailContaining("target_commitish"),
+      });
+      if (outcome.kind !== "refused") {
+        throw new Error(`expected a refusal, got ${outcome.kind}`);
+      }
+      expect(outcome.detail).toContain("a".repeat(40));
+      expect(outcome.detail).toContain(target);
+    });
+  });
+
+  it("treats a readable release object without tag_name as unreadable — transport-failure, never verified (#353)", () => {
+    withPublicationRepo("verify-no-tag-name", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          html_url: RELEASE_URL,
+          body: CHANGELOG_BODY,
+          target_commitish: recordedTagTarget(fixture),
+          draft: false,
+          prerelease: false,
+        }),
+      }));
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
+    });
+  });
+
+  it("treats a readable release object without target_commitish as unreadable — transport-failure, never verified (#353)", () => {
+    withPublicationRepo("verify-no-commitish", (fixture) => {
+      seed(fixture);
+      const { transport } = fakeTransport(() => ({
+        status: 200,
+        headers: {},
+        body: JSON.stringify({
+          html_url: RELEASE_URL,
+          name: TAG,
+          body: CHANGELOG_BODY,
+          draft: false,
+          prerelease: false,
+        }),
+      }));
+      const outcome: VerificationOutcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({ kind: "transport-failure" });
     });
   });
 });
