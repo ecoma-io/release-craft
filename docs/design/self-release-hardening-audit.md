@@ -195,3 +195,122 @@ is missing is the last half of the public release surface (GitHub Release
 object + changelog bytes minted and verified live), the four sharpest open
 defects, and the composed idempotency/crash proofs over the newly-wired
 publish path.**
+
+## 8. Re-audit addendum — HEAD `f89c0f7` (2026-09-19)
+
+Method: the six commits since `a1de69d` (#326–#335) were delta-audited, and
+the three load-bearing chains — publication, mutation→commit→changelog, and
+the Action/caller posture — were re-grounded by direct source reads. Every
+"still present" below was re-verified at this HEAD, not carried from D85.
+
+### What changed since the audit
+
+- **#335 — the publication port is wired into the engine.** `EnginePorts`
+  gained `publication` (`src/app/types.ts:166`), the release-remote assembly
+  composes it (`assemblePublicationBinding`, `src/app/assemble.ts:73-98`;
+  the shell composition `openPublicationDriver`, `src/publication-driver.ts:38`),
+  and `completeRun` runs mint → `publishRelease` → `verifyRelease`, landing
+  `published` only on a verified read and blocking with resumable causes on
+  `absent`/`unavailable`/`ambiguous` (`src/app/engine.ts:645-705`), plus the
+  D87 pre-walk refusal of a publication wired without a tag door
+  (`src/app/engine.ts:940-946`). Tested — `test/app/publication-port.test.ts`
+  (ok, refused-422, ambiguous status-0, transport-500, body-bytes,
+  resolve+resume) — over **fake transports only**.
+
+- **#327/#331/#333 — the changelog artifact is declared end to end.** The
+  CLI declares one `artifact:changelog` step behind `--changelog`
+  (`src/cli/index.ts:29-47`), the Action gained the input (`action.yml:64-66`),
+  the self-release workflow passes it, and the judge asserts the record's
+  internal consistency (`scripts/dogfood/judge.mjs:873-956`). The bytes are
+  still the **pre-existing committed CHANGELOG.md** — `GitArtifactProducer`
+  digests `git-tree:<HEAD^{tree}>` (`src/adapters/git/producer-git.ts:50-56`);
+  `renderChangelog` still has no production caller (#291) and no digest in
+  the chain carries renderer bytes (#294).
+
+### New ground truth this addendum records
+
+1. **Publication over the REST/API transport is unimplemented; the git-ref
+   transport is real.** The publication and verification units run over an
+   injected `GitHubTransport` (`src/adapters/github/publication.ts:257-264`)
+   and every test injects a fake — no live REST/API transport, no endpoint
+   wire, and the Action/CLI have no token ingress for it (tracked as #336,
+   PR #337). Do not confuse that with the adapter's git-ref transport, which
+   is real: `GitRemoteSync` (`src/adapters/github/sync.ts:159-175`) opens
+   `openRemoteGit` with the token in an inline credential helper
+   (`src/adapters/github/remote-git.ts:37-42`) and runs `ls-remote` and
+   `push ref:ref` against the binding's own `origin`
+   (`src/adapters/github/sync.ts:63-107`, `:166-193`) — live-capable,
+   classified outcomes, but composed behind `openGitHubAdapter` and never
+   invoked by the self-release workflow yet.
+2. **The create can mint a tag at the wrong commit.** The create POST
+   carries only `{tag_name, name, body}` — no `target_commitish`, and no
+   remote tag precondition or SHA check exists before the write or inside
+   `verifyRelease` (`src/adapters/github/publication.ts:301-309`,
+   `:335-369`). Because the origin lacks the tag, GitHub's create-release
+   behavior creates that tag at the default branch's head — the
+   wrong-commit hazard a public release path must refuse. The required
+   composition is sync → create → verify (the sync unit already compares
+   the remote listing against the binding's recorded targets,
+   `src/adapters/github/sync.ts:35-44`, `:109-148`), but that composition
+   is not implemented yet. Release-blocking.
+3. **The publish/verify effects append no effect-boundary ledger records.**
+   The canonical `publish`/`verify` stage records are the walk's
+   fingerprint-gate records; the actual remote effects in `completeRun`
+   touch only the attempt (`src/app/engine.ts:645-705`). Crash safety rides
+   idempotent re-execution (read-before-write create, same-target re-mint),
+   which holds; the durable journal names stages, not effects — a Phase 1
+   adversarial-review item, not a proven invariant.
+4. **Mutations never reach a tagged commit.** Attempt mutations come only
+   from host `request.declarations` (#289; `scheduleMutations`,
+   `src/app/engine.ts:331-363`); no adapter commits a mutated worktree (the
+   only `commit-tree` is the CAS register append,
+   `src/adapters/git/git-refs.ts:144-145`); and the mint target is the
+   feed-ref head the caller recorded (`src/cli/targets.ts:15-28`;
+   `src/app/engine.ts:615-630` names it "never ambient HEAD"). A
+   version-carrying release — the thing a real self-release is — has no
+   path from plan to tagged commit yet: no version-bump producer, no
+   release-commit door, no changelog mint. Release-blocking.
+5. **The publication body seam is correct-by-construction but currently
+   feeds stale bytes**: `recordedChangelog` projects the completed
+   `artifact:changelog` record's digest and reads the file from the
+   recorded tree (`src/adapters/github/publication.ts:209-249`). Once
+   #291/#294 land, this same seam binds exact rendered bytes into the
+   release and its verification.
+6. **Origin identity is enforced open-time, not verify-time.**
+   `openGitHubAdapter` refuses an origin↔credentials mismatch
+   (`src/adapters/github/remote-identity.ts`); `verifyRelease` performs no
+   repository-identity or tag-SHA read.
+
+### Defect census at this HEAD
+
+Re-verified present by direct read: #288 (only `MemoryRecordSink` exists in
+`src/`), #289, #291 (`renderChangelog` named only by its definition and the
+barrel), #294, #299 (`test/planner/isolation.test.ts:156-159` records the
+`localeCompare` gap), #307 (`src/execution/adopt.ts` names no `targetPath`),
+#311 (`src/adapters/github/release-pr.ts:1176`), #233
+(`phase14-certification-fixture-contract.md:305-306` still ends the
+`A-cross-process` leg after naming the boundary), #248
+(`phase12-cli-contract.md:84`). Carried from the D85 audit with no touching
+commits since `a1de69d`: #222, #223, #230, #235, #237, #250, #253, #262.
+
+### Reconciliations taken with this addendum
+
+- PRs #325 (audit duplicate), #234 (#208 early cut, 53 commits stale), #211
+  (#194 closed; the capability lives in `src/execution/resume.ts` and the
+  certification matrix) closed as superseded, with comments.
+- Historical tags `0.1.0` (`e6e8546`) and `0.2.0` (`5eb0440`) on origin are
+  **rehearsal artifacts** of the self-release workflow (the audit's §1
+  mint row: run 34635157220 minted `0.2.0`): lightweight tags at their
+  landing commits, no GitHub Release objects, `package.json` still at
+  `0.1.0`. They are not promotable evidence; the first real release is a
+  fresh cycle whose identifiers must all agree.
+
+### Posture delta over §1–§3
+
+| Capability                                        | Was    | Now                                       |
+| ------------------------------------------------- | ------ | ----------------------------------------- |
+| Publication port (engine half)                    | absent | implemented + tested (fake transport)     |
+| Changelog artifact declaration                    | absent | implemented (bytes stale until #291/#294) |
+| Live publish leg (transport, token ingress)       | absent | absent (#336)                             |
+| Publication ordering invariant (tag→expected SHA) | absent | absent — now named, release-blocking      |
+| Plan→mutation→commit→tag chain                    | absent | absent — now named, release-blocking      |
