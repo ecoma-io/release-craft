@@ -16,7 +16,20 @@
  * sink could crash mid-mutation with no evidence — and a composition
  * root that silently supplied an in-memory sink would hollow that
  * discipline out while looking assembled. The caller names where the
- * records go, or the driver does not open.
+ * records go, or the driver does not open. The production caller names
+ * the durable sink — `new GitReleasePRRecordSink(repo)` over the
+ * repository's own git — so the records survive the crash window and a
+ * fresh binding re-reads the same tail (issue #288).
+ *
+ * What the records carry (issue #288): every mutation's write-ahead
+ * `gate-start` and every verdict's `gate-outcome` hold the content
+ * digest of the projection body they name — `contentFingerprint` over
+ * the rendered body, the shared execution derivation, re-derivable by
+ * anyone re-rendering the same projection — and, when the calling run
+ * held one, the claim token of the acquisition the call ran under
+ * (`options.claim`, the production runner's held line claim; absent
+ * when none was acquired, never fabricated). A `gate-start` with no
+ * matching outcome is a crash mid-mutation, visible in the sink.
  *
  * The file lives in the package shell and nowhere else: `type-package`
  * is the one tag whose boundary row reaches both the app layer and the

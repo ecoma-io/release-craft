@@ -27,6 +27,7 @@ export {
   type ReleasePRGateOptions,
   type ReleasePRGate,
 } from "./release-pr.js";
+
 export { claimScopeForLine, type ClaimAcquisition } from "./claims.js";
 export { plannedChannelMoves } from "./channels.js";
 export { stageContentFingerprint } from "./engine.js";

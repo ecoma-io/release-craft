@@ -8,6 +8,7 @@
  * reach past it into internal modules.
  */
 import { describe, expect, it } from "vitest";
+import { contentFingerprint } from "@ecoma-io/release-craft/execution";
 import { Version } from "@ecoma-io/release-craft/domain";
 
 import {
@@ -634,6 +635,7 @@ describe("MemoryRecordSink", () => {
       action: "create",
       identity,
       planId: "p1",
+      contentFingerprint: "content_sha256:start",
     });
     expect(Object.isFrozen(start)).toBe(true);
     const end = sink.append({
@@ -651,7 +653,13 @@ describe("MemoryRecordSink", () => {
 
   it("tail returns a defensive copy", () => {
     const sink = new MemoryRecordSink();
-    sink.append({ kind: "gate-start", action: "update", identity, planId: "p2" });
+    sink.append({
+      kind: "gate-start",
+      action: "update",
+      identity,
+      planId: "p2",
+      contentFingerprint: "content_sha256:start",
+    });
     const snapshot = sink.tail();
     expect(snapshot).toHaveLength(1);
     sink.append({
@@ -663,6 +671,140 @@ describe("MemoryRecordSink", () => {
     });
     expect(snapshot).toHaveLength(1); // snapshot is stale, not mutated
     expect(sink.tail()).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §7 — the records' content digest (issue #288)
+// ---------------------------------------------------------------------------
+
+describe("gate records carry the content digest of the projection body", () => {
+  it("the create records digest the exact body the mutation names", () => {
+    const plan = makePlan();
+    const render = renderReleasePRProjection(identity, plan);
+    if (render === null) throw new Error("expected a render");
+    const sink = new MemoryRecordSink();
+    const gate = openReleasePRGate(fakePort(), sink);
+    expect(gate.create(identity, plan).kind).toBe("created");
+
+    const [start, end] = sink.tail();
+    expect(start).toMatchObject({
+      kind: "gate-start",
+      action: "create",
+      planId: plan.planId,
+      contentFingerprint: contentFingerprint({ body: render.projection.body }),
+    });
+    expect(end).toMatchObject({
+      kind: "gate-outcome",
+      action: "create",
+      planId: plan.planId,
+      contentFingerprint: contentFingerprint({ body: render.projection.body }),
+    });
+  });
+
+  it("a refused update names the projection digest it judged, alongside the drifted PR", () => {
+    const plan = makePlan();
+    const render = renderReleasePRProjection(identity, plan);
+    if (render === null) throw new Error("expected a render");
+    // A body that drifted from the pure render (a human edit): the update
+    // refuses. The digest names the projection the gate judged — the same
+    // body a resolved re-render would write, byte-re-derivable from the
+    // plan — while the drifted bytes stay readable on the verdict's `pr`.
+    const drifted: ExistingPR = {
+      number: 12,
+      title: render.projection.title,
+      body: `${render.projection.body}\n\n- [ ] manual edit`,
+      headRef: "release/lib-a",
+      draft: false,
+      labels: [],
+    };
+    const sink = new MemoryRecordSink();
+    const gate = openReleasePRGate(fakePort(drifted), sink);
+    const outcome = gate.update(identity, plan);
+    expect(outcome.kind).toBe("plan-conflict");
+
+    const end = sink.tail().at(-1);
+    expect(end).toMatchObject({
+      kind: "gate-outcome",
+      action: "update",
+      planId: plan.planId,
+      contentFingerprint: contentFingerprint({ body: render.projection.body }),
+    });
+    // The digest never names the drifted bytes; those are the verdict's
+    // own evidence, re-hashable from the PR.
+    expect(end?.contentFingerprint).not.toBe(contentFingerprint({ body: drifted.body }));
+  });
+
+  it("a transport read-failure is the one record that names no body", () => {
+    const port = fakePort();
+    port.findPRThrows = true;
+    const sink = new MemoryRecordSink();
+    const gate = openReleasePRGate(port, sink);
+    expect(gate.detect(identity, makePlan()).kind).toBe("transport-failure");
+
+    const [record] = sink.tail();
+    expect(record).toMatchObject({
+      kind: "gate-outcome",
+      action: "detect",
+      planId: "plan_sha256:aabbccdd",
+    });
+    // The pure read named no body — the digest is absent, never fabricated.
+    expect(record).not.toHaveProperty("contentFingerprint");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §8 — the caller's claim token rides the records (issue #288)
+// ---------------------------------------------------------------------------
+
+describe("gate records carry the caller's claim token", () => {
+  it("a create under a claim records the token on both records; a claim-less call records none", () => {
+    const plan = makePlan();
+    const under = new MemoryRecordSink();
+    const gated = openReleasePRGate(fakePort(), under);
+    expect(
+      gated.create(identity, plan, {
+        claim: "attempt_sha256:token",
+      }).kind,
+    ).toBe("created");
+    for (const record of under.tail()) {
+      expect(record.claim).toBe("attempt_sha256:token");
+    }
+
+    const claimless = new MemoryRecordSink();
+    const plain = openReleasePRGate(fakePort(), claimless);
+    expect(plain.create(identity, plan).kind).toBe("created");
+    for (const record of claimless.tail()) {
+      expect(record.claim).toBeUndefined();
+    }
+  });
+
+  it("a refused update carries the token; a read-failure does too — both under the call's acquisition", () => {
+    const plan = makePlan();
+    const render = renderReleasePRProjection(identity, plan);
+    if (render === null) throw new Error("expected a render");
+    const drifted: ExistingPR = {
+      number: 12,
+      title: render.projection.title,
+      body: "not the render",
+      headRef: "release/lib-a",
+      draft: false,
+      labels: [],
+    };
+    const sink = new MemoryRecordSink();
+    const gate = openReleasePRGate(fakePort(drifted), sink);
+    const outcome = gate.update(identity, plan, { claim: "attempt_sha256:token" });
+    expect(outcome.kind).toBe("plan-conflict");
+    expect(sink.tail().at(-1)?.claim).toBe("attempt_sha256:token");
+
+    const failing = fakePort();
+    failing.findPRThrows = true;
+    const failingSink = new MemoryRecordSink();
+    const failingGate = openReleasePRGate(failing, failingSink);
+    expect(failingGate.update(identity, plan, { claim: "attempt_sha256:token" }).kind).toBe(
+      "transport-failure",
+    );
+    expect(failingSink.tail().at(-1)?.claim).toBe("attempt_sha256:token");
   });
 });
 // ---------------------------------------------------------------------------

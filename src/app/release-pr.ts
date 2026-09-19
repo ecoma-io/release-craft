@@ -24,6 +24,7 @@
  * masquerading as identity is the defect this gate exists to prevent).
  */
 
+import { contentFingerprint, type ClaimToken } from "@ecoma-io/release-craft/execution";
 import type { PlanLine, ReleasePlan } from "@ecoma-io/release-craft/planner";
 import type {
   ExistingPR,
@@ -224,13 +225,31 @@ export type ReleasePRGateAction = "create" | "update" | "detect";
  * mutation, and the `gate-outcome` appended after — for mutations, for
  * recorded refusals, and for recorded transport failures alike. A
  * `gate-start` with no matching outcome is a crash mid-mutation,
- * visible in the sink. */
+ * visible in the sink.
+ *
+ * Every record carries the content digest of the projection body it
+ * names — the mutation about to be written (`gate-start`), or the write,
+ * refused write, or judged-current body a verdict names — and, when the
+ * calling run held one, the claim token of the acquisition the call ran
+ * under (issue #288): the same vocabulary `TransitionRecord.claim?`
+ * uses, an optional token whose absence is the truthful absence, never
+ * a fabricated marker. */
 export type ReleasePRRecord =
   | {
       readonly kind: "gate-start";
       readonly action: ReleasePRGateAction;
       readonly identity: ReleasePRIdentity;
       readonly planId: string;
+      /** The digest of the projection body the mutation is about to
+       * write — the ledger's own `content_sha256` derivation over the
+       * rendered body, so the digest is re-derivable from the same
+       * inputs and the record's bytes are independently verifiable
+       * (issue #288). */
+      readonly contentFingerprint: string;
+      /** The token of the claim acquisition this mutation ran under,
+       * when the caller held one — the production runner's held line
+       * claim. Absent when the call ran under none. */
+      readonly claim?: ClaimToken;
     }
   | {
       readonly kind: "gate-outcome";
@@ -238,6 +257,13 @@ export type ReleasePRRecord =
       readonly identity: ReleasePRIdentity;
       readonly planId: string;
       readonly outcome: ReleasePROutcome;
+      /** The digest of the projection body the verdict names — the
+       * mutation's write, a refused write, or the judged-current body.
+       * Absent only on a pure read failure, which names no body. */
+      readonly contentFingerprint?: string;
+      /** The token of the claim acquisition this verdict ran under,
+       * when the caller held one. Absent when the call ran under none. */
+      readonly claim?: ClaimToken;
     };
 
 /** The append-only sink the gate records into (the ledger port's
@@ -277,11 +303,19 @@ export class MemoryRecordSink implements ReleasePRRecordSink {
 // §4 — the gate door (composition behind a factory, ADR-0010 decision 2)
 // ---------------------------------------------------------------------------
 
-/** The gate's options: the lines scope (§2), and the draft flag a
- * create honors (issue #202: draft PRs supported). */
+/** The gate's options: the lines scope (§2), the draft flag a create
+ * honors (issue #202: draft PRs supported), and the claim token of the
+ * acquisition the calling run holds for the release (issue #288): the
+ * records carry it verbatim, tying every mutation to the acquisition
+ * the call ran under. The production runner acquires the plan line's
+ * claim through the engine's own derivation (`claimScopeForLine`, the
+ * prerelease-sequence scope a Release-PR plan's stream line carries)
+ * and passes the token here; a caller that made no acquisition passes
+ * nothing and the records state the absence truthfully. */
 export interface ReleasePRGateOptions {
   readonly draft?: boolean;
   readonly lines?: readonly string[];
+  readonly claim?: ClaimToken;
 }
 
 /** The gate door: detect, create, update. Every method returns an
@@ -352,8 +386,19 @@ export const openReleasePRGate = (
     identity: ReleasePRIdentity,
     planId: string,
     outcome: ReleasePROutcome,
+    named?: { readonly contentFingerprint?: string; readonly claim?: ClaimToken },
   ): void => {
-    sink.append({ kind: "gate-outcome", action, identity, planId, outcome });
+    sink.append({
+      kind: "gate-outcome",
+      action,
+      identity,
+      planId,
+      outcome,
+      ...(named?.contentFingerprint === undefined
+        ? {}
+        : { contentFingerprint: named.contentFingerprint }),
+      ...(named?.claim === undefined ? {} : { claim: named.claim }),
+    });
   };
 
   /** The identity lookup, wrapped like every other port call: a
@@ -363,6 +408,7 @@ export const openReleasePRGate = (
     identity: ReleasePRIdentity,
     plan: ReleasePlan,
     action: ReleasePRGateAction,
+    claim?: ClaimToken,
   ): FoundExistingPR => {
     try {
       const existing = port.findPR(identity);
@@ -372,7 +418,9 @@ export const openReleasePRGate = (
         kind: "transport-failure",
         detail: error instanceof Error ? error.message : String(error),
       };
-      recordOutcome(action, identity, plan.planId, outcome);
+      recordOutcome(action, identity, plan.planId, outcome, {
+        ...(claim === undefined ? {} : { claim }),
+      });
       return outcome;
     }
   };
@@ -382,8 +430,17 @@ export const openReleasePRGate = (
     plan: ReleasePlan,
     projection: ReleasePRProjection,
     draft: boolean,
+    claim?: ClaimToken,
   ): ReleasePROutcome => {
-    sink.append({ kind: "gate-start", action: "create", identity, planId: plan.planId });
+    const fingerprint = contentFingerprint({ body: projection.body });
+    sink.append({
+      kind: "gate-start",
+      action: "create",
+      identity,
+      planId: plan.planId,
+      contentFingerprint: fingerprint,
+      ...(claim === undefined ? {} : { claim }),
+    });
     try {
       const pr = port.createPR({
         identity,
@@ -394,14 +451,20 @@ export const openReleasePRGate = (
         files: projection.files,
       });
       const outcome: ReleasePROutcome = { kind: "created", pr, projection };
-      recordOutcome("create", identity, plan.planId, outcome);
+      recordOutcome("create", identity, plan.planId, outcome, {
+        contentFingerprint: fingerprint,
+        ...(claim === undefined ? {} : { claim }),
+      });
       return outcome;
     } catch (error) {
       const outcome: ReleasePROutcome = {
         kind: "transport-failure",
         detail: error instanceof Error ? error.message : String(error),
       };
-      recordOutcome("create", identity, plan.planId, outcome);
+      recordOutcome("create", identity, plan.planId, outcome, {
+        contentFingerprint: fingerprint,
+        ...(claim === undefined ? {} : { claim }),
+      });
       return outcome;
     }
   };
@@ -411,8 +474,17 @@ export const openReleasePRGate = (
     plan: ReleasePlan,
     projection: ReleasePRProjection,
     existing: ExistingPR,
+    claim?: ClaimToken,
   ): ReleasePROutcome => {
-    sink.append({ kind: "gate-start", action: "update", identity, planId: plan.planId });
+    const fingerprint = contentFingerprint({ body: projection.body });
+    sink.append({
+      kind: "gate-start",
+      action: "update",
+      identity,
+      planId: plan.planId,
+      contentFingerprint: fingerprint,
+      ...(claim === undefined ? {} : { claim }),
+    });
     try {
       const pr = port.updatePR({
         prNumber: existing.number,
@@ -423,14 +495,20 @@ export const openReleasePRGate = (
         files: projection.files,
       });
       const outcome: ReleasePROutcome = { kind: "updated", pr, projection };
-      recordOutcome("update", identity, plan.planId, outcome);
+      recordOutcome("update", identity, plan.planId, outcome, {
+        contentFingerprint: fingerprint,
+        ...(claim === undefined ? {} : { claim }),
+      });
       return outcome;
     } catch (error) {
       const outcome: ReleasePROutcome = {
         kind: "transport-failure",
         detail: error instanceof Error ? error.message : String(error),
       };
-      recordOutcome("update", identity, plan.planId, outcome);
+      recordOutcome("update", identity, plan.planId, outcome, {
+        contentFingerprint: fingerprint,
+        ...(claim === undefined ? {} : { claim }),
+      });
       return outcome;
     }
   };
@@ -439,8 +517,13 @@ export const openReleasePRGate = (
     identity: ReleasePRIdentity,
     plan: ReleasePlan,
     outcome: ReleasePROutcome,
+    fingerprint: string,
+    claim?: ClaimToken,
   ): ReleasePROutcome => {
-    recordOutcome("update", identity, plan.planId, outcome);
+    recordOutcome("update", identity, plan.planId, outcome, {
+      contentFingerprint: fingerprint,
+      ...(claim === undefined ? {} : { claim }),
+    });
     return outcome;
   };
 
@@ -448,7 +531,7 @@ export const openReleasePRGate = (
     detect: (identity, plan, options) => {
       const rendered = renderReleasePRProjection(identity, plan, options);
       if (rendered === null) return { kind: "nothing-pending" };
-      const found = findExistingPR(identity, plan, "detect");
+      const found = findExistingPR(identity, plan, "detect", options?.claim);
       if (found.kind === "transport-failure") return found;
       if (found.kind === "none") return { kind: "detected", identity, plan };
       return { kind: "found", pr: found.pr, plan };
@@ -457,29 +540,43 @@ export const openReleasePRGate = (
     create: (identity, plan, options) => {
       const rendered = renderReleasePRProjection(identity, plan, options);
       if (rendered === null) return { kind: "nothing-pending" };
-      const found = findExistingPR(identity, plan, "create");
+      const found = findExistingPR(identity, plan, "create", options?.claim);
       if (found.kind === "transport-failure") return found;
       if (found.kind === "existing") return { kind: "found", pr: found.pr, plan };
-      return performCreate(identity, plan, rendered.projection, options?.draft ?? false);
+      return performCreate(
+        identity,
+        plan,
+        rendered.projection,
+        options?.draft ?? false,
+        options?.claim,
+      );
     },
 
     update: (identity, plan, options) => {
       const rendered = renderReleasePRProjection(identity, plan, options);
       if (rendered === null) return { kind: "nothing-pending" };
-      const found = findExistingPR(identity, plan, "update");
+      const found = findExistingPR(identity, plan, "update", options?.claim);
       if (found.kind === "transport-failure") return found;
       if (found.kind === "none") return { kind: "detected", identity, plan };
       const existing = found.pr;
+      const fingerprint = contentFingerprint({ body: rendered.projection.body });
 
       const claim = parseIdentityClaim(existing.body);
       if (claim === null) {
-        return refuse(identity, plan, {
-          kind: "plan-conflict",
-          recordedPlanId: null,
-          recomputedPlanId: plan.planId,
-          pr: existing,
-          detail: "the existing PR body carries no release-craft identity claim to verify against",
-        });
+        return refuse(
+          identity,
+          plan,
+          {
+            kind: "plan-conflict",
+            recordedPlanId: null,
+            recomputedPlanId: plan.planId,
+            pr: existing,
+            detail:
+              "the existing PR body carries no release-craft identity claim to verify against",
+          },
+          fingerprint,
+          options?.claim,
+        );
       }
 
       const recordedIdentity: ReleasePRIdentity = {
@@ -492,11 +589,17 @@ export const openReleasePRGate = (
         recordedIdentity.releaseLine === identity.releaseLine &&
         recordedIdentity.targetBranch === identity.targetBranch;
       if (!identityHolds) {
-        return refuse(identity, plan, {
-          kind: "identity-mismatch",
-          existingIdentity: recordedIdentity,
-          newIdentity: identity,
-        });
+        return refuse(
+          identity,
+          plan,
+          {
+            kind: "identity-mismatch",
+            existingIdentity: recordedIdentity,
+            newIdentity: identity,
+          },
+          fingerprint,
+          options?.claim,
+        );
       }
 
       const projection = rendered.projection;
@@ -505,15 +608,21 @@ export const openReleasePRGate = (
         // supersession relation (the plan's own `supersedes` edge —
         // invariant 5, never an edit).
         if (plan.supersedes !== claim.planId) {
-          return refuse(identity, plan, {
-            kind: "plan-conflict",
-            recordedPlanId: claim.planId,
-            recomputedPlanId: plan.planId,
-            pr: existing,
-            detail: `the recomputed plan ${plan.planId} does not supersede the recorded plan ${claim.planId}`,
-          });
+          return refuse(
+            identity,
+            plan,
+            {
+              kind: "plan-conflict",
+              recordedPlanId: claim.planId,
+              recomputedPlanId: plan.planId,
+              pr: existing,
+              detail: `the recomputed plan ${plan.planId} does not supersede the recorded plan ${claim.planId}`,
+            },
+            fingerprint,
+            options?.claim,
+          );
         }
-        return performUpdate(identity, plan, projection, existing);
+        return performUpdate(identity, plan, projection, existing, options?.claim);
       }
 
       // Same plan fingerprint: the body IS the plan record — byte-identical
@@ -524,18 +633,27 @@ export const openReleasePRGate = (
       if (existing.body === projection.body) {
         if (existing.title === projection.title) {
           const outcome: ReleasePROutcome = { kind: "current", pr: existing, projection };
-          recordOutcome("update", identity, plan.planId, outcome);
+          recordOutcome("update", identity, plan.planId, outcome, {
+            contentFingerprint: fingerprint,
+            ...(options?.claim === undefined ? {} : { claim: options.claim }),
+          });
           return outcome;
         }
-        return performUpdate(identity, plan, projection, existing);
+        return performUpdate(identity, plan, projection, existing, options?.claim);
       }
-      return refuse(identity, plan, {
-        kind: "plan-conflict",
-        recordedPlanId: claim.planId,
-        recomputedPlanId: plan.planId,
-        pr: existing,
-        detail: "the existing PR body has drifted from the pure render of the plan it records",
-      });
+      return refuse(
+        identity,
+        plan,
+        {
+          kind: "plan-conflict",
+          recordedPlanId: claim.planId,
+          recomputedPlanId: plan.planId,
+          pr: existing,
+          detail: "the existing PR body has drifted from the pure render of the plan it records",
+        },
+        fingerprint,
+        options?.claim,
+      );
     },
   };
 };

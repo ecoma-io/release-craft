@@ -23,8 +23,12 @@ import {
   type GitHubTransport,
 } from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
 import { Version } from "@ecoma-io/release-craft/domain";
+import { contentFingerprint } from "@ecoma-io/release-craft/execution";
+import { canonicalJson } from "@ecoma-io/release-craft/planner";
 import {
+  GitReleasePRRecordSink,
   MemoryRecordSink,
+  claimScopeForLine,
   openReleasePRDriver,
   parseIdentityClaim,
   renderReleasePRProjection,
@@ -279,6 +283,70 @@ describe("the Release PR driver (the production composition, issue #309)", () =>
         throw new Error(`expected a created verdict, got ${verdict.outcome.kind}`);
       }
       expect(verdict.outcome.pr.number).toBeTypeOf("number");
+    } finally {
+      temp.cleanup();
+    }
+  });
+  it("threads the caller's held claim and the content digest through the durable sink (issue #288)", () => {
+    const temp = createTempRepo();
+    try {
+      temp.git(["remote", "add", "origin", "https://github.com/ecoma-io/release-craft.git"]);
+      // The binding's namespace door admits prerelease-sequence scopes
+      // here — the production runner holds the campaign's line claims the
+      // same way (engine `acquireClaim`) and passes the token to the door.
+      const claimingNaming: GitTagNaming = {
+        namespaces: ["v"],
+        tagFor: (scope) =>
+          scope.kind === "prerelease-sequence"
+            ? `${scope.lineId}-${scope.target}-${scope.streamId}.${String(scope.sequence)}`
+            : null,
+      };
+      const binding: GitBinding = openGitBinding({ repo: temp.repo, tagNaming: claimingNaming });
+      const remote = fakeRemote();
+      const adapter = openGitHubAdapter(binding, credentials, remote.transport);
+      const sink = new GitReleasePRRecordSink(temp.repo);
+      const gate = openReleasePRDriver(adapter, sink);
+
+      const plan = makePlan();
+      const scope = claimScopeForLine(streamLine);
+      if (scope === null) {
+        throw new Error("expected the fixture line to demand a claim scope");
+      }
+      const held = binding.claims.acquire(scope, "attempt_sha256:test");
+      if (held.kind !== "claim") {
+        throw new Error("expected the claim store to hold the fixture scope");
+      }
+      const projection = renderReleasePRProjection(identity, plan);
+      if (projection === null) {
+        throw new Error("expected the fixture plan to render a projection");
+      }
+      const outcome = gate.create(identity, plan, { claim: held.token });
+      if (outcome.kind !== "created") {
+        throw new Error(`expected the create door to create, got ${outcome.kind}`);
+      }
+
+      // Both records carry the caller's token and the digest of the exact
+      // body they wrote — the re-derivable evidence the gate owes.
+      const records = sink.tail(identity, plan.planId);
+      expect(records.map((record) => record.kind)).toEqual(["gate-start", "gate-outcome"]);
+      expect(records[0]).toMatchObject({
+        kind: "gate-start",
+        action: "create",
+        planId: plan.planId,
+        claim: held.token,
+        contentFingerprint: contentFingerprint({ body: projection.projection.body }),
+      });
+      expect(records[1]).toMatchObject({
+        kind: "gate-outcome",
+        action: "create",
+        planId: plan.planId,
+        claim: held.token,
+        contentFingerprint: contentFingerprint({ body: projection.projection.body }),
+      });
+      // A fresh binding on the same repository re-reads the same stream —
+      // the crash window's reload is the durable sink's whole point.
+      const fresh = new GitReleasePRRecordSink(temp.repo);
+      expect(canonicalJson(fresh.tail(identity, plan.planId))).toEqual(canonicalJson(records));
     } finally {
       temp.cleanup();
     }
