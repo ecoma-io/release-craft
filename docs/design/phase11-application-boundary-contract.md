@@ -143,17 +143,18 @@ AssemblyConfig
 
 ### 2.3 The wiring — the port inventory
 
-| The engine needs                   | Wired from                                                             | Owner of the seam                                                                                          |
-| ---------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| The kernel constructor             | `openAttempt` over the binding's `register`, then `start`              | [ADR-0005](../adr/0005-execution-kernel.md) decisions 2, 4–5                                               |
-| The durable evidence               | the binding's `ledger` (`ExecutionLedger`)                             | [ADR-0006](../adr/0006-execution-ledger.md); phase 8 §2                                                    |
-| The ownership truth                | the binding's `claims` (`ClaimStore`)                                  | [ADR-0005](../adr/0005-execution-kernel.md) decision 4; [ADR-0011](../adr/0011-claim-line-register.md)     |
-| The claim view                     | derived by the boundary from the claim store                           | phase 4 §2.7 — the derivation the fixtures hand-roll, named once here                                      |
-| The channel-transition executor    | the binding's `channels` port                                          | [ADR-0012](../adr/0012-channel-transition.md) decision 6 — [§2.4](#24-the-channel-transition-wiring-point) |
-| The artifact producer              | the binding's `producer` (`ArtifactProducer`)                          | [ADR-0008](../adr/0008-artifact-graph.md) decision 2; phase 8 §2.5                                         |
-| The tag door                       | the binding's `mintTag`, called only by the walk, target from the plan | [ADR-0009](../adr/0009-git-binding.md) decision 4; phase 8 §2.3                                            |
-| Hook and artifact effects          | the run request's declared bundles, injected per run                   | [ADR-0007](../adr/0007-hooks-as-steps.md) decision 2; [ADR-0008](../adr/0008-artifact-graph.md) decision 2 |
-| The read seams (`refs`, `content`) | not wired — they stay the binding's surface                            | phase 9 §2.7–§2.8 (their consumer is the adapter, not the boundary)                                        |
+| The engine needs                   | Wired from                                                                                                                                                 | Owner of the seam                                                                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| The kernel constructor             | `openAttempt` over the binding's `register`, then `start`                                                                                                  | [ADR-0005](../adr/0005-execution-kernel.md) decisions 2, 4–5                                                                   |
+| The durable evidence               | the binding's `ledger` (`ExecutionLedger`)                                                                                                                 | [ADR-0006](../adr/0006-execution-ledger.md); phase 8 §2                                                                        |
+| The ownership truth                | the binding's `claims` (`ClaimStore`)                                                                                                                      | [ADR-0005](../adr/0005-execution-kernel.md) decision 4; [ADR-0011](../adr/0011-claim-line-register.md)                         |
+| The claim view                     | derived by the boundary from the claim store                                                                                                               | phase 4 §2.7 — the derivation the fixtures hand-roll, named once here                                                          |
+| The channel-transition executor    | the binding's `channels` port                                                                                                                              | [ADR-0012](../adr/0012-channel-transition.md) decision 6 — [§2.4](#24-the-channel-transition-wiring-point)                     |
+| The artifact producer              | the binding's `producer` (`ArtifactProducer`)                                                                                                              | [ADR-0008](../adr/0008-artifact-graph.md) decision 2; phase 8 §2.5                                                             |
+| The release commit                 | the binding's `commit` (`ReleaseCommit`) — the completion's deterministic commit over the recorded base, called before the mint, the mint's target its oid | [issue #339](https://github.com/ecoma-io/release-craft/issues/339) — [§2.5](#25-the-walk-the-generalized-fixture-drive) step 5 |
+| The tag door                       | the binding's `mintTag`, called only by the walk, target from the plan                                                                                     | [ADR-0009](../adr/0009-git-binding.md) decision 4; phase 8 §2.3                                                                |
+| Hook and artifact effects          | the run request's declared bundles, injected per run                                                                                                       | [ADR-0007](../adr/0007-hooks-as-steps.md) decision 2; [ADR-0008](../adr/0008-artifact-graph.md) decision 2                     |
+| The read seams (`refs`, `content`) | not wired — they stay the binding's surface                                                                                                                | phase 9 §2.7–§2.8 (their consumer is the adapter, not the boundary)                                                            |
 
 Two hand-rolled derivations move behind the boundary:
 
@@ -278,13 +279,31 @@ hooks, artifacts)` then `start`; a plan already carried by the
    non-advance stops the walk in order — the outcomes of
    [§2.8](#28-how-outcomes-cross-the-boundary) — and a stop is recorded,
    never unwound: the tail stays classifiable.
-5. **Mint** — the tag door, once, under the held claim:
+5. **Commit** — the completion's release commit
+   ([issue #339](https://github.com/ecoma-io/release-craft/issues/339)), under
+   the held claim, only when the assembly wired a `commit` port and the run's
+   recorded tail holds completed updater steps: one deterministic commit over
+   the recorded base whose tree overlays the completed mutations' produced
+   bytes — the version bump's `VERSION` and the rendered `CHANGELOG.md` — and
+   whose message names the release: tag, line, plan. The door is
+   content-addressed and pure (`commit-tree` over a derived tree; no index,
+   no worktree), so replay on resume re-derives the identical oid and no CAS
+   runs. A seam that cannot re-read a completed mutation's path bounces the
+   completion as a refusal before any commit — the release never names an
+   unmutated base; a base the repository does not resolve throws
+   `GitFaultError` under the exit-70 posture (D39), mirroring the tag door's
+   own base rule. An assembly with no commit port skips the step and the
+   walk's mint target stays the plan's own head — the memory runs remain
+   byte-identical.
+6. **Mint** — the tag door, once, under the held claim:
    `mintTag({ attemptId, token, tag, target })` with the target resolved
-   from the plan's own recorded head — a plan value, never ambient `HEAD`
+   from the completion's committed oid when a commit ran (#339), the plan's
+   own recorded head otherwise — a plan value, never ambient `HEAD`
    ([ADR-0009](../adr/0009-git-binding.md) decision 4; phase 8 §2.3).
    A minted `refused`/`conflict` is a returned outcome; nothing the door
-   refused left state behind.
-6. **Terminal** — `transition(attempt, "published")` when the walk
+   refused left state behind — and a commit the commit door refused
+   preceded no mint.
+7. **Terminal** — `transition(attempt, "published")` when the walk
    completed. Nothing else terminalizes; `satisfied-externally` follows
    the recorded steps exactly as `classifyResume` reads them (phase 5
    §2.3).

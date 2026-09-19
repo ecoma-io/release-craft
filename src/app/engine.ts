@@ -7,9 +7,10 @@
  * the extension schedulers at their anchors, the write-ahead start before
  * every effect (ADR-0006 decision 2), the record-path completion through
  * `ledgerRequestStep` (phase 5 §2.8), the `channel-transition` stage
- * executed through the wired store at §2.4's point, the tag door called
- * once at the mint step with the target the run request carries, and the
- * terminal transition when the walk completed. The boundary invents no
+ * executed through the wired store at §2.4's point, the commit door
+ * called once at the completion ahead of the mint when the walk mutated
+ * (issue #339), the tag door called
+ * once at the mint step with the committed or recorded target, and the
  * step, no order, no retry, no clock: every move cites the kernel or a
  * landed phase contract, and every non-advance stops the walk in order —
  * a stop is recorded (the drives list), never unwound, so the tail stays
@@ -576,8 +577,53 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     }
     return { kind: "conflict", detail: acquisition.detail, ...base };
   };
+  /** The files the completion's commit door would carry (issue #339): the
+   * ledger's completed updater step records with a recorded target path,
+   * read through the run's declared updater seam. Returns null when the
+   * walk recorded no such step — the memory assembly's zero-persistence
+   * runs and any run without mutations — and then no commit is needed
+   * and the completion mints onto the recorded base exactly as before.
+   * A completed mutation whose bytes the declared seam cannot read is
+   * surfaced as the fail-closed refusal (never a silently unmutated
+   * base the tag then points at). */
+  const completedMutationFiles = (
+    attemptId: string,
+    declarations: RunDeclarations,
+  ): {
+    readonly files: Readonly<Record<string, string>>;
+    readonly unreadablePaths: readonly string[];
+  } | null => {
+    const updates = ports.ledger
+      .tail(attemptId)
+      .filter(
+        (record): record is Extract<LedgerRecord, { readonly kind: "step" }> =>
+          record.kind === "step" &&
+          record.record.to === "completed" &&
+          isUpdaterStepKey(record.record.stepKey) &&
+          record.record.targetPath !== undefined,
+      );
+    if (updates.length === 0) {
+      return null;
+    }
+    const unreadablePaths: string[] = [];
+    const files: Record<string, string> = {};
+    for (const update of updates) {
+      const path = update.record.targetPath;
+      if (path === undefined) {
+        continue;
+      }
+      const bytes = declarations.updaterFs?.read(path);
+      if (bytes === undefined) {
+        unreadablePaths.push(path);
+        continue;
+      }
+      files[path] = bytes;
+    }
+    return { files, unreadablePaths };
+  };
 
-  /** §2.5 steps 5–6 — the mint, then the terminal. Only a minted tag
+  /** §2.5 steps 5–6 — the commit door when the walk mutated, then the
+   * mint, then the terminal. Only a minted tag
    * publishes; a refused or conflicting mint is the returned outcome and
    * the attempt stays exactly as the walk left it (nothing the door
    * refused left state behind). The outcome's `tag` is the release's tag
@@ -593,6 +639,7 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     plannedTag: string | null,
     target: string | undefined,
     drives: readonly StepDrive[],
+    declarations: RunDeclarations,
   ): RunOutcome => {
     const base = outcomeBase(handle.planId, handle, drives);
     if (plannedTag === null) {
@@ -622,11 +669,40 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
         ...base,
       };
     }
+    let commitTarget = target;
+    if (ports.commit !== null) {
+      const files = completedMutationFiles(handle.attemptId, declarations);
+      if (files !== null) {
+        if (files.unreadablePaths.length > 0) {
+          return {
+            kind: "refused",
+            detail:
+              `the walk completed mutations whose bytes the declared updater seam cannot ` +
+              `read (${files.unreadablePaths.join(", ")}) — refusing to commit the release ` +
+              `over the unmutated base (issue #339)`,
+            ...base,
+          };
+        }
+        const committed = ports.commit({
+          attemptId: handle.attemptId,
+          token: entry.claim.token,
+          tag: plannedTag,
+          base: target,
+          planId: handle.planId,
+          lineId: entry.planLine.lineId,
+          files: files.files,
+        });
+        if (committed.kind === "refused") {
+          return { kind: "refused", detail: committed.detail, ...base };
+        }
+        commitTarget = committed.oid;
+      }
+    }
     const result = ports.mint({
       attemptId: handle.attemptId,
       token: entry.claim.token,
       tag: plannedTag,
-      target,
+      target: commitTarget,
     });
     if (result.kind === "refused") {
       return { kind: "refused", detail: result.detail, ...base };
@@ -805,7 +881,7 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
     const stop = walk(ctx, from);
     entry.attempt = ctx.attempt;
     if (stop === null) {
-      return completeRun(entry, handle, plannedTag, target, ctx.drives);
+      return completeRun(entry, handle, plannedTag, target, ctx.drives, declarations);
     }
     const outcome = stopOutcome(ctx, stop, handle.planId, handle);
     entry.attempt = ctx.attempt;
@@ -836,7 +912,7 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
         // recorded steps exactly as classifyResume read them (§2.5).
         return { kind: "satisfied-externally", ...base };
       }
-      return completeRun(entry, handle, plannedTag, target, []);
+      return completeRun(entry, handle, plannedTag, target, [], declarations);
     }
     return driveFrom(entry, handle, declarations, verdict.from, plannedTag, target);
   };
@@ -942,6 +1018,40 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
         `line ${lineId}'s plan mints ${plannedTag} over an assembly that wired the ` +
           `publication port but no tag door — publication publishes a minted tag's release, ` +
           `so the run refuses before the walk starts, naming the missing port (D87)`,
+        planId,
+        null,
+      );
+    }
+    // Issue #339's pre-walk rows, the same defensive posture as the
+    // publication rule above: a wired commit door without the tag door
+    // would commit a release the run never mints, and a run whose
+    // mutations anchor the commit stage over an assembly that wired the
+    // tag door but no commit door would mint the unmutated base. No
+    // current factory can compose the pairs apart; the engine does not
+    // rely on the factories' discipline to hold.
+    if (ports.commit !== null && ports.mint === null && plannedTag !== null) {
+      return refusedOutcome(
+        `line ${lineId}'s plan mints ${plannedTag} over an assembly that wired the commit ` +
+          `door but no tag door — the committed release would land untagged, so the run ` +
+          `refuses before the walk starts, naming the missing port (issue #339)`,
+        planId,
+        null,
+      );
+    }
+    const commitAnchoredMutations = (request.declarations?.mutations ?? []).some(
+      (mutation) => mutation.anchor.stage === "commit",
+    );
+    if (
+      ports.mint !== null &&
+      ports.commit === null &&
+      plannedTag !== null &&
+      commitAnchoredMutations
+    ) {
+      return refusedOutcome(
+        `line ${lineId}'s plan mints ${plannedTag} over an assembly that wired the tag door ` +
+          `but no commit door, while the run declares mutations anchored to the commit ` +
+          `stage — the tag would mint the unmutated base, so the run refuses before the ` +
+          `walk starts, naming the missing port (issue #339)`,
         planId,
         null,
       );

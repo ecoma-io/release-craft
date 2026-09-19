@@ -126,3 +126,43 @@ export interface ContentRead {
    *  `HEAD` (ADR-0009 decision 4). */
   file(digest: string, path: string): string | null;
 }
+
+/**
+ * The commit door's input (issue #339; contract phase 11 §2.5): the calling
+ * attempt, its held token, the plan's tag the commit message names, the
+ * recorded base the commit parents itself on, the plan and line the release
+ * is for, and the mutation files the commit carries onto the base tree —
+ * supplied by the assembly from recorded state, never ambient HEAD.
+ */
+export interface ReleaseCommitInput {
+  readonly attemptId: string;
+  readonly token: ClaimToken;
+  readonly tag: string;
+  /** The recorded base commit the release commit parents itself on —
+   *  the run's recorded target, never resolved by the door itself. */
+  readonly base: string;
+  readonly planId: string;
+  readonly lineId: string;
+  /** The mutation files, path → written bytes. The door never reads
+   *  ambient state (issue #339 class 1): only these files, overlaid on
+   *  the base tree, enter the committed tree. */
+  readonly files: Readonly<Record<string, string>>;
+}
+
+/**
+ * The commit door's outcomes (issue #339): `committed` names the new
+ * commit's oid — deterministically replayed (same base, same files, same
+ * message, same identity: same oid), so a resumed completion re-commits
+ * idempotently; or `refused` with the failure class named — the calling
+ * attempt holds no claim deriving the tag (`unclaimed`), or the held
+ * claim is held under another attempt's token (`foreign-token`). Every
+ * outcome is a returned value, never an exception; nothing a door refused
+ * left state behind.
+ */
+export type ReleaseCommitOutcome =
+  | { readonly kind: "committed"; readonly oid: string }
+  | {
+      readonly kind: "refused";
+      readonly reason: "unclaimed" | "foreign-token";
+      readonly detail: string;
+    };
