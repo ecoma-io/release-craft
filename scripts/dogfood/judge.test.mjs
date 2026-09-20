@@ -42,7 +42,9 @@ const CLAIM = hex("claim");
 
 /**
  * The promote walk's guard choreography, as the judge pins it (the same
- * sequence run 34470662759's certified tail carried).
+ * sequence run 34470662759's certified tail carried). `publish` additionally
+ * carries `generation-complete` when the fixture declares the changelog pair —
+ * the engine's §2.5 proof over a declared generation.
  *
  * @type {Readonly<Record<string, readonly string[]>>}
  */
@@ -98,13 +100,27 @@ function honestCapture(
       attribution,
       contentFingerprint: `content:${cell}:${ATTEMPT_ID}`,
       from: "started",
-      guards: (GUARDS[cell] ?? []).map((guard) => ({
-        guard: guard.endsWith(":")
-          ? `${guard}${JSON.stringify({ kind: "tag-absent", tag: TAG })}`
-          : guard,
-        passed: true,
-        detail: `${detailSeed} (${cell})`,
-      })),
+      guards: [
+        ...(GUARDS[cell] ?? []).map((guard) => ({
+          guard: guard.endsWith(":")
+            ? `${guard}${JSON.stringify({ kind: "tag-absent", tag: TAG })}`
+            : guard,
+          passed: true,
+          detail: `${detailSeed} (${cell})`,
+        })),
+        // The engine's publish advance over a declared generation carries its
+        // §2.5 proof beside the claim chain (#335); the fixture mirrors the
+        // pair the tail declares, and judge.test asserts both postures.
+        ...(changelogTree !== "" && cell === "publish"
+          ? [
+              {
+                guard: "generation-complete",
+                passed: true,
+                detail: `${detailSeed} (publish generation)`,
+              },
+            ]
+          : []),
+      ],
       stepKey: cell,
       to: "completed",
       ...(claimed ? { claim: CLAIM } : {}),
@@ -686,6 +702,7 @@ describe("the declared changelog posture", () => {
       "declared detail bytes",
       /** @type {string} */ (staged.seedTree),
     );
+
     /** @type {any} */ (captured.tail[14]).record.artifact.digest = "sha256:deadbeef";
     /** @type {any} */ (captured.tail[14]).record.contentFingerprint = "sha256:deadbeef";
     commitLedgerTail(staged, captured.tail);
@@ -698,6 +715,54 @@ describe("the declared changelog posture", () => {
       );
     } finally {
       rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the generation guard", () => {
+  it("refuses a declared capture whose publish cell lost the generation proof", () => {
+    const staged = initLedgerRepo({ seed: { "CHANGELOG.md": "# Changelog\n" } });
+    const captured = honestCapture(
+      "declared detail bytes",
+      /** @type {string} */ (staged.seedTree),
+    );
+    const publishCompleted = captured.tail.find(
+      (entry) =>
+        /** @type {any} */ (entry).record?.stepKey === "publish" &&
+        /** @type {any} */ (entry).record.from === "started",
+    );
+    const selected = /** @type {any} */ (publishCompleted).record;
+    const guards = /** @type {Array<{ guard: string; passed: boolean }>} */ (selected.guards);
+    selected.guards = guards.filter((guard) => guard.guard !== "generation-complete");
+    commitLedgerTail(staged, captured.tail);
+    try {
+      const run = runJudge(staged.repo, survivorOf(captured.envelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(rowState(run.stdout, "completed record for publish"), "FAIL");
+    } finally {
+      rmSync(staged.repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses generation-complete on a publish whose walk declared no artifact pair", () => {
+    const { tail: bareTail, envelope: bareEnvelope } = honestCapture();
+    const publishCompleted = bareTail.find(
+      (entry) =>
+        /** @type {any} */ (entry).record?.stepKey === "publish" &&
+        /** @type {any} */ (entry).record.from === "started",
+    );
+    /** @type {any} */ (publishCompleted).record.guards.push({
+      guard: "generation-complete",
+      passed: true,
+      detail: "a proof no declaration supports",
+    });
+    const repo = buildLedgerRepo(bareTail);
+    try {
+      const run = runJudge(repo, survivorOf(bareEnvelope), "success");
+      assert.equal(run.status, 1);
+      assert.equal(rowState(run.stdout, "completed record for publish"), "FAIL");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
     }
   });
 });
