@@ -67,13 +67,16 @@ Non-goals:
   hermeticity envelope are inherited; where this contract needs something the
   grammar does not offer, it says "a phase 12 amendment" and refuses the side
   door ([§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar)).
-- **No publication.** The tag mint is a local `git tag --no-sign` (verified:
-  `src/adapters/git/tag-door.ts`; `git-refs.ts` is the CAS family), and
-  remote publication is the adapter's
-  and the publishing slice's territory ([ADR-0010](../adr/0010-github-adapter.md);
-  phase 11 §6; phase 12 §1). The Action does not push, does not create
-  releases, and does not enumerate refs for anyone
-  ([§2.8](#28-the-tokens-journey-decided-empty)).
+- **No publication beyond the one gated kick.** The tag mint is a local
+  `git tag --no-sign` (verified: `src/adapters/git/tag-door.ts`; `git-refs.ts`
+  is the CAS family), and remote publication is the adapter's and the
+  publishing slice's territory ([ADR-0010](../adr/0010-github-adapter.md);
+  phase 11 §6; phase 12 §1). This contract's one reviewable arm is the
+  gated `--publish` row ([§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar),
+  [§2.8](#28-the-tokens-journey-decided-empty)): the Action does not push
+  the minted ref, does not configure credentials, and takes no release-shaped
+  vocabulary — publication is the boolean and the adapter's verified write,
+  nothing more.
 - **No engine changes.** The boundary, the kernel, the planner, and the CLI
   are consumed, never re-owned; a need this contract cannot meet with
   inherited surface is a named slice, not a drive-by.
@@ -312,32 +315,32 @@ The Action's inventory is a projection of the `run` command's grammar rows
 exact decided flags; nothing else exists. The Action drives **one door**:
 `run`.
 
-| Input               | Required | Default                   | Feeds (grammar row)                                                                                                                                                         |
-| ------------------- | -------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `world`             | yes      | —                         | `--world <inputs.world>` (a path; [§2.5](#25-the-world-document-in-ci-a-path-never-a-stream))                                                                               |
-| `line`              | yes      | —                         | `--line <inputs.line>` — `RunRequest.lineIds`, exactly one (M-02)                                                                                                           |
-| `actor`             | yes      | —                         | `--actor <inputs.actor>` — `RunRequest.actor` ([§2.4](#24-the-actor-declared-one-layer-up))                                                                                 |
-| `intents`           | no       | empty                     | one `--intent` per non-empty-spelling line (the repeatable row)                                                                                                             |
-| `tag-namespaces`    | yes      | —                         | one `--tag-namespace` per line (the repeatable row; the git assembly demands at least one)                                                                                  |
-| `repo`              | no       | `.`                       | `--repo <inputs.repo>` — `BindingConfig.repo`                                                                                                                               |
-| `max-retries`       | no       | `0`                       | `--max-retries <inputs.max-retries>` — `AssemblyConfig.maxRetries`                                                                                                          |
-| `changelog`         | no       | `false`                   | bare `--changelog` when `true`, omitted when `false`/empty, the value forwarded otherwise (the boolean row — a foreign spelling reaches the grammar and usage-faults aloud) |
-| `working-directory` | no       | `${{ github.workspace }}` | no flag — the invocation step's own cwd ([§4](#4-hermeticity-in-ci-the-two-lines))                                                                                          |
-| `claims-fetch`      | yes      | —                         | no flag — the composite's one fetch, gated on this declaration ([§2.9](#29-what-the-action-never-does-and-the-one-fetch-it-performs-when-declared))                         |
-
-The multiline rule: `intents` and `tag-namespaces` are newline-separated,
-one value per line, lines forwarded verbatim as one flag occurrence each —
-the only list spelling added, and it is transport, not grammar: the values
-are exactly the CLI's own spellings, and a line the grammar refuses reaches
-the grammar and usage-faults (exit 64, annotated failure). The one trailing
-newline a YAML block scalar carries is dropped (it is the scalar's own
-punctuation, not a value); interior lines are forwarded as written. For
-`tag-namespaces` that includes the empty line — the every-tag namespace root
-is a legitimate grammar value (`parse.ts` refuses the empty string as a flag
-value _everywhere except_ `--tag-namespace`, verified), so an interior empty
-line forwards as `--tag-namespace ""`. For `intents` an interior empty line
-forwards as `--intent ""` and is usage-faulted by the CLI — the author's
-line, the grammar's refusal, loudly.
+| Input                                                                        | Required | Default                   | Feeds (grammar row)                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------- | -------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `world`                                                                      | yes      | —                         | `--world <inputs.world>` (a path; [§2.5](#25-the-world-document-in-ci-a-path-never-a-stream))                                                                                                                                                                                            |
+| `line`                                                                       | yes      | —                         | `--line <inputs.line>` — `RunRequest.lineIds`, exactly one (M-02)                                                                                                                                                                                                                        |
+| `actor`                                                                      | yes      | —                         | `--actor <inputs.actor>` — `RunRequest.actor` ([§2.4](#24-the-actor-declared-one-layer-up))                                                                                                                                                                                              |
+| `intents`                                                                    | no       | empty                     | one `--intent` per non-empty-spelling line (the repeatable row)                                                                                                                                                                                                                          |
+| `tag-namespaces`                                                             | yes      | —                         | one `--tag-namespace` per line (the repeatable row; the git assembly demands at least one)                                                                                                                                                                                               |
+| `repo`                                                                       | no       | `.`                       | `--repo <inputs.repo>` — `BindingConfig.repo`                                                                                                                                                                                                                                            |
+| `max-retries`                                                                | no       | `0`                       | `--max-retries <inputs.max-retries>` — `AssemblyConfig.maxRetries`                                                                                                                                                                                                                       |
+| `changelog`                                                                  | no       | `false`                   | bare `--changelog` when `true`, omitted when `false`/empty, the value forwarded otherwise (the boolean row — a foreign spelling reaches the grammar and usage-faults aloud)                                                                                                              |
+| `publish`                                                                    | no       | `false`                   | bare `--publish` when `true`, omitted when `false`/empty, the value forwarded otherwise (the boolean row — a foreign spelling reaches the grammar and usage-faults aloud); the release object's credential is [§2.8](#28-the-tokens-journey-decided-empty)'s gated row, never this input |
+| `working-directory`                                                          | no       | `${{ github.workspace }}` | no flag — the invocation step's own cwd ([§4](#4-hermeticity-in-ci-the-two-lines))                                                                                                                                                                                                       |
+| `claims-fetch`                                                               | yes      | —                         | no flag — the composite's one fetch, gated on this declaration ([§2.9](#29-what-the-action-never-does-and-the-one-fetch-it-performs-when-declared))                                                                                                                                      |
+| The multiline rule: `intents` and `tag-namespaces` are newline-separated,    |
+| one value per line, lines forwarded verbatim as one flag occurrence each —   |
+| the only list spelling added, and it is transport, not grammar: the values   |
+| are exactly the CLI's own spellings, and a line the grammar refuses reaches  |
+| the grammar and usage-faults (exit 64, annotated failure). The one trailing  |
+| newline a YAML block scalar carries is dropped (it is the scalar's own       |
+| punctuation, not a value); interior lines are forwarded as written. For      |
+| `tag-namespaces` that includes the empty line — the every-tag namespace root |
+| is a legitimate grammar value (`parse.ts` refuses the empty string as a flag |
+| value _everywhere except_ `--tag-namespace`, verified), so an interior empty |
+| line forwards as `--tag-namespace ""`. For `intents` an interior empty line  |
+| forwards as `--intent ""` and is usage-faulted by the CLI — the author's     |
+| line, the grammar's refusal, loudly.                                         |
 
 The `max-retries` default deserves its own sentence: the Action always
 forwards the flag, default `0` — the CLI's own declared default
@@ -347,16 +350,20 @@ never a silent retry) made explicit in argv rather than implied by omission.
 A consumer who wants the kernel's bounded re-acquisition raises the number in
 their `with:` block, visibly in their own workflow file.
 
-The `changelog` row is the inventory's one boolean: the grammar's flag takes
-no value, so the metadata's string transports to a bare flag — `"true"`
-declares the artifact, `"false"` and the empty string omit the row, and any
+The boolean rows (`changelog`, `publish`) share one projection: each flag
+takes no value, so the metadata's string transports to a bare flag —
+`"true"` declares the row, `"false"` and the empty string omit it, and any
 other spelling forwards the value with the flag so the grammar's refusal
 (exit 64, annotated) surfaces the author's typo. A silent absorption into
 the default — `changelog: "1"` running as `false` — would be the misspelled
 key's fate the #191 amendment refuses, reapplied to a value; the projection
 stays value-blind in the same spirit the inventory is (the closed grammar is
 the values' only validation), so the refusal is the grammar's, not the
-program's.
+program's. `changelog` declares the CHANGELOG.md artifact the run mints;
+`publish` declares the release object's publication over the minted tag
+([§2.8](#28-the-tokens-journey-decided-empty)) — and publishes nothing by
+itself: the boolean only lets the invocation arm the credential the gated
+row keeps out of the input inventory.
 
 The demanded rows (`world`, `line`, `actor`, `tag-namespaces`, `claims-fetch`) are declared
 `required` in the metadata — and the metadata is _not_ the enforcement
@@ -406,6 +413,7 @@ inputs:
   repo:             { default: ".", description: "Repository path the binding walks" }
   max-retries:      { default: "0", description: "Claim sequence retry bound" }
   changelog:        { default: "false", description: "Declare the CHANGELOG.md artifact in the run" }
+  publish:          { default: "false", description: "Publish the GitHub Release for the minted tag (self-release; the credential is the gated ${{ github.token }}, never an input)" }
   working-directory:{ default: "${{ github.workspace }}", description: "Where the run stands" }
   claims-fetch:     { required: true, description: "Materialize the claim namespace before the run — true fetches, false skips (never guessed)" }
 runs:
@@ -415,14 +423,14 @@ runs:
 
 **Refused inputs**, each with the reason the inventory closes on it:
 
-| Refused                                                             | Why                                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `assembly`                                                          | Pinned `git` — [§2.6](#26-the-assembly-in-ci-git-pinned)                                                                                                                                                                                                 |
-| `command` (a door selector)                                         | `run` only — the cross-process doors return `refused(unknown attempt)` from a fresh process today (phase 12 §2.7), so offering them offers a guaranteed refusal; `plan`-only is the CLI's own door, reachable by any workflow that runs the bin directly |
-| `token`                                                             | No token exists in v1 — [§2.8](#28-the-tokens-journey-decided-empty)                                                                                                                                                                                     |
-| `json` / any rendering switch                                       | `--json` is pinned, always — the envelope is the machine contract the conclusion table reads; two renderings invite divergence (phase 12 §3.1)                                                                                                           |
-| `declarations`, `naming-module`, `target`                           | The grammar refuses them (phase 12 §2.3, §2.5, §2.6; the suite's negative inventory) — an action input would be the refused side door re-entering through metadata                                                                                       |
-| release/publication vocabulary (`release-id`, `draft`, `labels`, …) | Publication is not this surface ([§2.8](#28-the-tokens-journey-decided-empty))                                                                                                                                                                           |
+| Refused                                                             | Why                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assembly`                                                          | Pinned `git` — [§2.6](#26-the-assembly-in-ci-git-pinned)                                                                                                                                                                                                                                                   |
+| `command` (a door selector)                                         | `run` only — the cross-process doors return `refused(unknown attempt)` from a fresh process today (phase 12 §2.7), so offering them offers a guaranteed refusal; `plan`-only is the CLI's own door, reachable by any workflow that runs the bin directly                                                   |
+| `token`                                                             | A token input is refused by design — a credential on the input channel would ride argv and a reviewable step env, the two histories a least-privilege token must never enter; the publish leg's credential is the gated `GITHUB_TOKEN: ${{ github.token }}` ([§2.8](#28-the-tokens-journey-decided-empty)) |
+| `json` / any rendering switch                                       | `--json` is pinned, always — the envelope is the machine contract the conclusion table reads; two renderings invite divergence (phase 12 §3.1)                                                                                                                                                             |
+| `declarations`, `naming-module`, `target`                           | The grammar refuses them (phase 12 §2.3, §2.5, §2.6; the suite's negative inventory) — an action input would be the refused side door re-entering through metadata                                                                                                                                         |
+| release/publication vocabulary (`release-id`, `draft`, `labels`, …) | Publication is the one gated boolean, nothing more — a release-shaped vocabulary (what a release is called, its shape, its labels) is refused: the release object's composition is the recording, never this surface ([§2.8](#28-the-tokens-journey-decided-empty), ADR-0010)                              |
 
 No input synthesizes a flag the grammar refuses, and no input invents a new
 one: if the Action ever needs something the grammar lacks, the need is a
@@ -529,6 +537,7 @@ node <action>/dist/src/cli/index.js run \
   --actor <inputs.actor> \
   --line <inputs.line> \
   [--changelog] \
+  [--publish] \
   --json
 ```
 
@@ -543,6 +552,14 @@ node <action>/dist/src/cli/index.js run \
   file in this repository**, which the composite's `run:` step invokes —
   the suite drives the same file as a subprocess. One definition, no
   drifted duplicate in a test.
+- The `[--publish]` row's credential is **not argv**: the command line
+  never carries the token. The step's `env:` declares
+  `GITHUB_TOKEN: ${{ github.token }}` beside the input forwards, and the
+  script forwards it into the child's allowlisted environment **only when
+  the published boolean is `"true"`** ([§2.8](#28-the-tokens-journey-decided-empty)) —
+  the allowlist is one row longer under a publishing declaration, and the
+  envelope's transport-failure class (not a silent skip) is what a declined
+  permission surfaces as.
 - Provisioning (install, build) runs _before_ and _outside_ the
   hermetic envelope — it reads the network and the ambient runner
   environment freely, because it is the Action's provisioning, not the
@@ -573,13 +590,15 @@ node <action>/dist/src/cli/index.js run \
   executes is built from the same commit the consumer pinned by
   construction; the runner-behavior facts this rests on — the
   materialization guarantee and the context spelling — are pinned by
-  [§6](#6-test-obligations), fixture 1, and the maintainer's eyes are asked
   in [§8](#8-open-questions-for-the-maintainer), question 6.
 
 ### 2.8 The token's journey — decided empty
 
 The issue's premise was that "the tag mint needs push rights." The built
-surface says otherwise, and the contract follows the built surface:
+surface says otherwise, and the contract follows the built surface — the
+journey is decided empty, its one amended row the publish leg's gated
+credential ([§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar)'s
+`publish`, armed only when declared):
 **verified — the mint is `git tag --no-sign <name> <resolved>` on the local
 repository** (`src/adapters/git/tag-door.ts` — a lightweight, unsigned tag at
 the locally resolved target), beside the CAS append family's local
@@ -594,20 +613,62 @@ copy; the run's writes are the walk's writes, all local.
 touches no secret, and runs no git of its own against the target repository**
 — no push, no tag, no config write, and no fetch beyond the one decided
 claim-namespace fetch ([§2.9](#29-what-the-action-never-does-and-the-one-fetch-it-performs-when-declared)),
-which rides the consumer's checkout credential — no token, no new secret
-input, the decided-empty journey unchanged. What "published" means through
-this surface, stated so nobody discovers it in a release run: the walk
-completed and the tag ref exists in the runner's copy of the repository. It
-does **not** mean a remote tag exists, a GitHub Release exists, or anything
-left the runner. The refusal to push is not an oversight this contract
-forgot to close:
+which rides the consumer's checkout credential. A non-publishing run keeps
+the journey empty exactly: it sees no token, and whether the token exists in
+the runner changes nothing about the child — the allowlist cannot name the
+row because the row never enters it.
+
+**The publish leg's gated amendment (issue #336):** a run that declares
+`publish: "true"` arms one reviewed row, `GITHUB_TOKEN: ${{ github.token }}`,
+in the invocation step's `env:` — the job's own finished-scope token, already
+visible to the workflow, reviewed here where the emission of the release is
+decided — and the invoke program forwards it into the child's allowlisted
+environment when, and only when, the boolean is `"true"`. (The engine-side
+assembly applies the same gate at the transport: `openGitHubTransport` opens
+the release doors only when wrapping `GITHUB_TOKEN`; undeclared, the adapter
+refuses the publish before the wire speaks.) The resume between them the
+same rules serve:
+
+- **One spelling only.** `GITHUB_TOKEN: ${{ github.token }}`. A token input
+  (`publish-token:`, `github-token:`, anything `with:` could carry) is
+  refused by design — a credential on the input channel would ride argv and
+  a reviewable step env, the two histories a least-privilege token must
+  never enter. `GH_TOKEN`, `GITHUB_PAT`, and neighbouring spellings are
+  refused by the same clause: the day one of them arrives, the journey has
+  silently forked, and the suite that pins the spelling fails loudly.
+- **Never persisted.** A credential never lands in repository config or any
+  file — and, by the same clause, never on argv: the token enters the
+  privileged child's _environment_, scoped to that one spawn, never a
+  command line (`ps`) and never disk. At rest it lives only in the runner's
+  own step env, which GitHub masks and does not persist.
+- **Gated, never defaulted.** `"false"` (and the unset input) leaves the
+  row out of the child's env entirely, not empty in it — an undeclared
+  publish runs the minted-tag outcome with no remote read, indistinguishable
+  from a host without network; a typo (`publish: "1"`) is the grammar's
+  exit 64, never an implicit publish (`publish: "true"` is the one spelling
+  that arms).
+- **No new refusal class.** A publishing run whose token cannot create —
+  `permissions: contents: read`, an expired token, a fork's token — answers
+  the transport failure or the provider's refusal the adapter already owns,
+  and the conclusion table's exit codes stay what they are; the already
+  minted tag stays recorded (DOGFOOD residue worth deleting), but the run
+  is not published. A blocked publish is **not** resumed: resuming re-runs
+  the walk (re-entry on the minted tag short-circuits the plan and resumes
+  the publication leg) — never a recovery command an operator might mistake
+  for certified state.
+  The distribution of the refusal stands, and it is one of two the Action
+  performs — the publishing slice's own laws are the other, and the vault the
+  token journeys through:
 
 - Enumerating which refs a release leaves behind **is** the remote
   projection's knowledge (phase 9 §2.7–§2.8 — the binding's read seams exist
   for exactly that consumer), and an Action that pushed would be a second,
-  unreviewed projection. Publication is the adapter's and the publishing
-  slice's territory ([ADR-0010](../adr/0010-github-adapter.md); phase 11 §6;
-  phase 12 §1).
+  unreviewed projection. The publish leg is the adapter's own projection —
+  the approved one, composed over the API and this contract's row; the
+  remote push of the minted ref stays refused, the binding's
+  recorded-target truth being what the adapter asserts instead
+  ([§2.8](#28-the-tokens-journey-decided-empty)'s precondition, issue #338).
+
 - The org's `persist-credentials: false` law reaches this composite
   vacuously: it performs **no checkout at all** — the consumer's repository
   remains the consumer's workflow's own step, and the Action's own sources
@@ -877,9 +938,14 @@ places, outer and inner, and names what each owns:
 
 - **The outer line — the invocation step's environment, constructed by
   allowlist.** The child runs under `env -i` with exactly: `PATH` (the
-  step's own, so `node` and `git` resolve), and `HOME` pointed at a fresh
+  step's own, so `node` and `git` resolve), `HOME` pointed at a fresh
   empty directory under `$RUNNER_TEMP` (so any leaked `HOME`-relative
-  config read finds nothing). Nothing else: no `GITHUB_*`, no `ACTIONS_*`,
+  config read finds nothing), and — **when `publish: "true"`** — the
+  forwarded `GITHUB_TOKEN` the gated row armed
+  ([§2.8](#28-the-tokens-journey-decided-empty)); the row appears in the
+  allowlist if and only if the boolean did, and its value comes through the
+  step `env:`'s reviewed `${{ github.token }}` interpolation, never argv.
+  Nothing else: no `GITHUB_*`, no `ACTIONS_*`,
   no `RUNNER_*`, no `CI`, no `INPUT_*`, no `NODE_OPTIONS`,
   no `NODE_COMPILE_CACHE`. The declared inputs enter as **argv, through
   `${{ inputs.* }}` interpolation** — the one channel. The runner _also_
@@ -977,7 +1043,11 @@ review of the list.
   its own loop and reads the kind.
 - **No writes outside the walk.** No push, no release, no changelog, no
   ref enumeration for publication — the walk's local writes are the
-  surface's whole footprint ([§2.8](#28-the-tokens-journey-decided-empty)).
+  surface's whole footprint ([§2.8](#28-the-tokens-journey-decided-empty)),
+  with the one gated exception: the publish leg's release create over the
+  minted tag, an API write armed only by `publish: "true"` and the
+  recorded publication the adapter verifies — never a second projection,
+  and no git of the Action's own.
 - **No user code, no invented code.** The empty declaration (phase 12 §2.6)
   is inherited verbatim; an input that named a module path would be the
   refused option re-entering through metadata, and the inventory refuses it
@@ -1061,14 +1131,20 @@ already cover those; phase 11 §5, phase 12 §6).
    planted value reachable anywhere in the envelope, the annotation, or the
    conclusion. This is the two-lines probe: phase 12 §6.5's isolation
    fixture, extended to the runner's ambient layer.
-5. **The token-journey pin.** v1's journey is empty, so the pin is the
-   negative inventory, executable: the action metadata declares no token
-   input, references no secret anywhere, and names no `actions/checkout`
-   step — the composite performs no checkout of any repository (the
-   consumer's is the caller's step; the Action's own sources arrive as the
-   runner's materialization), so `persist-credentials` is vacuously
-   satisfied and pinned as such; the invocation script names no `git`
-   invocation of its own. The #237 amendment adds the one fetch's shape to
+5. **The token-journey pin.** v1's journey is empty unless the gated publish
+   row arms it, so the pin is the
+   negative inventory plus one gated row, executable: the action metadata
+   declares no token input and references no secret anywhere; names no
+   `actions/checkout` step — the composite performs no checkout of any
+   repository (the consumer's is the caller's step; the Action's own sources
+   arrive as the runner's materialization), so `persist-credentials` is
+   vacuously satisfied and pinned as such; the invocation script names no
+   `git` invocation of its own. The gated row is pinned in both postures:
+   the invocation step's `env:` declares exactly `GITHUB_TOKEN: ${{ github.token }}`
+   and only the script's `"true"` arm reads it into the child's allowlist —
+   a `"false"` (and the unset) transcript shows the child's env without the
+   row, and a planted ambient `GH_TOKEN` stays stripped (fixture 4's
+   `token-shaped GH_TOKEN` leg already binds that). The #237 amendment adds the one fetch's shape to
    the pin: the composite's fetch step precedes the invocation, gates on
    exactly `inputs.claims-fetch == 'true'`, runs `set -euo pipefail` plus
    the decided refspec in the declared working-directory, carries no

@@ -30,8 +30,8 @@
  *   adapters-git      →  execution/planner ✅  the binding reaches the layers it implements
  *   adapters-github   →  adapters-git      ✅  the GitHub adapter reaches only the git binding
  *   adapters-nodews   →  planner/domain   ✅  the workspace detector reaches the planner types
- *   cli               →  app/execution/planner/adapters-git ✅  the CLI composes the layers it renders —
- *                                             never the package front door
+ *   cli               →  app/execution/planner/adapters-git/adapters-github ✅  the CLI composes the layers it renders —
+ *                                             the publish leg's adapter (#336) among them; never the package front door
  *   release-craft     →  every layer       ✅  the package shell re-exports the layers below
  *   gate-scripts      →  gate-scripts only ❌  a gate that imports what it judges stops being a gate
  *   adapters          →  app, cli          ❌  adapters compose inward, never toward the surface
@@ -100,10 +100,14 @@ export const depConstraints = [
 
   // The CLI composes the app barrel (the run outcomes and engine value it
   // renders), the execution kernel, the planner barrel, the domain kernel
-  // and the git adapter's barrel — but never the package front door.
+  // and both adapters the surface opens — the git binding, and the GitHub
+  // adapter's publish leg behind `--publish` (issue #336) — but never the
+  // package front door.
   // `type-package` is deliberately absent from this row: the #155 defect
   // (cli/naming.ts importing the package barrel, transitively evaluating
-  // the whole graph) is now a boundary violation the gate names by file.
+  // the whole graph) is now a boundary violation the gate names by file;
+  // and `type-adapters-github` is present for exactly that one leg — the
+  // non-publishing surface reads no github symbol.
   {
     sourceTag: "type-cli",
     onlyDependOnLibsWithTags: [
@@ -112,6 +116,7 @@ export const depConstraints = [
       "type-execution",
       "type-app",
       "type-adapters-git",
+      "type-adapters-github",
     ],
   },
 

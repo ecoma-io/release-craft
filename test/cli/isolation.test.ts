@@ -12,11 +12,13 @@ import { describe, expect, it } from "vitest";
  *
  * The allowlist is the layer's diet, closed on purpose:
  *
- * - the five layer barrels the `type-cli` row of
+ * - the layer barrels the `type-cli` row of
  *   module-boundaries.config.mjs permits (app, execution, planner, domain,
- *   adapters/git), each spelled exactly — never the package front door
- *   (`@ecoma-io/release-craft`), whose import from the CLI was the #155
- *   defect and is a boundary violation the arch gate names by file;
+ *   adapters/git — and adapters/github, the publish leg's one adapter edge
+ *   behind `--publish`, issue #336), each spelled exactly — never the
+ *   package front door (`@ecoma-io/release-craft`), whose import from the
+ *   CLI was the #155 defect and is a boundary violation the arch gate names
+ *   by file;
  * - the layer's own siblings ("./…") — judged by the target each relative
  *   specifier resolves to, never by its prefix: a "./…"-spelled edge that
  *   resolves outside the layer is a cross-project import, not a sibling
@@ -41,7 +43,7 @@ import { describe, expect, it } from "vitest";
 /** The CLI layer the gate polices, resolved from this suite's location. */
 const CLI_DIR = join(import.meta.dirname, "..", "..", "src", "cli");
 
-/** The five parent barrels the `type-cli` row permits, spelled exactly —
+/** The layer barrels the `type-cli` row permits, spelled exactly —
  * never the package front door, never a layer's internal module path. */
 const ALLOWED_BARRELS: readonly string[] = [
   "@ecoma-io/release-craft/app",
@@ -49,11 +51,16 @@ const ALLOWED_BARRELS: readonly string[] = [
   "@ecoma-io/release-craft/planner",
   "@ecoma-io/release-craft/domain",
   "@ecoma-io/release-craft/adapters/git",
+  "@ecoma-io/release-craft/adapters/github",
 ];
 
-/** The one Node built-in the frozen contract permits, and the only file. */
-const ONLY_BUILTIN = "node:fs";
-const ONLY_BUILTIN_FILE = "world.ts";
+/** The two Node built-ins the frozen contract permits, each in one file:
+ * the `--world` document read (world.ts), and the publish transport's
+ * child-process spawn (github-transport.ts, phase 12 §4's amendment). */
+const ONLY_BUILTINS: ReadonlyMap<string, string> = new Map([
+  ["node:fs", "world.ts"],
+  ["node:child_process", "github-transport.ts"],
+]);
 
 /** One scanned-in offense: which file, and what the scan found there. */
 interface Violation {
@@ -122,7 +129,7 @@ function importViolations(file: string, text: string): Violation[] {
       continue;
     }
     if (ALLOWED_BARRELS.includes(specifier)) continue;
-    if (specifier === ONLY_BUILTIN && file === ONLY_BUILTIN_FILE) continue;
+    if (ONLY_BUILTINS.get(specifier) === file) continue;
     violations.push({ file, detail: `imports "${specifier}"` });
   }
   if (/\bimport\s*\(/.test(text)) {
@@ -132,7 +139,7 @@ function importViolations(file: string, text: string): Violation[] {
 }
 
 describe("the CLI is a seam-honest consumer layer", () => {
-  it("imports only its siblings, the five layer barrels, and world.ts's node:fs", () => {
+  it("imports only its siblings, the six layer barrels, and world.ts's node:fs", () => {
     expect(cliFiles().length).toBeGreaterThan(0);
     expect(
       render(scan(importViolations)),
@@ -162,15 +169,18 @@ describe("the CLI is a seam-honest consumer layer", () => {
     ).toEqual([
       'src/cli/rogue.ts imports "../app/engine.js" — a relative specifier that resolves outside src/cli is a cross-project import and must name a barrel',
     ]);
-    // The github barrel is not the git barrel — and not the CLI's to import.
+    // The github barrel is legal only for the publish leg's one edge (#336);
+    // the barrel's internals are no more the CLI's than any other layer's.
     expect(
       render(
         importViolations(
           "rogue.ts",
-          'import { openGitHubAdapter } from "@ecoma-io/release-craft/adapters/github";\n',
+          'import { openGitHubAdapter } from "@ecoma-io/release-craft/adapters/github/__internal__/adapter.js";\n',
         ),
       ),
-    ).toEqual(['src/cli/rogue.ts imports "@ecoma-io/release-craft/adapters/github"']);
+    ).toEqual([
+      'src/cli/rogue.ts imports "@ecoma-io/release-craft/adapters/github/__internal__/adapter.js"',
+    ]);
     // The layer's one built-in read, outside its one declared file.
     expect(
       render(importViolations("render.ts", 'import { readFileSync } from "node:fs";\n')),
@@ -186,8 +196,9 @@ describe("the CLI is a seam-honest consumer layer", () => {
         [
           'import { readFileSync } from "node:fs";',
           'import type { PlanningInput } from "@ecoma-io/release-craft/planner";',
-          'import { assembleGitBinding } from "@ecoma-io/release-craft/app";',
           'import { openGitBinding } from "@ecoma-io/release-craft/adapters/git";',
+          'import { openGitHubAdapter } from "@ecoma-io/release-craft/adapters/github";',
+          'import { assembleGitBinding } from "@ecoma-io/release-craft/app";',
           'import { Version } from "@ecoma-io/release-craft/domain";',
           'import type { StepKey } from "@ecoma-io/release-craft/execution";',
           'import { UsageFault } from "./parse.js";',

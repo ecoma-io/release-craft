@@ -96,6 +96,7 @@ describe("parse — the accepted spellings, as typed invocations", () => {
       },
       json: false,
       changelog: false,
+      publish: false,
     });
   });
 

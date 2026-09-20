@@ -71,6 +71,12 @@ inputs:
   changelog:
     default: "false"
     description: Declare the CHANGELOG.md artifact the run mints
+  publish:
+    description: >-
+      Whether the run also publishes the GitHub Release for the minted
+      tag (self-release only — the credential rides the job's own
+      scoped token through the runner's env, never an input).
+    default: "false"
   working-directory:
     default: "${{ github.workspace }}"
     description: Where the run stands
@@ -199,6 +205,18 @@ runs:
         RC_INTENTS: ${{ inputs.intents }}
         RC_REPO: ${{ inputs.repo }}
         RC_MAX_RETRIES: ${{ inputs.max-retries }}
+        RC_PUBLISH: ${{ inputs.publish }}
+        # The publish leg's credential (§2.8 as amended, issue #336): the
+        # runner materializes the job's `permissions: contents: write`
+        # token here, already scoped and reviewed, and the script forwards
+        # it into the child's allowlist ONLY when the consumer declared
+        # `publish: "true"` — the decided-empty token journey is amended
+        # to a decided gated one, never a new input (a token that arrives
+        # as an input would ride argv and a reviewable step env; this one
+        # rides the job's own token, the least privilege the run can
+        # carry). The alias token spelling is never read; the runner's own
+        # injection of INPUT_PUBLISH is never read for a value.
+        GITHUB_TOKEN: ${{ github.token }}
         RC_CHANGELOG: ${{ inputs.changelog }}
       run: |
         node "${{ github.action_path }}/action/invoke.mjs" \
@@ -211,4 +229,5 @@ runs:
           --intents "$RC_INTENTS" \
           --repo "$RC_REPO" \
           --max-retries "$RC_MAX_RETRIES" \
-          --changelog "$RC_CHANGELOG"
+          --changelog "$RC_CHANGELOG" \
+          --publish "$RC_PUBLISH"

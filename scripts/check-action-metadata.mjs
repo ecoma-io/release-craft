@@ -20,16 +20,25 @@
 //     (`node-version-file`, `package_json_file`) appears on no executable
 //     line (§2.2 — a file input cannot reach the materialized tree, and the
 //     mangled join must stay unrepresentable, not merely unused);
-//   - the input inventory is EXACTLY §2.3's eight rows, with the demanded
-//     four `required: true` (no default — `actor` demanded, never inferred)
-//     and the optional four each carrying a `default:` (§2.3);
+//   - the input inventory is EXACTLY §2.3's eleven rows (the five demanded
+//     `required: true`, no default — `actor` demanded, never inferred;
+//     `claims-fetch` most of all, missing must stop the step — and the six
+//     optional each carrying a `default:` (§2.3, #336 adds `publish`, the
+//     sixth optional);
 //   - the refused inputs appear on no executable line (§2.3's closed
 //     inventory: `assembly`, `command`, `token`, `json`, `declarations`,
-//     `naming-module`, `target`);
-//   - the token journey is empty (§2.8): no `actions/checkout`, no
-//     `persist-credentials` row, no `${{ secrets.` interpolation, no
-//     `GITHUB_TOKEN`/`GH_TOKEN` spelling, no `github.action_ref` (the
-//     second-checkout spelling is unrepresentable);
+//     `naming-module`, `target` — `token` stays refused as an input name
+//     while `publish` names the declared optional; a token that arrives
+//     as an input would ride argv, the exact channel the credential's
+//     journey refuses);
+//   - the token journey is decided-gated (§2.8 as amended by #336): no
+//     `actions/checkout`, no `persist-credentials` row, no `${{ secrets.`
+//     interpolation, no `GH_TOKEN` spelling, no `github.action_ref` (the
+//     second-checkout spelling is unrepresentable), and the ONE
+//     `GITHUB_TOKEN` spelling allowed anywhere is the invocation env's
+//     exact `GITHUB_TOKEN: ${{ github.token }}` — the job's own token,
+//     materialized by the runner, forwarded into the child's allowlist
+//     only by a declared `publish: "true"`;
 //   - every `run:` step declares `shell: bash` and a `working-directory:`
 //     of exactly the two the contract names (§2.7 — the Action's own tree
 //     for provisioning, the declared input for the invocation);
@@ -48,19 +57,29 @@
 // workflow gate: these files teach their reader which mechanisms were
 // refused and why, and naming a refused thing to explain the refusal is
 // documentation.
-//
-// Exit codes: 0 clean · 1 findings.
+
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const ACTION_FILE = "action.yml";
+//
+// Exit codes: 0 clean · 1 findings.
 
 /** §2.3's input inventory, row by row: the demanded five carry no default
  * (their omission must stop the step — `claims-fetch` most of all: an
  * undeclared fetch posture would be the unenforced precondition returning
- * by omission), the optional five each declare one. */
+ * by omission), the optional six — `publish` among them (#336) — each
+ * declare one. */
 const DEMANDED_INPUTS = ["world", "line", "actor", "tag-namespaces", "claims-fetch"];
-const OPTIONAL_INPUTS = ["intents", "repo", "max-retries", "changelog", "working-directory"];
+const OPTIONAL_INPUTS = [
+  "intents",
+  "repo",
+  "max-retries",
+  "changelog",
+  "publish",
+  "working-directory",
+];
+
+const ACTION_FILE = "action.yml";
 
 /** The invocation step's id — the one the `outputs:` declaration reads. */
 const INVOKE_STEP_ID = "invoke";
@@ -151,7 +170,26 @@ export function analyzeActionMetadata(source) {
       }
     }
     // The file-keyed toolchain mechanism is unrepresentable, not unused:
-    // neither name may appear on an executable line in any spelling.
+    // The token journey's one allowed spelling (§2.8 as amended, #336):
+    // the invocation env's own `GITHUB_TOKEN: ${{ github.token }}` — the
+    // runner materializes the job's token there, reviewed in this file,
+    // and the invoke script forwards it into the child's allowlist only
+    // for a declared publish. GH_TOKEN stays refused absolutely; any
+    // OTHER GITHUB_TOKEN line (a different value, an input, a run: block
+    // write) is the empty journey's refusal, the spelling allowlist
+    // being exact by design — a second spelling would be a second
+    // channel, the exact class the journey empties.
+    const PUBLISH_TOKEN_ROW = "GITHUB_TOKEN: ${{ github.token }}";
+    if (/\bGH_TOKEN\b/.test(line)) {
+      violations.push(
+        `line ${number}: GH_TOKEN appears — the one allowed spelling is GITHUB_TOKEN (§2.8)`,
+      );
+    }
+    if (/\bGITHUB_TOKEN\b/.test(line) && line.trim() !== PUBLISH_TOKEN_ROW) {
+      violations.push(
+        `line ${number}: a GITHUB_TOKEN spelling other than the exact env row "${PUBLISH_TOKEN_ROW}" appears (§2.8)`,
+      );
+    }
     if (/\bnode-version-file\b/.test(line)) {
       violations.push(
         `line ${number}: node-version-file appears — the toolchain is pinned by value (§2.2)`,
@@ -164,11 +202,8 @@ export function analyzeActionMetadata(source) {
     }
     if (/\$\{\{\s*secrets\./.test(line)) {
       violations.push(
-        `line ${number}: a secret is interpolated — the token journey is empty (§2.8)`,
+        `line ${number}: a secret is interpolated — the token journey is empty unless the gated publish row arms it (§2.8)`,
       );
-    }
-    if (/\b(?:GITHUB_TOKEN|GH_TOKEN)\b/.test(line)) {
-      violations.push(`line ${number}: a token name appears — the token journey is empty (§2.8)`);
     }
     if (/github\.action_ref/.test(line)) {
       violations.push(
@@ -199,7 +234,7 @@ export function analyzeActionMetadata(source) {
     }
   }
 
-  // — the input inventory, exactly §2.3's ten rows —
+  // — the input inventory, exactly §2.3's eleven rows —
   const inputsStart = lines.findIndex((line) => /^inputs:\s*$/.test(line));
   const runsStart = lines.findIndex((line) => /^runs:\s*$/.test(line));
   // The block ends at the NEXT top-level key (outputs: sits between inputs:
@@ -348,7 +383,9 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`✓ ${ACTION_FILE} keeps the contract's shape (inventory, pins, empty token journey)`);
+  console.log(
+    `✓ ${ACTION_FILE} keeps the contract's shape (inventory, pins, decided token journey)`,
+  );
 }
 
 main();

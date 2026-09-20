@@ -60,10 +60,10 @@ export const GRAMMAR: Readonly<Record<CommandName, CommandGrammar>> = {
     positionals: [],
   },
   run: {
-    flags: [...COMMON_FLAGS, "world", "intent", "actor", "line", "changelog"],
+    flags: [...COMMON_FLAGS, "world", "intent", "actor", "line", "changelog", "publish"],
     demanded: ["assembly", "world", "actor", "line"],
     repeatable: ["intent", "tag-namespace"],
-    boolean: ["json", "changelog"],
+    boolean: ["json", "changelog", "publish"],
     positionals: [],
   },
   resume: {

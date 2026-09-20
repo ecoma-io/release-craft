@@ -43,8 +43,11 @@ write must not create duplicates.
    `../git/index.js` (the binding's barrel — ADR-0009 decision 8) and
    never from the binding's internal modules, `src/execution/`, or
    `core/domain/`. The adapter's own barrel (`src/adapters/github/index.ts`)
-   exports only the opened adapter factory and the types the assembly needs.
-   No runtime dependency enters (the house rule).
+   exports only the opened adapter factory, the types the assembly needs,
+   and — since #336 — the open-time identity parser the CLI's publish
+   leg shares (the one definition of the identity agreement both the
+   factory's open and the CLI's publish dispatch read). No runtime
+   dependency enters (the house rule).
 
 2. **The adapter opens on a `GitBinding` and a credential, not on a
    repository path.** The factory is `openGitHubAdapter(binding: GitBinding,

@@ -5,10 +5,12 @@
  * read, no clock, no randomness, no network, no working-directory default.
  * The process's only inputs are argv and the `--world` document; the only
  * environment the process ever touches is the git assembly's own
- * `hermeticGitEnv()` floor, and the scan asserts the CLI's modules never
- * reach around it. The scan is honest the same way the boundary's own
- * isolation scan is: it also runs itself over a planted violation, so a
- * scanner that stops matching anything cannot pass silently.
+ * `hermeticGitEnv()` floor (and the publish door's two declared names,
+ * github-transport.ts — #336's decided exception, file-scoped below), and
+ * the scan asserts the CLI's modules never reach around them. The scan is
+ * honest the same way the boundary's own isolation scan is: it also runs
+ * itself over a planted violation, so a scanner that stops matching
+ * anything cannot pass silently.
  *
  * Behaviorally: a hostile environment — `GIT_DIR`, `GIT_WORK_TREE`,
  * `GIT_NAMESPACE`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_COUNT`, `GIT_TRACE`,
@@ -41,14 +43,26 @@ const FORBIDDEN: readonly {
   readonly pattern: RegExp;
   readonly except?: (file: string) => boolean;
 }[] = [
-  { name: "process.env", pattern: /process\.env/ },
+  // The publish leg's one declared door (#336) reads the two ambient
+  // names and fires the child fetch — nothing else in src/cli may name
+  // them, so the ambient rule's two entries carry a file-scoped exception
+  // for github-transport.ts, the exact module the law appoints.
+  {
+    name: "process.env",
+    pattern: /process\.env/,
+    except: (file) => file.endsWith("github-transport.ts"),
+  },
   { name: "wall clock", pattern: /\bDate\.now\(|\bnew Date\(|\bperformance\.now\(/ },
   { name: "randomness", pattern: /\bMath\.random\(|\bcrypto\.random/ },
   {
     name: "timers",
     pattern: /\bsetTimeout\(|\bsetInterval\(|\bsetImmediate\(|\bprocess\.hrtime\(/,
   },
-  { name: "network", pattern: /\bfetch\(|\bhttp\.request\(|\bnet\.connect\(|XMLHttpRequest/ },
+  {
+    name: "network",
+    pattern: /\bfetch\(|\bhttp\.request\(|\bnet\.connect\(|XMLHttpRequest/,
+    except: (file) => file.endsWith("github-transport.ts"),
+  },
   { name: "console", pattern: /\bconsole\./ },
   { name: "working directory", pattern: /process\.cwd\(/ },
   {

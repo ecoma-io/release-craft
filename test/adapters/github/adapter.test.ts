@@ -6,10 +6,13 @@
  * factory also owns the open-time identity agreement: it refuses to open
  * unless the binding's origin and the credentials name the same
  * repository — the pins here execute the issue's repro (the same-named
- * fork the token can write) as a refusal at open. The R-14 pin closes
- * the phase: the barrel's runtime surface is the factory and nothing
- * else. The composed sync door's pins live in `sync.test.ts`, whose
- * fixture origin now carries the credentials' identity.
+ * fork the token can write) as a refusal at open. Since #336 the barrel
+ * also carries the open-time identity parser the CLI's publish leg
+ * shares (the publish leg derives the API credentials' owner/repo from
+ * the binding repository's own origin — the parser lives once, at the
+ * adapter layer, where the identity agreement also reads it). The R-14
+ * pin closes the phase: the barrel's runtime surface is the factory,
+ * the identity parser, and nothing else.
  */
 
 import * as github from "@ecoma-io/release-craft/__internal__/adapters/github/index.js";
@@ -339,7 +342,11 @@ describe("the assembled GitHub adapter (§2.6; #65)", () => {
     });
   });
 
-  it("R-14 — the barrel's runtime surface is the factory and nothing else", () => {
-    expect(Object.keys(github).sort()).toEqual(["openGitHubAdapter"]);
+  it("R-14 — the barrel's runtime surface is the factory, the identity parser, and nothing else (#336)", () => {
+    expect(Object.keys(github).sort()).toEqual([
+      "CREDENTIALS_HOST",
+      "openGitHubAdapter",
+      "parseRemoteIdentity",
+    ]);
   });
 });
