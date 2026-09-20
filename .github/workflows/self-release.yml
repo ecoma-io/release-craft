@@ -194,7 +194,7 @@ jobs:
       # composite step before invoke, fail-closed.
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@a9f221cebba0aad7d51c5fea73e150ed2eac95b2
+        uses: ecoma-io/release-craft@f0e83c6d0310c5bad5a4d37a35a8c14c615e9eeb
         with:
           world: world.json
           line: main
