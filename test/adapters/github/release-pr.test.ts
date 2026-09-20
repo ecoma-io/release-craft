@@ -922,6 +922,29 @@ describe("the Release PR port's update (updatePR)", () => {
     });
   });
 
+  it("refuses a marker whose identity cannot derive a head branch — the underivable claim, not a skipped check (#311)", () => {
+    withCreatedPR((github) => {
+      if (github.pulls[0] === undefined) {
+        throw new Error("expected the created pull request");
+      }
+      // The marker parses well-formed, but `a--b` forges the derivation's
+      // own separator: deriveHeadBranch refuses it. The pre-fix guard
+      // (`derived.ok && derived.branch !== current.headRef`) short-circuited
+      // on `derived.ok === false` and silently skipped the branch
+      // comparison — the update proceeded over a claim no branch could own.
+      github.pulls[0].body = bodyWith(markerFor("a--b", "lib-a", "main"));
+      const phase = github.transport();
+      const fault = faultOf(() =>
+        GitReleasePR(credentials, phase.transport).updatePR(updateParams(github)),
+      );
+      expect(fault.state).toBe("refused");
+      expect(fault.reason).toBe("release-conflict");
+      expect(fault.message).toMatch(/cannot derive a head branch/);
+      // The refusal preceded every write: the recorder holds only reads.
+      expect(phase.calls.some((call) => call.init?.method !== undefined)).toBe(false);
+    });
+  });
+
   it("refuses a draft flip — the gate passes the PR's own draft", () => {
     withCreatedPR((github) => {
       const fault = faultOf(() =>
