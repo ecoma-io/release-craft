@@ -114,9 +114,10 @@ export const PROMOTE_CELLS = [
  * (`changelog: "true"` — the run's `artifact:changelog` step, class 3's
  * declared posture): the one extension the certified walk carries. The
  * completed record rides the git binding's producer attribution verbatim
- * (ADR-0008 decision 2 — `GitArtifactProducer`,
- * `src/adapters/git/producer-git.ts`, answers `{attemptId, actor:
- * "automation"}`), and the recorded guard is the declaration's
+ * (ADR-0008 decision 2 — `GitChangelogProducer`,
+ * `src/adapters/git/producer-changelog.ts`, answers `{attemptId, actor:
+ * "automation"}` with a digest holding the planned changelog's rendered
+ * bytes — issue #381's seam), and the recorded guard is the declaration's
  * `release-line`, never a postcondition name. `judge.test.mjs` cross-pins
  * these copies against the CLI's declaration and the producer's source so
  * neither can drift.

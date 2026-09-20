@@ -14,6 +14,7 @@ export * from "./git-refs.js";
 export * from "./git-run.js";
 export * from "./ledger-git.js";
 export * from "./producer-git.js";
+export * from "./producer-changelog.js";
 export * from "./register-git.js";
 export * from "./tag-door.js";
 export * from "./commit-door.js";
