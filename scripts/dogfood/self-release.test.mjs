@@ -236,6 +236,39 @@ describe("publish-mint", () => {
     }
   });
 
+  it("publishes when the create minted the tag server-side at the mint's sha", () => {
+    const { root, repo, git } = buildCheckout();
+    try {
+      // The create-missing-tag leg (#336): the Release API created the
+      // tag on origin from the recorded commitish, so the runner's local
+      // mint carries the same ref at the same sha and the remote filter
+      // drops the pair — the tag row must still resolve and the push must
+      // carry the remaining minted refs (issue #379).
+      git(["push", "-q", "origin", "HEAD:refs/tags/0.1.0"]);
+      writeFileSync(
+        join(repo, "local-refs-before.txt"),
+        git(["for-each-ref", "--format=%(refname) %(objectname)"]),
+      );
+      mintLocally(git); // tag + the recorded namespaces, all at HEAD
+      const run = runScript(PUBLISH, ["--local-before", "local-refs-before.txt"], repo, {
+        outcome: ENVELOPE_PUBLISHED,
+      });
+      assert.equal(run.status, 0, run.stdout + run.stderr);
+      assert.match(run.stdout, /tag 0\.1\.0 already on origin/);
+      // the tag was not re-pushed; the recorded namespaces rode origin
+      const refs = remoteRefs(git);
+      assert.match(refs, /refs\/release-craft\/ledger\//);
+      assert.match(refs, /refs\/release-craft\/claims\//);
+      assert.match(refs, /refs\/release-craft\/register\//);
+      // and the enforced pairing still holds: the mint's own register
+      // ref is on origin at the minted object
+      const ledgerSha = git(["rev-parse", "refs/release-craft/ledger/" + "b".repeat(64)]).trim();
+      assert.match(refs, new RegExp(`${ledgerSha}\\s+refs/release-craft/ledger/`));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("never forces a push: a ref origin already holds is a loud rejection, not an overwrite", () => {
     const { root, repo, git } = buildCheckout();
     try {

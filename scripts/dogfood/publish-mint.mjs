@@ -169,7 +169,8 @@ try {
         "origin",
       ]),
     );
-    const minted = mintedPairs(before, currentRefs(".")).filter(
+    const localRefs = currentRefs(".");
+    const minted = mintedPairs(before, localRefs).filter(
       (pair) => remote.get(pair.ref) !== pair.sha,
     );
     if (minted.length === 0) {
@@ -177,10 +178,36 @@ try {
         "the run rendered published and minted no ref — a publish without a substrate is not a publish",
       );
     }
+    // The tag row is the envelope's own namesake — the ref the mint's
+    // release claims. Two shapes satisfy it (issue #379):
+    //
+    //   1. the mint carried the pair, and either origin lacks it or the
+    //      remote filter dropped it because origin already holds it at
+    //      the same sha — the pair IS the run's mint, and it pushes below
+    //      like every minted pair;
+    //   2. the mint carries the tag ref but the pair left `minted`
+    //      because origin already holds it at the SAME sha — the
+    //      create-missing-tag leg (#336) minted the absent tag
+    //      server-side (the Release API creates the ref from the sent
+    //      `target_commitish`), so the tag exists on origin because THIS
+    //      run created it, and the row is satisfied without a push. The
+    //      sha must be identical: a remote tag at a DIFFERENT sha is a
+    //      divergence — refused as partial, never overwritten, the push
+    //      below staying never-forced.
+    //
+    // Refuse only the genuinely partial mint: the envelope's named tag
+    // ref in neither the minted pairs nor the local substrate.
     const tagPair = minted.find((pair) => pair.ref === `refs/tags/${tag}`);
     if (tagPair === undefined) {
-      throw new Error(
-        `the envelope names tag "${tag}" and the mint does not carry refs/tags/${tag} — refusing to publish a partial mint`,
+      const localTagSha = localRefs.get(`refs/tags/${tag}`);
+      if (localTagSha === undefined || remote.get(`refs/tags/${tag}`) !== localTagSha) {
+        throw new Error(
+          `the envelope names tag "${tag}" and the mint does not carry refs/tags/${tag} — refusing to publish a partial mint`,
+        );
+      }
+      process.stdout.write(
+        `publish-mint: tag ${tag} already on origin at ${localTagSha.slice(0, 12)} — ` +
+          "the create minted it; the push carries the remaining minted refs\n",
       );
     }
     // The exact pairs, object ids included: `sha:ref` pushes the minted
