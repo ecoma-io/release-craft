@@ -107,6 +107,37 @@ describe("analyzeWorkflow", () => {
 
     assert.ok(analyzeWorkflow(source).some((v) => v.includes("persist-credentials")));
   });
+  it("refuses a checkout whose only persist-credentials: false is comment prose", () => {
+    const source = goodWorkflow()
+      .replace("          persist-credentials: false\n", "")
+      .replace("name: CI", "name: CI\n# keep persist-credentials: false here for the old runner");
+
+    assert.ok(analyzeWorkflow(source).some((v) => v.includes("persist-credentials")));
+  });
+
+  it("refuses a checkout with an empty persist-credentials value", () => {
+    const source = goodWorkflow().replace("persist-credentials: false", "persist-credentials:");
+
+    assert.ok(analyzeWorkflow(source).some((v) => v.includes("persist-credentials")));
+  });
+
+  it("refuses a checkout that sets persist-credentials: true", () => {
+    const source = goodWorkflow().replace(
+      "persist-credentials: false",
+      "persist-credentials: true",
+    );
+
+    assert.ok(analyzeWorkflow(source).some((v) => v.includes("persist-credentials")));
+  });
+
+  it("allows a comment mentioning persist-credentials: false beside the real line", () => {
+    const source = goodWorkflow().replace(
+      "name: CI",
+      "name: CI\n# persist-credentials: false keeps the token out of the runner's git config",
+    );
+
+    assert.deepEqual(analyzeWorkflow(source), []);
+  });
 
   it("refuses a secret interpolated into a run line", () => {
     const source = goodWorkflow().replace(

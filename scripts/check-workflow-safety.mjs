@@ -19,7 +19,9 @@
 //     top-level permissions block (an undeclared block inherits the job's
 //     default token, which is whatever GitHub's default is that day);
 //   - every `actions/checkout` step carries `persist-credentials: false`
-//     (whole-file fact: the option lives on a following `with:` block);
+//     (the option lives on a following `with:` block — and like every
+//     posture assertion here, only executable lines count; comment prose
+//     never satisfies one);
 //   - no `${{ secrets.* }}` interpolated directly into a `run:` line —
 //     secrets travel through `env:`, where the shell cannot see them as code;
 //   - every workflow declares a `concurrency` block (redundant runs are
@@ -84,7 +86,10 @@ export function analyzeWorkflow(source) {
   if (!/^permissions:/m.test(source)) {
     violations.push("no top-level permissions block — the token scope is left to GitHub's default");
   }
-  if (source.includes("actions/checkout@") && !/persist-credentials:\s*false/.test(source)) {
+  const checkoutPersists = lines.some(
+    (line) => !line.trimStart().startsWith("#") && /persist-credentials:\s*false/.test(line),
+  );
+  if (source.includes("actions/checkout@") && !checkoutPersists) {
     violations.push(
       "an actions/checkout step does not set persist-credentials: false — the default leaks the token into the runner's git config",
     );
