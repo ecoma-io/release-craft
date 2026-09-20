@@ -879,23 +879,23 @@ describe("the judge's contract copies are cross-pinned", () => {
 
   it("the changelog declaration's copies equal the CLI's declaration and the producer's source", () => {
     const declaration = readFileSync(
-      fileURLToPath(new URL("../../src/cli/index.ts", import.meta.url)),
+      fileURLToPath(new URL("../../src/cli/changelog.ts", import.meta.url)),
       "utf8",
     );
     const declarationBlock = /CHANGELOG_DECLARATION[\s\S]*?\n};/.exec(declaration);
-    assert.ok(declarationBlock, "CHANGELOG_DECLARATION not found in src/cli/index.ts");
+    assert.ok(declarationBlock, "CHANGELOG_DECLARATION not found in src/cli/changelog.ts");
     const block = declarationBlock[0];
     assert.match(block, /id: "changelog"/);
     assert.match(block, /anchor: \{ stage: "tag", position: "after" \}/);
     assert.match(block, /guard: "release-line"/);
     assert.match(block, /coordinates: "CHANGELOG.md"/);
     const producer = readFileSync(
-      fileURLToPath(new URL("../../src/adapters/git/producer-git.ts", import.meta.url)),
+      fileURLToPath(new URL("../../src/adapters/git/producer-changelog.ts", import.meta.url)),
       "utf8",
     );
     const actor = /actor:\s*"([^"]+)"/.exec(producer);
-    assert.ok(actor, "no producer actor literal in src/adapters/git/producer-git.ts");
+    assert.ok(actor, "no producer actor literal in src/adapters/git/producer-changelog.ts");
     assert.equal(CHANGELOG_ARTIFACT.producerActor, actor[1]);
-    assert.match(producer, /digest: `git-tree:/);
+    assert.match(producer, /git-tree:\$\{/);
   });
 });
