@@ -27,11 +27,20 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { GitChannelStore } from "@ecoma-io/release-craft/__internal__/adapters/git/index.js";
+import { changelogOf, renderChangelog } from "@ecoma-io/release-craft/planner";
 
 import { createTempRepo } from "../adapters/git/temp-repo.js";
 import { standingChannelStates } from "../vertical/matrix.js";
 import { seedLineHeads } from "../vertical/matrix-git.js";
-import { betaIntent, cliJson, docBytes, gitDoc, runCli } from "./harness.js";
+import {
+  betaIntent,
+  cliJson,
+  directPlan,
+  docBytes,
+  gitDoc,
+  gitSelection,
+  runCli,
+} from "./harness.js";
 
 const OWNER = "ecoma-io";
 const REPO = "release-craft";
@@ -187,6 +196,21 @@ describe("§2.8 — the publish leg's live wire (issue #336)", () => {
         const headsWithChangelog = { ...heads, main: head };
         stub.setRefHead(head);
         git(["remote", "add", "origin", ORIGIN]);
+        // The direct side's own plan over the same document: the changelog
+        // the run itself plans and walks — the bytes the release body must
+        // carry (issue #381), never the fixture's committed header.
+        const doc = gitDoc("main", [betaIntent], headsWithChangelog);
+        const docText = docBytes(doc);
+        const planning = directPlan(gitSelection(fixture.repo), docText);
+        expect(planning.kind).toBe("planned");
+        if (planning.kind !== "planned") {
+          throw new Error("fixture world refused to plan");
+        }
+        const planLine = planning.plan.lines.find((candidate) => candidate.lineId === "main");
+        if (planLine === undefined) {
+          throw new Error("fixture world plans no main line");
+        }
+        const expected = renderChangelog(changelogOf([planLine]));
         const child = runCli(
           [
             "run",
@@ -207,7 +231,7 @@ describe("§2.8 — the publish leg's live wire (issue #336)", () => {
             "--json",
           ],
           {
-            input: docBytes(gitDoc("main", [betaIntent], headsWithChangelog)),
+            input: docText,
             env: {
               GITHUB_TOKEN: "test-token",
               GITHUB_API_URL: `http://127.0.0.1:${String(port)}`,
@@ -232,9 +256,10 @@ describe("§2.8 — the publish leg's live wire (issue #336)", () => {
         );
         expect(release.tag_name).toBe(TAG);
         expect(release.target_commitish).toBe(head);
-        // The published body is the recorded changelog's bytes.
-        expect(release.body).toBe("# Changelog\n");
-        // The minted tag is the recorded head, locally observable.
+        // The published body is the recorded changelog's bytes — the run's
+        // own planned changelog, rendered byte-for-byte; the committed
+        // header template the fixture holds is never the body (#381).
+        expect(release.body).toBe(expected);
         expect(git(["rev-parse", `refs/tags/${TAG}`]).trim()).toBe(head);
         // The wire order: precondition read (404), git-ref assert, create,
         // the create's own ref re-assert, then the verify leg's release
@@ -288,6 +313,21 @@ describe("§2.8 — the publish leg's live wire (issue #336)", () => {
         // answer the recorded SHA, or the re-assert refuses.
         stub.setRefHead(head);
         git(["remote", "add", "origin", ORIGIN]);
+        // The direct side's own plan over the same document: the changelog
+        // the run itself plans and walks — the bytes the release body must
+        // carry (issue #381), never the fixture's committed header.
+        const doc = gitDoc("main", [betaIntent], headsWithChangelog);
+        const docText = docBytes(doc);
+        const planning = directPlan(gitSelection(fixture.repo), docText);
+        expect(planning.kind).toBe("planned");
+        if (planning.kind !== "planned") {
+          throw new Error("fixture world refused to plan");
+        }
+        const planLine = planning.plan.lines.find((candidate) => candidate.lineId === "main");
+        if (planLine === undefined) {
+          throw new Error("fixture world plans no main line");
+        }
+        const expected = renderChangelog(changelogOf([planLine]));
         const child = runCli(
           [
             "run",
@@ -308,7 +348,7 @@ describe("§2.8 — the publish leg's live wire (issue #336)", () => {
             "--json",
           ],
           {
-            input: docBytes(gitDoc("main", [betaIntent], headsWithChangelog)),
+            input: docText,
             env: {
               GITHUB_TOKEN: "test-token",
               GITHUB_API_URL: `http://127.0.0.1:${String(port)}`,
@@ -330,7 +370,10 @@ describe("§2.8 — the publish leg's live wire (issue #336)", () => {
         );
         expect(release.tag_name).toBe(TAG);
         expect(release.target_commitish).toBe(head);
-        expect(release.body).toBe("# Changelog\n");
+        // The published body is the recorded changelog's bytes — the run's
+        // own planned changelog, rendered byte-for-byte; the committed
+        // header template the fixture holds is never the body (#381).
+        expect(release.body).toBe(expected);
         expect(git(["rev-parse", `refs/tags/${TAG}`]).trim()).toBe(head);
         // The wire: release read 404, git-ref read 404 (a tag origin
         // does not hold), the repository probe (issue #176 — what makes
