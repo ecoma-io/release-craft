@@ -315,6 +315,11 @@ export interface TransitionRecord {
   readonly recordedAt?: string;
   /** The input digest recorded at `started` (§2.7); Phase 5 fills it. */
   readonly contentFingerprint?: string;
+  /** The producer-computed content seal (issue #294): carried verbatim
+   * from the observation onto the completed generation record — the
+   * exact-bytes seal publication verifies a published body against.
+   * Present only when the producer recorded one. */
+  readonly contentSha256?: string;
   /** The generation record's content half (phase 7 contract §2.3;
    * ADR-0008 decision 5): the recorded (kind, coordinates, digest)
    * triple — the domain `Artifact` value verbatim. Present only on a
@@ -479,14 +484,22 @@ export interface ArtifactStep {
 /** What a caller-injected producer observed at the seam (§2.2): the
  * producer's recorded claim about content it observed — the engine
  * computes no digest (ADR-0008 decision 2). The digest is the
- * generation record's content identity; there is no second fingerprint
- * field. */
+ * generation record's content identity; `contentSha256` is the
+ * optional producer-computed content seal over the exact observed
+ * bytes (issue #294) — carried verbatim when present, absent when the
+ * producer has no byte seal to record. */
 export interface ArtifactObservation {
   /** Who produced the observation (§2.6). */
   readonly attribution: Attribution;
   /** The content digest — the domain `Artifact` triple's third member,
    * recorded verbatim. Opaque, non-empty, unpadded. */
   readonly digest: string;
+  /** The optional content seal (issue #294): `content_sha256:<hex>`
+   * over the raw content bytes the producer observed — the digest's
+   * byte-level companion, distinct from `contentFingerprint` (which
+   * seals canonical JSON of declared inputs). Publication compares a
+   * published body against this seal when a producer records one. */
+  readonly contentSha256?: string;
   /** The evidence reference, required by an evidence-present
    * postcondition. */
   readonly evidence?: EvidenceRef;

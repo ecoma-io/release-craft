@@ -8,7 +8,8 @@
  * reach past it into internal modules.
  */
 import { describe, expect, it } from "vitest";
-import { contentFingerprint } from "@ecoma-io/release-craft/execution";
+import { contentFingerprint, contentSha256 } from "@ecoma-io/release-craft/execution";
+import { changelogOf, renderChangelog } from "@ecoma-io/release-craft/planner";
 import { Version } from "@ecoma-io/release-craft/domain";
 
 import {
@@ -224,6 +225,46 @@ describe("renderReleasePRProjection", () => {
     if (render === null) throw new Error("expected a render");
     expect(render.projection.body).toContain("lib-b-2.0.0");
     expect(render.projection.files[0]?.path).toBe("CHANGELOG.md");
+  });
+
+  it("renders the changelog file with the changelog renderer's own bytes (issue #206)", () => {
+    const plan = makePlan();
+    const render = renderReleasePRProjection(identity, plan);
+    if (render === null) throw new Error("expected a render");
+    const file = render.projection.files[0];
+    expect(file?.path).toBe("CHANGELOG.md");
+    // The PR's file preview is the recorded plan's change words through
+    // the production renderer — the same bytes an artifact-rendered
+    // CHANGELOG.md carries, byte-identical by construction.
+    expect(file?.content).toBe(renderChangelog(changelogOf(render.pendingLines, {})));
+    expect(file?.content).toContain("# Changelog");
+    expect(file?.content).toContain("adds the feature");
+  });
+
+  it("bodies the bullet with the change's subject and scope words, and lists the changelog digest (issue #206, #294)", () => {
+    const scoped: PlanLine = {
+      ...streamLine,
+      changes: [
+        {
+          id: "feat-a",
+          lineage: [],
+          type: "feat",
+          scope: "core",
+          subject: "adds the feature",
+          breaking: false,
+          bump: "minor",
+        },
+      ],
+    };
+    const plan = makePlan({ lines: [scoped] });
+    const render = renderReleasePRProjection(identity, plan);
+    if (render === null) throw new Error("expected a render");
+    expect(render.projection.body).toContain("feat(core): adds the feature (minor)");
+    const file = render.projection.files[0];
+    if (file === undefined) throw new Error("expected a changelog file");
+    expect(render.projection.body).toContain(
+      `- Changelog digest: \`${contentSha256(file.content)}\`.`,
+    );
   });
 });
 

@@ -669,3 +669,52 @@ row, also used by the version-carrying driver), and the
 | Plan→mutation binding (version)    | plan-blind — #289 open         | closed — pre-walk refusal on contradiction (#289, D95) |
 | Plan→mutation binding (changelog)  | deliberate slice boundary — §9 | unchanged — stays #291's change-shape slice            |
 | Engine counts at the mutation seam | host-declared input only       | bound ids verified, unbound ids untouched              |
+
+## 13. Re-audit addendum — the changelog content seal and release-PR rendering (issues #294 and #206, this PR)
+
+The §10 census's #294 row (`changelog bytes digest-sealed on the driver
+path only`) and #206 row (`renderer, production caller`) close here.
+
+### New ground truth this addendum records
+
+1. **The changelog completion record carries a content seal.** The
+   version-carrying driver seals the exact rendered bytes it produced
+   with `content_sha256:<hex>` (`src/execution/identity.ts`'s
+   `contentSha256`, over the raw bytes — NOT the canonical-JSON
+   `contentFingerprint`), attached as `contentSha256` on the
+   completion record (`ArtifactObservation`, `TransitionRecord`). The
+   seal rides the ledger's own evidence; the publication door reads it
+   from the record it already resolves.
+2. **The publication compares the seal where it already compares body
+   text.** `recordedChangelog` returns the seal when present; both the
+   idempotent satisfied path (`publishRelease`) and `verifyRelease`
+   refuse `changelog-digest-mismatch` when the recorded seal does not
+   match the remote body's bytes. A record with no seal keeps the old
+   tree-compare alone — the refusal is the new class, never a changed
+   old one. The seal comparison lives in the adapter tier on its own
+   `node:crypto` import (the barrel-seam gate's second frozen builtin,
+   judged beside `remote-git.ts`'s `node:child_process`); the boundary
+   law still holds — no execution import crosses into
+   `src/adapters/github`.
+3. **The release PR renders the plan's own words.** The PR body bullet
+   names each change's `type(scope): subject (bump)`; the PR's
+   `CHANGELOG.md` preview is the changelog renderer's own bytes over
+   the pending lines (`renderChangelog(changelogOf(pending, {}))`),
+   identical by construction to an artifact-rendered CHANGELOG; and
+   the body lists the preview's `content_sha256` digest so the plan,
+   the preview, and the sealed artifact name one another.
+
+### Public surface delta
+
+The execution barrel gains `contentSha256`; `ArtifactObservation` and
+`TransitionRecord` gain the optional `contentSha256` field; the GitHub
+adapter gains the `changelog-digest-mismatch` refusal reason; the
+release-PR projection's body and `CHANGELOG.md` bytes change shape
+(digest line, subject/scope bullets, renderer bytes).
+
+### Posture delta over §10
+
+| Capability                          | Was (§10)                         | Now (this PR)                                                    |
+| ----------------------------------- | --------------------------------- | ---------------------------------------------------------------- |
+| Changelog content seal (#294)       | driver-path tree digest only      | tree digest + `content_sha256` byte seal, refused at publication |
+| Release-PR changelog content (#206) | renderer produced, PR hand-shaped | PR renders renderer bytes + plan words + digest line             |

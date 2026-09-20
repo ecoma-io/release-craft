@@ -24,11 +24,19 @@
  * masquerading as identity is the defect this gate exists to prevent).
  */
 
-import { contentFingerprint, type ClaimToken } from "@ecoma-io/release-craft/execution";
-import type { PlanLine, ReleasePlan } from "@ecoma-io/release-craft/planner";
+import {
+  contentFingerprint,
+  contentSha256,
+  type ClaimToken,
+} from "@ecoma-io/release-craft/execution";
+import {
+  changelogOf,
+  renderChangelog,
+  type PlanLine,
+  type ReleasePlan,
+} from "@ecoma-io/release-craft/planner";
 import type {
   ExistingPR,
-  ReleasePRFile,
   ReleasePRIdentity,
   ReleasePRPort,
   ReleasePRProjection,
@@ -134,12 +142,14 @@ const renderBody = (
   identity: ReleasePRIdentity,
   plan: ReleasePlan,
   pending: readonly PlanLine[],
+  changelogBytes: string,
 ): string => {
   const marker = `<!-- release-craft: identity component=${identity.component} line=${identity.releaseLine} target=${identity.targetBranch} plan=${plan.planId} -->`;
   const sections: string[] = [];
   sections.push(marker);
   sections.push("", `## Release plan \`${plan.planId}\``);
   if (plan.supersedes !== null) sections.push("", `Supersedes: \`${plan.supersedes}\`.`);
+  sections.push("", `- Changelog digest: \`${contentSha256(changelogBytes)}\`.`);
   for (const line of pending) {
     sections.push("", `### \`${line.lineId}\``);
     if (line.stable !== null) {
@@ -156,7 +166,9 @@ const renderBody = (
     if (line.changes.length > 0) {
       sections.push("", "Changes:");
       for (const change of line.changes) {
-        sections.push(`- ${change.type}: ${change.id} (${change.bump})`);
+        sections.push(
+          `- ${change.type}${change.scope === undefined ? "" : `(${change.scope})`}: ${change.subject} (${change.bump})`,
+        );
       }
     }
   }
@@ -166,24 +178,6 @@ const renderBody = (
 /** The constant organizational label. Identity never rides a label —
  * the label set is deliberately state-free. */
 const PROJECTION_LABELS: readonly string[] = ["release-craft"];
-
-/** The deterministic file tree: the changelog projection of the pending
- * lines — the recorded plan's human-readable file form. */
-const renderFiles = (pending: readonly PlanLine[]): readonly ReleasePRFile[] => {
-  const lines: string[] = ["# Changelog", ""];
-  for (const line of pending) {
-    const heading =
-      line.stable !== null
-        ? `## ${line.stable.tag} (${line.lineId})`
-        : `## ${line.lineId} (prerelease)`;
-    lines.push(heading, "");
-    for (const change of line.changes) {
-      lines.push(`- ${change.type}: ${change.id} (${change.bump})`);
-    }
-    lines.push("");
-  }
-  return [{ path: "CHANGELOG.md", content: lines.join("\n") }];
-};
 
 /** Render the projection from the recorded plan — pure, deterministic:
  * the same plan, identity, and scope always render byte-identical
@@ -200,13 +194,14 @@ export const renderReleasePRProjection = (
   const scoped = resolveScopedLines(plan, scope?.lines);
   const pending = scoped.filter((line) => line.stable !== null || line.streams.length > 0);
   if (pending.length === 0) return null;
+  const changelogBytes = renderChangelog(changelogOf(pending, {}));
   return {
     pendingLines: pending,
     projection: {
       title: renderTitle(pending),
-      body: renderBody(identity, plan, pending),
+      body: renderBody(identity, plan, pending, changelogBytes),
       labels: PROJECTION_LABELS,
-      files: renderFiles(pending),
+      files: [{ path: "CHANGELOG.md", content: changelogBytes }],
     },
   };
 };

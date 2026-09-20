@@ -54,6 +54,8 @@
  * transport speaks the credentials, the unit speaks the repository.
  */
 
+import { createHash } from "node:crypto";
+
 import type { GitBinding } from "@ecoma-io/release-craft/adapters/git";
 import type {
   GitHubCredentials,
@@ -79,7 +81,19 @@ const CHANGELOG_PATH = "CHANGELOG.md";
  *  the digest that is §2.4's idempotency identity — or the refusal the
  *  projection owed instead. */
 type RecordedChangelog =
-  | { readonly ok: true; readonly digest: string; readonly body: string }
+  | {
+      readonly ok: true;
+      readonly digest: string;
+      readonly body: string;
+      /** The producer-computed content seal (issue #294), carried
+       * verbatim from the completed generation record when the
+       * producer recorded one. The body-compare uses it as the
+       * discriminating witness: a remote body matching the recorded
+       * tree but not the seal is a tampered body over the same
+       * digest — refused as `changelog-digest-mismatch`, never
+       * silently verified. Absent when no producer recorded one. */
+      readonly contentSha256?: string;
+    }
   | { readonly ok: false; readonly reason: RefusalReason; readonly detail: string };
 
 /** The response classes every release call shares once the caller has
@@ -96,6 +110,21 @@ const failureTail = (response: GitHubResponse): FailureTail => {
   return failure.kind === "refused"
     ? { kind: "refused", reason: failure.reason, detail: failure.detail }
     : failure;
+};
+
+/** Whether a remote body satisfies the recorded content seal (issue
+ *  #294): the seal is `content_sha256:<hex>` over the exact recorded
+ *  bytes, so a remote body hashing to the recorded hex is byte-equal
+ *  to the recorded content — the byte-level witness over the tree
+ *  digest's file read. A seal whose prefix is not the frozen token is
+ *  unverifiable by this gate: the body-compare falls back to the
+ *  recorded tree bytes (`release-conflict`), never claims a match. */
+const sealMatches = (seal: string | undefined, body: string): boolean => {
+  if (seal === undefined) {
+    return true;
+  }
+  const hex = seal.startsWith("content_sha256:") ? seal.slice("content_sha256:".length) : undefined;
+  return hex !== undefined && createHash("sha256").update(body).digest("hex") === hex;
 };
 
 /** Whether the create refusal is the duplicate-create answer: the
@@ -368,7 +397,13 @@ const recordedChangelog = (binding: GitBinding, tag: string): RecordedChangelog 
             detail: `the recorded tree ${digest} holds no ${CHANGELOG_PATH}`,
           };
         }
-        return { ok: true, digest, body };
+        // The seal rides the projection (issue #294): the completed
+        // record's producer-computed content seal, carried verbatim —
+        // the body-compare's byte-level witness when present.
+        const contentSha256 = record.contentSha256;
+        return contentSha256 === undefined
+          ? { ok: true, digest, body }
+          : { ok: true, digest, body, contentSha256 };
       }
       return {
         ok: false,
@@ -443,6 +478,19 @@ export function GitReleasePublication(
             kind: "refused",
             reason: "release-conflict",
             detail: `the remote release for ${tag} does not match the recorded changelog (${recorded.digest})`,
+          };
+        }
+        // The seal check (issue #294): a remote body byte-equal to the
+        // recorded tree but hashing away from the producer's seal is a
+        // tampered body over the same digest — refused under its own
+        // reason, never silently accepted. A seal the producer never
+        // recorded is no gate: the tree-bytes match above already
+        // satisfied the write.
+        if (!sealMatches(recorded.contentSha256, remoteBody)) {
+          return {
+            kind: "refused",
+            reason: "changelog-digest-mismatch",
+            detail: `the remote release for ${tag} does not match the recorded content seal (${recorded.digest})`,
           };
         }
         // The satisfied-release path re-asserts the recorded tag before
@@ -590,6 +638,18 @@ export function GitReleasePublication(
           kind: "refused",
           reason: "release-conflict",
           detail: `the remote release for ${tag} does not match the recorded changelog (${recorded.digest})`,
+        };
+      }
+      // The seal check (issue #294): the same byte-level witness as the
+      // satisfied-path — a body matching the recorded tree bytes but
+      // hashing away from the producer's seal is refused as
+      // `changelog-digest-mismatch`, never verified as the recorded
+      // publication.
+      if (!sealMatches(recorded.contentSha256, remoteBody)) {
+        return {
+          kind: "refused",
+          reason: "changelog-digest-mismatch",
+          detail: `the remote release for ${tag} does not match the recorded content seal (${recorded.digest})`,
         };
       }
       // The verification asserts the release object's own metadata too

@@ -51,3 +51,14 @@ export const channelStateFingerprint = (state: {
 export const contentFingerprint = (inputs: Record<string, string>): string => {
   return `content_sha256:${createHash("sha256").update(canonicalJson(inputs)).digest("hex")}`;
 };
+
+/**
+ * The content seal (issue #294): `content_sha256:<hex>` over the RAW
+ * content bytes the producer observed — distinct from
+ * `contentFingerprint`, which seals canonical JSON of declared inputs.
+ * The changelog producer seals the exact rendered changelog bytes, so
+ * release verification can compare a published body against the seal
+ * when the recorded tree digest is not byte-addressable.
+ */
+export const contentSha256 = (bytes: Uint8Array | string): string =>
+  `content_sha256:${createHash("sha256").update(bytes).digest("hex")}`;
