@@ -614,3 +614,58 @@ each verdict cites the owning source or the measured command output):
 | Post-create re-assert unreadable            | unnamed (the TOCTOU half)                   | `ambiguous` — resumable, idempotent read resolves |
 | Engine outcome mapping                      | refusals `refused`, indeterminate `blocked` | unchanged                                         |
 | Live publish leg (REST transport + ingress) | absent (#336)                               | absent — still the largest unproven surface       |
+
+## 12. Re-audit addendum — the plan→mutation middle term (issue #289, this PR)
+
+The §9 census's #289 row is partially answered here: the version half of
+the plan→mutation middle term lands as an engine pre-walk binding,
+refused before the attempt opens; the change-shape half
+(`planLine.changes` carrying subject/scope/breaking into the renderer)
+stays issue #291's slice, exactly as the census's §9 note states.
+
+### New ground truth this addendum records
+
+1. **The plan-recorded version is the only authority a `version-bump`
+   mutation answers to.** `src/app/mutation-plan.ts` derives the line's
+   version-bump projection (`plannedVersionBump`: stable version, else
+   the first stream — the driver's own rule, now shared with the driver)
+   as `{id, version, bytes}`, and `bindMutationsToPlan` is the engine's
+   pre-walk row (after the issue #339 rows, before the attempt): a
+   declared `version-bump` whose produced bytes differ from the plan's
+   recorded bytes refuses, a plan-bound id with no intent to check
+   refuses, and the id over a line that records no version target
+   refuses — each contradiction named in the refusal detail, recorded
+   as a refused outcome (planId set, no handle), never a start or a
+   ledger row.
+2. **The binding is by id, not by declaration shape.** The driver's
+   derived `version-bump` mutation (issue #339) is the same id, so its
+   corridor is bound by construction — `test/app/version-driver.test.ts`
+   proves it end-to-end through this same pre-walk — while an unbound
+   id (a host's own mutation name) stays host-domain untouched
+   (ADR-0007 decision 2: the engine verifies, it never invents). The
+   bind runs the bound mutation's producer once at pre-walk (pure per
+   the `MutationIntent` contract); the updater's own write-verify
+   re-derivation remains the recorded proof.
+3. **The changelog-render binding is deliberately out of scope.**
+   The plan record carries no renderer fields — the `planLine.changes`
+   projection drops subject/scope/breaking at assemble (issue #291) —
+   so no plan-recorded value exists to check the rendered bytes
+   against, and the audit's §9 note is not softened: the renderer's
+   change-shape binding is its own slice.
+
+### Public surface delta
+
+The app barrel gains `VERSION_BUMP_MUTATION_ID`, `plannedVersionBump`
+(the shared projection), `bindMutationsToPlan` (the engine's pre-walk
+row, also used by the version-carrying driver), and the
+`PlannedVersionBump` type; the version-carrying driver consumes
+`plannedVersionBump` instead of inlining its own derivation and its
+`version-bump` intent produces the projection's bytes by construction.
+
+### Posture delta over §10
+
+| Capability                         | Was (§10)                      | Now (this PR)                                          |
+| ---------------------------------- | ------------------------------ | ------------------------------------------------------ |
+| Plan→mutation binding (version)    | plan-blind — #289 open         | closed — pre-walk refusal on contradiction (#289, D95) |
+| Plan→mutation binding (changelog)  | deliberate slice boundary — §9 | unchanged — stays #291's change-shape slice            |
+| Engine counts at the mutation seam | host-declared input only       | bound ids verified, unbound ids untouched              |

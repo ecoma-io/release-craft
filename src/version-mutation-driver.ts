@@ -39,6 +39,7 @@ import { openGitRun, writeBlob } from "@ecoma-io/release-craft/adapters/git";
 import type { GitHubAdapter } from "@ecoma-io/release-craft/adapters/github";
 import {
   assemblePublicationBinding,
+  plannedVersionBump,
   type AssemblyConfig,
   type Engine,
   type RunDeclarations,
@@ -154,9 +155,11 @@ export const openVersionMutationDriver = (
   if (tag === null) {
     return null;
   }
-  const version =
-    planLine.stable?.version ??
-    (planLine.streams[0] !== undefined ? planLine.streams[0].version.toString() : "");
+  const plannedBump = plannedVersionBump(planLine);
+  if (plannedBump === null) {
+    return null;
+  }
+  const version = plannedBump.version;
   // The notes are the extraction's recorded words — self-references
   // already excluded, exactly as the engine's own plan excludes them —
   // re-read from the input's commits, never from the plan's change set
@@ -202,7 +205,7 @@ export const openVersionMutationDriver = (
     },
   };
   const mutationIntents: ReadonlyMap<string, MutationIntent> = new Map([
-    ["version-bump", { path: versionPath, produce: () => `${version}\n`, expectedDigest: "" }],
+    ["version-bump", { path: versionPath, produce: () => plannedBump.bytes, expectedDigest: "" }],
     [
       "changelog-render",
       { path: changelogPath, produce: () => renderChangelog(changelog), expectedDigest: "" },

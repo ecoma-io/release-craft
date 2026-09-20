@@ -68,6 +68,7 @@ import {
 import type { StepDrive } from "./types.js";
 import { acquireClaim, claimScopeForLine, claimViewFor } from "./claims.js";
 import { applyPlannedChannelTransitions, plannedChannelMoves } from "./channels.js";
+import { bindMutationsToPlan } from "./mutation-plan.js";
 import type {
   AssemblyConfig,
   AttemptEntry,
@@ -1176,6 +1177,21 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
         planId,
         null,
       );
+    }
+    // Issue #289's pre-walk row: the plan is the WHAT — a mutation that
+    // reserves the plan-bound `version-bump` id must produce exactly the
+    // plan's recorded version bytes, and the id over a line that plans no
+    // version has nothing to bind. The bind verifies, it never invents
+    // (ADR-0007 decision 2); refusing before the attempt opens keeps the
+    // contradiction out of every record — no start, no claim, no ledger
+    // row names a mutation the plan did not sanction.
+    const mutationBinding = bindMutationsToPlan(
+      planLine,
+      request.declarations?.mutations,
+      request.declarations?.mutationIntents,
+    );
+    if (mutationBinding !== null) {
+      return refusedOutcome(mutationBinding, planId, null);
     }
     // §2.5 step 2 — the attempt: carried continues, fresh allocates.
     const carried = attempts.get(planId);

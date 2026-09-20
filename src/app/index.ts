@@ -30,6 +30,12 @@ export {
 
 export { claimScopeForLine, type ClaimAcquisition } from "./claims.js";
 export { plannedChannelMoves } from "./channels.js";
+export {
+  bindMutationsToPlan,
+  plannedVersionBump,
+  VERSION_BUMP_MUTATION_ID,
+  type PlannedVersionBump,
+} from "./mutation-plan.js";
 export { stageContentFingerprint } from "./engine.js";
 export {
   assembleMemoryStores,
