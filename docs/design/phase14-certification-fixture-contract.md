@@ -783,25 +783,32 @@ credentials, and zero remote writes proven by hashing `git ls-remote`
 before and after — because "published" through the Action means the walk
 completed and the tag exists in the runner's copy (phase 13 §2.8's
 decided-empty token journey), not that anything left the runner.
-`self-release.yml` is the real leg beside it, and beyond the changelog
-declaration it grows nothing on the Action itself: the same
-caller-side world closure, the same pinned Action at a full SHA, the same
-in-job judgment — plus the caller-side steps the read-only dogfood has no
-counterpart for: the shared claims-register integration fetch (#274,
-decision-log D65), the publish step, and the origin leg below. Two of the
+`self-release.yml` is the real leg beside it, and beyond the
+`changelog` and `claims-fetch` declarations it grows nothing on the
+Action itself: the same caller-side world closure, the same pinned
+Action at a full SHA, the same in-job judgment — plus the caller-side
+steps the read-only dogfood has no counterpart for: the publish step
+and the origin leg (issue #237 relocated the shared claims-register
+integration INTO the Action's composite as the demanded `claims-fetch`
+input — this workflow declares `claims-fetch: "true"`, the dogfood
+declares `"false"`; the real leg's fetch materializes the register
+before invoke, the rehearsal's walk over an empty register is exactly
+the fresh-checkout case it certifies, and a rehearsal materializes no
+ledger the next run must claim against).
 
 **The declared changelog (issue #332, decision-log D86):** the
-self-release's invoke passes the ninth declared input, `changelog: "true"`,
-and the walk records the `artifact:changelog` pair — kind `changelog`,
-coordinates `CHANGELOG.md` over the recorded tree, the digest riding the git
-binding's producer attribution (`actor: automation`, ADR-0008 decision 2).
-The class-3 projection's declared posture reads the pair in full and
-resolves the coordinates at the recorded tree — a record-not-bytes bound:
-the digest names the tree the mint reads back, and `CHANGELOG.md` must exist
-in it.
-three touch no origin state — the fetch, which brings
-`refs/release-craft/claims/*` into the checkout before the run
-(caller-side substrate posture, the engine discovering nothing), and the
+self-release's invoke passes the declared `changelog: "true"`
+input, and the walk records the `artifact:changelog` pair — kind
+`changelog`, coordinates `CHANGELOG.md` over the recorded tree, the
+digest riding the git binding's producer attribution (`actor:
+automation`, ADR-0008 decision 2). The class-3 projection's declared
+posture reads the pair in full and resolves the coordinates at the
+recorded tree — a record-not-bytes bound: the digest names the tree the
+mint reads back, and `CHANGELOG.md` must exist in it.
+Two of the caller-side steps touch no origin state — the register
+fetch, which brings `refs/release-craft/claims/*` into the checkout
+before the run (caller-side substrate posture, the engine discovering
+nothing), and the
 origin leg, which only reads origin back. The publish step
 (`scripts/dogfood/publish-mint.mjs`) is the one step the dogfood refuses
 by design, and it carries the run's local mint to origin: the credential
@@ -811,14 +818,18 @@ adapter's own class (`remote-git.ts` — child-scoped, never persisted to
 config or disk, never ambient, never an argument, never a URL), and the
 authority to push is the envelope's rendered kind — a `published`
 verdict's exact `(refname, sha)` pairs ride origin in one atomic,
-no-force push; any other verdict pushes nothing. The origin leg
+no-force push, minus whatever origin already carries at the same sha
+(the snapshot's before-state predates the fetch, so without that
+`ls-remote` filter the fetched register's untouched refs — origin's own
+refs — would be pushed as if minted); any other verdict pushes nothing.
+The origin leg
 (`scripts/dogfood/verify-origin.mjs`) reads origin back against the run's
 claims: a published verdict must find every minted pair present on
 origin, the tag among them, with origin itself cross-checked as the
 dispatching repository; any other verdict — or an envelope that never
 arrived — must find origin byte-identical to its before-state. A missing
 tag or ref fails the job — the green-but-unminted silent failure this leg
-exists to catch. The dispatch declares its expected kind (`expect-kind`,
+exists to catch. The dispatch declares its expected kind (expect-kind,
 demanded, no default) and the judge's degraded posture judges a stop-band
 dispatch exactly as the boundary above declares: the conclusion row
 asserted, what no machine inside the job can settle named NOT ASSERTED,

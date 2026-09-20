@@ -6,13 +6,15 @@
 // no-cancel concurrency group, the minimum contents:write token, the
 // credential's env-only channel, the always()-guarded evidence and
 // judgment steps, and an invocation whose `with:` keys are exactly the
-// Action's declared eight (the closed inventory #191/#252 refuse outside
+// Action's declared ten (the closed inventory #191/#252 refuse outside
 // the metadata; a workflow that misspelled a key would be refused too —
 // but only after a runner burned finding out). Since #274, the shared
-// claims-register integration is pinned too — the step exists, fetches
-// exactly the claims namespace with --no-tags, and sits before the
-// snapshot capture (a diff that cannot see the shared tip would push a
-// register built from empty, the non-fast-forward loss #274 fixes).
+// claims-register integration is pinned too — #237 moved it into the
+// Action's composite as the demanded `claims-fetch` input: this workflow
+// declares `claims-fetch: "true"`, the fetch materializes the register
+// into the checkout before invoke, and the publish diff filters its
+// snapshot's pairs against a fresh `git ls-remote` so the fetched,
+// origin-carried refs are never counted as a mint.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
@@ -108,33 +110,44 @@ describe("the self-release workflow's law", () => {
     assert.match(checkout, /fetch-depth: 0/);
   });
 
-  it("integrates the shared claims register — the run claims against the shared tip, never an empty one (#274)", () => {
+  it("declares the claims-fetch posture — the Action materializes the register, the workflow asks for it (#237)", () => {
     // `stepBlock` itself refuses a missing step, so deleting the
-    // integration is a red suite here, not a hosted run spent discovering
-    // the non-fast-forward rejection #274 records
-    const integrate = stepBlock("Integrate the shared claims register");
-    assert.match(integrate, /run: git fetch/);
+    // invocation is a red suite here, not a hosted run spent discovering
+    // the unclaimed-line failure #237 records
+    const invoke = stepBlock("Invoke the run door");
+    assert.match(invoke, /claims-fetch: "true"/);
   });
 
-  it("fetches exactly the shared claims namespace — the refspec verbatim, --no-tags, nothing beside it (#274)", () => {
-    const integrate = stepBlock("Integrate the shared claims register");
-    assert.match(
-      integrate,
-      /run: git fetch --no-tags origin '\+refs\/release-craft\/claims\/\*:refs\/release-craft\/claims\/\*'\s*$/,
-    );
+  it("the run claims against the shared tip, never an empty one — the Action fetches the namespace before invoke (#274/#237)", () => {
+    // the fetch is the Action's own composite step (its refspec and
+    // --no-tags are pinned in test/action/fetch-leg.test.ts); this test
+    // pins the workflow side: the declared input that demands it, next to
+    // the changelog flag it already forwards
+    const invoke = stepBlock("Invoke the run door");
+    const index = invoke.indexOf('claims-fetch: "true"');
+    assert.ok(index !== -1, 'claims-fetch: "true" is not declared on the invocation');
+    assert.ok(invoke.indexOf('changelog: "true"') !== -1, "the changelog flag is gone");
   });
 
-  it("integrates before the snapshots are captured — the publish diff must see the shared tip the run moves (#274)", () => {
+  it("snapshots before the invocation — the publish filter, not the workflow's order, keeps the diff honest (#237)", () => {
     const lines = executable.split("\n");
     /** @type {(name: string) => number} */
     const lineOf = (name) => lines.findIndex((line) => line.trim() === `- name: ${name}`);
-    const integrate = lineOf("Integrate the shared claims register");
     const snapshots = lineOf("Record the snapshots the verification reads");
-    assert.notEqual(integrate, -1, 'no step named "Integrate the shared claims register"');
+    const invoke = lineOf("Invoke the run door");
     assert.notEqual(snapshots, -1, 'no step named "Record the snapshots the verification reads"');
+    assert.notEqual(invoke, -1, 'no step named "Invoke the run door"');
     assert.ok(
-      integrate < snapshots,
-      "the integration must precede the snapshot capture — a before-state without the shared tip diffs the register as wholly new and pushes a history origin does not hold",
+      snapshots < invoke,
+      "the snapshot capture must precede the invocation — its before-state is the pre-fetch substrate, and publish-mint's ls-remote filter drops the refs the fetch materialized at origin's own shas",
+    );
+  });
+
+  it("publishes only what origin lacks — the mint is a child of the shared tip, never a fetched ref (#237)", () => {
+    const publish = stepBlock("Publish the mint to origin");
+    assert.match(
+      publish,
+      /node scripts\/dogfood\/publish-mint\.mjs --local-before local-refs-before\.txt/,
     );
   });
 
@@ -172,27 +185,20 @@ describe("the self-release workflow's law", () => {
     assert.match(verify, /--expect-origin "\$EXPECT_ORIGIN"/);
   });
 
-  it("publishes through the caller-side script, never an undeclared Action input", () => {
-    const publish = stepBlock("Publish the mint to origin");
-    assert.match(
-      publish,
-      /scripts\/dogfood\/publish-mint\.mjs --local-before local-refs-before\.txt/,
-    );
-  });
-
   it("invokes the run door pinned at a full 40-character SHA", () => {
     const invoke = stepBlock("Invoke the run door");
     const uses = /uses:\s*ecoma-io\/release-craft@([0-9a-f]{40})\s*$/m.exec(invoke);
     assert.notEqual(uses, null, "the run door is not pinned to a full 40-character SHA");
   });
 
-  it("passes exactly the Action's nine declared inputs — none invented, none misspelled", () => {
+  it("passes exactly the Action's ten declared inputs — none invented, none misspelled", () => {
     const invoke = stepBlock("Invoke the run door");
     const withBlock = invoke.split(/with:\n/)[1] ?? "";
     const keys = [...withBlock.matchAll(/^\s{10}([a-z-]+):/gm)].map((match) => match[1]);
     assert.deepEqual(keys.sort(), [
       "actor",
       "changelog",
+      "claims-fetch",
       "intents",
       "line",
       "max-retries",
@@ -200,8 +206,9 @@ describe("the self-release workflow's law", () => {
       "tag-namespaces",
       "world",
       // working-directory stays at its declared default — the eight names
-      // phase 13 §2.3 declares, plus the #332 changelog declaration, and
-      // nothing beside them
+      // phase 13 §2.3 declares, plus the #332 changelog declaration and
+      // the #237 claims-fetch posture this workflow demands, and nothing
+      // beside them
     ]);
   });
 });

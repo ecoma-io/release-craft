@@ -109,9 +109,14 @@ jobs:
       # empty line IS the root. The pin is the FULL 40-character SHA this
       # dogfood certifies (§2.1: the SHA carries the metadata, the sources,
       # the lockfile, and the grammar table — one commit, one behavior).
+      # `claims-fetch: "false"` is this rehearsal's declared posture
+      # (issue #237): the fetch leg stays OFF — the walk over an empty
+      # register is exactly the fresh-checkout case the read-only rehearsal
+      # certifies, and a rehearsal materializes no ledger the next run must
+      # claim against.
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@a00c9e8db4672da9e3838d4b8c10f9340433e118
+        uses: ecoma-io/release-craft@e3822a46f32348ba3b6365221ed9781fc9bd3eb0
         with:
           world: world.json
           line: main
@@ -120,6 +125,7 @@ jobs:
           intents: release
           repo: .
           max-retries: "0"
+          claims-fetch: "false"
 
       # — the evidence — display only, captured before the runner
       # evaporates, guarded by `always()` because a stop-band verdict
