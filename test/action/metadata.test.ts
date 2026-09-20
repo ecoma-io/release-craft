@@ -15,7 +15,8 @@
  * The input inventory's full row-by-row enforcement lives in the policy
  * gate (`scripts/check-action-metadata.mjs`, §6 obligation 8); this suite
  * pins the inventory's edges the contract assigns it: the refused inputs
- * absent, the token journey empty.
+ * absent, the token journey decided-gated (#336: one spelling allowed,
+ * the invocation env's own `GITHUB_TOKEN: ${{ github.token }}`).
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -180,12 +181,22 @@ describe("fixture 1 — the materialization guarantee", () => {
   );
 });
 
-describe("fixture 5 — the token journey is empty", () => {
+describe("fixture 5 — the token journey is decided-gated", () => {
   it("the metadata declares no token input and references no secret", () => {
     const inputs = inputsBlock(ACTION_METADATA);
     expect(inputs).not.toContain("token");
     expect(ACTION_METADATA).not.toMatch(/\$\{\{\s*secrets\./);
-    expect(ACTION_METADATA).not.toMatch(/GH_TOKEN|GITHUB_TOKEN/);
+    expect(ACTION_METADATA).not.toMatch(/\bGH_TOKEN\b/);
+    // The journey's one allowed spelling (#336): the job's own token,
+    // materialized by the runner into the invocation step's env. Any
+    // OTHER GITHUB_TOKEN line is the empty-journey refusal.
+    const tokenRows = [...ACTION_METADATA.matchAll(/^.*GITHUB_TOKEN.*$/gm)].map((m) => m[0].trim());
+    expect(tokenRows).toStrictEqual(["GITHUB_TOKEN: ${{ github.token }}"]);
+  });
+
+  it("the publish input is optional with a false default — the leg is opt-in", () => {
+    const row = inputsRow(ACTION_METADATA, "publish");
+    expect(row).toContain('default: "false"');
   });
 
   it("the composite performs no checkout of any repository — persist-credentials holds vacuously", () => {
@@ -204,11 +215,14 @@ describe("fixture 5 — the token journey is empty", () => {
     // node — the only git the Action performs is the git the engine's own
     // binding performs inside that bin (§2.8, §5's law).
     const spawns = script.match(/^\s*child = spawnSync\(.+$/gm) ?? [];
-    expect(spawns).toHaveLength(1);
     expect(spawns[0]).toContain("process.execPath");
     expect(script).not.toMatch(/spawnSync\(\s*["'`]git/);
     expect(script).not.toMatch(/\b(execSync|execFile|exec)\(/);
-    expect(script).not.toMatch(/GH_TOKEN|GITHUB_TOKEN|secrets\./);
+    expect(script).not.toMatch(/GH_TOKEN|secrets\./);
+    // The token's one doorway (#336): forwarded into the child's allowlist
+    // only by a declared publish, never argv, never anywhere else.
+    expect(script).not.toMatch(/GITHUB_TOKEN.*argv/);
+    expect(script).toContain("GITHUB_TOKEN");
   });
 });
 

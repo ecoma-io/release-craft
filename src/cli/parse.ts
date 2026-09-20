@@ -65,6 +65,14 @@ export type Invocation =
        * generation record `GitReleasePublication` reads. False by default —
        * the empty declaration stays the v1 posture. */
       readonly changelog: boolean;
+      /** The publish leg (issue #336): `--publish` wires the run's
+       * publication port with the live GitHub adapter so the engine mints
+       * the release object beside the minted ref. The token and the API
+       * base ride the environment, read only at the one door that may
+       * (`github-transport.ts`); the credentials' owner/repo derive from
+       * the git assembly's own origin. Git assembly only, like
+       * `--changelog`. */
+      readonly publish: boolean;
       readonly json: boolean;
     }
   | {
@@ -308,6 +316,15 @@ export const parseArgv = (argv: readonly string[]): Invocation => {
           "--changelog feeds the git assembly only — the memory assembly declares no changelog artifact",
         );
       }
+      // The publish leg walks the git binding's own origin and mints onto
+      // it — the memory assembly holds no repository and no remote, so
+      // `--publish` there has nothing to publish from. Refused beside the
+      // changelog refusal, before any door is reached (issue #336).
+      if (tokens.booleans.has("publish") && selection.assembly === "memory") {
+        throw new UsageFault(
+          "--publish feeds the git assembly only — the memory assembly holds no origin to publish from",
+        );
+      }
       return {
         command,
         world: string("world"),
@@ -316,6 +333,7 @@ export const parseArgv = (argv: readonly string[]): Invocation => {
         intents: parseIntents(tokens.repeats.get("intent") ?? []),
         selection,
         changelog: tokens.booleans.has("changelog"),
+        publish: tokens.booleans.has("publish"),
         json,
       };
     }

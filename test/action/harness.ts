@@ -46,6 +46,7 @@ export interface InvokeInputs {
   readonly repo?: string;
   readonly maxRetries?: string;
   readonly changelog?: string;
+  readonly publish?: string;
   /** The program the script spawns — the built bin by default; the fixtures
    * inject stand-ins (an envelope printer, an argv echo) through this seam. */
   readonly bin?: string;
@@ -91,6 +92,8 @@ export const runInvoke = (
     inputs.maxRetries ?? "0",
     "--changelog",
     inputs.changelog ?? "false",
+    "--publish",
+    inputs.publish ?? "false",
     ...(inputs.intents === undefined ? [] : ["--intents", inputs.intents]),
   ];
   const result = spawnSync(process.execPath, args, {

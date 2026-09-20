@@ -544,6 +544,38 @@ export function judge(options) {
     } else {
       fail(rows, 2, "carrying field: drives", "a published envelope must carry the drive sequence");
     }
+    const releaseUrl = /** @type {any} */ (envelope)?.releaseUrl;
+    if (typeof releaseUrl === "string" && releaseUrl !== "") {
+      // The live publication leg's attestation (#336): the URL must be the
+      // GitHub releases page for THIS tag on THIS repository — the exact
+      // shape the API's html_url carries — so a URL for a different tag or
+      // a different owner is a finding, not a pass.
+      if (
+        releaseUrl.startsWith("https://github.com/ecoma-io/release-craft/releases/tags/") &&
+        releaseUrl.endsWith(`/${tag}`)
+      ) {
+        pass(
+          rows,
+          2,
+          "release attestation",
+          `the release URL names this repository and tag "${tag}"`,
+        );
+      } else {
+        fail(
+          rows,
+          2,
+          "release attestation",
+          `the release URL must be the ecoma-io/release-craft releases page for tag "${tag}"`,
+        );
+      }
+    } else {
+      note(
+        rows,
+        2,
+        "release attestation",
+        "no releaseUrl — the dogfood leg publishes no release (the live leg is certified by the self-release leg)",
+      );
+    }
   } else if (typeof kind === "string") {
     note(
       rows,

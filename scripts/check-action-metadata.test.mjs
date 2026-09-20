@@ -12,9 +12,11 @@ import { analyzeActionMetadata } from "./check-action-metadata.mjs";
 const CLEAN = `# The release-craft GitHub Action (phase 13 contract).
 #
 # The header teaches the refusals: no checkout exists, no secret is read,
-# the token journey is empty, the file-keyed toolchain mechanism
-# (node-version-file / package_json_file) is unrepresentable, and the
-# refused inputs (assembly, command, token, json, declarations,
+# the token journey is decided and gated — the one allowed spelling is
+# the invocation env's exact \`GITHUB_TOKEN: \${{ github.token }}\`, read by
+# a declared \`publish: "true"\` only (#336) — the file-keyed toolchain
+# mechanism (node-version-file / package_json_file) is unrepresentable,
+# and the refused inputs (assembly, command, token, json, declarations,
 # naming-module, target) have no rows here.
 name: release-craft
 description: Runs the release-craft engine's run door over a declared world.
@@ -43,6 +45,9 @@ inputs:
   changelog:
     default: "false"
     description: Declare the CHANGELOG.md artifact the run mints
+  publish:
+    default: "false"
+    description: Whether the run also publishes the GitHub Release (self-release only)
   working-directory:
     default: "\${{ github.workspace }}"
     description: Where the run stands
@@ -96,6 +101,8 @@ runs:
         RC_REPO: \${{ inputs.repo }}
         RC_MAX_RETRIES: \${{ inputs.max-retries }}
         RC_CHANGELOG: \${{ inputs.changelog }}
+        GITHUB_TOKEN: \${{ github.token }}
+        RC_PUBLISH: \${{ inputs.publish }}
       run: |
         node "\${{ github.action_path }}/action/invoke.mjs" \\
           --bin "\${{ github.action_path }}/dist/src/cli/index.js" \\
@@ -107,7 +114,8 @@ runs:
           --intents "$RC_INTENTS" \\
           --repo "$RC_REPO" \\
           --max-retries "$RC_MAX_RETRIES" \\
-          --changelog "$RC_CHANGELOG"
+          --changelog "$RC_CHANGELOG" \\
+          --publish "$RC_PUBLISH"
 `;
 
 test("the clean fixture passes with zero findings", () => {
@@ -159,13 +167,14 @@ test("a missing toolchain pin row is a finding — presence is the gate's, the v
   );
   assert.deepEqual(analyzeActionMetadata(CLEAN), []);
 });
-
 test("a secret interpolation, a token name, and the second-checkout spellings are findings", () => {
   const secreted = CLEAN.replace("RC_WORLD: ${{ inputs.world }}", "RC_WORLD: ${{ secrets.WORLD }}");
   assert.ok(analyzeActionMetadata(secreted).some((violation) => violation.includes("secret")));
+  // A token name off the one allowed row — any value but the env's exact
+  // `GITHUB_TOKEN: ${{ github.token }}` — is the journey's refusal.
   const tokened = CLEAN.replace("RC_ACTOR: ${{ inputs.actor }}", "RC_ACTOR: ${{ GITHUB_TOKEN }}");
   assert.ok(
-    analyzeActionMetadata(tokened).some((violation) => violation.includes("token journey")),
+    analyzeActionMetadata(tokened).some((violation) => violation.includes("GITHUB_TOKEN spelling")),
   );
   const checkedOut = CLEAN.replace(
     "    - name: Provision Node",

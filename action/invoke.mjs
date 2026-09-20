@@ -118,6 +118,7 @@ const DEMANDED = new Set([
   "repo",
   "max-retries",
   "changelog",
+  "publish",
 ]);
 
 /**
@@ -188,6 +189,7 @@ const DECLARED_INPUTS = new Set([
   "repo",
   "max-retries",
   "changelog",
+  "publish",
   "working-directory",
   "claims-fetch",
 ]);
@@ -301,6 +303,31 @@ function writeOutcomeOutput(file, stdout) {
       : Buffer.from(`${delimiter}\n`);
   writeFileSync(file, Buffer.concat([head, body]));
 }
+/**
+ * The publish boolean's argv spelling — the changelog transport's parity
+ * twin (the grammar's second boolean row, #336). Declared beside the use
+ * so the rule and its twin stay visibly one rule.
+ *
+ * @param {string} raw the publish protocol value
+ * @returns {string[]} the argv words it declares
+ */
+function publishFlag(raw) {
+  return raw === "true" ? ["--publish"] : raw === "false" || raw === "" ? [] : ["--publish", raw];
+}
+
+/**
+ * Whether the protocol declares the publish leg: the one spelling that
+ * opens the child's allowlist to the two credential-adjacent names. Any
+ * other spelling — including the forwarded-typo spellings the grammar
+ * will refuse — keeps the declared-empty envelope: the token never
+ * reaches a run the arrow did not open loudly.
+ *
+ * @param {string} raw the publish protocol value
+ * @returns {boolean}
+ */
+function publishDeclared(raw) {
+  return raw === "true";
+}
 
 /**
  * Runs the built bin once and renders what came back: the conclusion, the
@@ -348,20 +375,34 @@ function invoke(values) {
       : changelog === "false" || changelog === ""
         ? []
         : ["--changelog", changelog]),
+    // The publish opt-in is the grammar's second boolean row (#336): the
+    // same transport rule as the changelog's — "true" declares, "false"/
+    // empty omits, any other spelling forwards WITH the value so the
+    // grammar's refusal surfaces the typo loudly (exit 64, annotated)
+    // instead of absorbing it into a silent default.
+    ...publishFlag(values.get("publish") ?? ""),
     "--json",
   );
-
-  // The outer line (§4): `env -i` semantics through the two-name allowlist.
-  // The child stands in this program's own working directory — the step's
-  // declared `${{ inputs.working-directory }}` — so the declared `repo` and
-  // `world` paths resolve against the cwd the metadata declared. Stdin is
-  // closed: the invocation reads nothing interactively, and the `-` world
-  // spelling finds an empty stream and usage-faults (§2.5).
   const home = mkdtempSync(join(process.env.RUNNER_TEMP ?? tmpdir(), "release-craft-home-"));
+  // The outer line (§4), the child's allowlist: the two declared names,
+  // widened ONLY by the publish leg's declaration. A publish run forwards
+  // the step's own `GITHUB_TOKEN` (the job's `github.token`, materialized
+  // by the runner into this step's env — never an input, never this
+  // program's read of anything else, the alias spelling never) and the
+  // enterprise base override `GITHUB_API_URL` (GHES consumers export it
+  // at the job level; the default base is the CLI transport's own) — a
+  // non-publish child keeps the envelope exactly {PATH, HOME}: the
+  // token's names exist for a publish run only.
+  const publishEnv = publishDeclared(values.get("publish") ?? "")
+    ? {
+        GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? "",
+        GITHUB_API_URL: process.env.GITHUB_API_URL ?? "",
+      }
+    : {};
   let child;
   try {
     child = spawnSync(process.execPath, [values.get("bin") ?? "", ...argv], {
-      env: { PATH: process.env.PATH ?? "", HOME: home },
+      env: { PATH: process.env.PATH ?? "", HOME: home, ...publishEnv },
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "buffer",
       // The envelope is kilobytes; the ceiling exists so a runaway stdout

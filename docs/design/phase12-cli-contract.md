@@ -107,7 +107,7 @@ One command per `Engine` door (all door names verified against
 ```text
 release-craft plan    --assembly memory|git [assembly flags] --world <path|-> [--intent <i>]…
 release-craft run     --assembly … --world … --actor <string> --line <lineId>
-                      [--intent <i>]… [--max-retries <n>]
+                      [--intent <i>]… [--max-retries <n>] [--changelog] [--publish]
 release-craft resume  --assembly … --world … --actor <string>
                       --plan <planId> --attempt <attemptId> [--line <lineId>]
 release-craft resolve --assembly … --actor <string>
@@ -131,20 +131,22 @@ release-craft show    --assembly … ( attempt --plan <planId> --attempt <attemp
 Every flag maps onto exactly one boundary value, and this is the rule
 invariant 2.10 becomes when it reaches the process:
 
-| Flag                                           | Feeds                                                                                                               |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `--assembly`                                   | the factory choice: `assembleMemoryStores` / `assembleGitBinding`                                                   |
-| `--repo <path>`                                | `BindingConfig.repo`                                                                                                |
-| `--tag-namespace <ns>` (repeatable)            | `BindingConfig.tagNaming` — the CLI's declared derivation ([§2.3](#23-the-git-assemblys-declared-naming))           |
-| `--max-retries <n>`                            | `AssemblyConfig.maxRetries` (E-08's declared bound)                                                                 |
-| `--world <path\|->`                            | the `PlanningInput` half of `RunRequest.input` ([§2.4](#24-the-world-document-where-the-planning-input-comes-from)) |
-| `--intent <i>` (repeatable)                    | `RunRequest.intents` — the `OperatorIntent` union serialized ([§2.2](#22-the-grammar-one-command-per-door))         |
-| `--actor <string>`                             | `RunRequest.actor` / the handle's `actor` (E-09's attribution)                                                      |
-| `--line <lineId>`                              | `RunRequest.lineIds` — exactly one occurrence on `run` (M-02)                                                       |
-| `--plan` / `--attempt`                         | `AttemptHandle.planId` / `AttemptHandle.attemptId`                                                                  |
-| `--step <stepKey>`                             | `resolve`'s `stepKey`                                                                                               |
-| `--resolution`, `--note`, `--plan-fingerprint` | `BlockedResolution` — `{ kind: "human", note }` or `{ kind: "revalidation", planFingerprint }` (verified union)     |
-| `--reason <string>`                            | `abort`'s reason                                                                                                    |
+| Flag                                           | Feeds                                                                                                                                                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--assembly`                                   | the factory choice: `assembleMemoryStores` / `assembleGitBinding`                                                                                                                                                         |
+| `--repo <path>`                                | `BindingConfig.repo`                                                                                                                                                                                                      |
+| `--tag-namespace <ns>` (repeatable)            | `BindingConfig.tagNaming` — the CLI's declared derivation ([§2.3](#23-the-git-assemblys-declared-naming))                                                                                                                 |
+| `--max-retries <n>`                            | `AssemblyConfig.maxRetries` (E-08's declared bound)                                                                                                                                                                       |
+| `--changelog`                                  | the changelog artifact declaration, `{}` on `RunRequest.artifacts` ([§2.6](#26-the-declarations-decision), #327)                                                                                                          |
+| `--publish`                                    | opens the GitHub publication port with `GITHUB_TOKEN` (gated: flag present arms `openGitHubTransport`, absent leaves the port `null` — never a default credential; [§4](#4-hermeticity-what-the-process-reads), ADR-0010) |
+| `--world <path\|->`                            | the `PlanningInput` half of `RunRequest.input` ([§2.4](#24-the-world-document-where-the-planning-input-comes-from))                                                                                                       |
+| `--intent <i>` (repeatable)                    | `RunRequest.intents` — the `OperatorIntent` union serialized ([§2.2](#22-the-grammar-one-command-per-door))                                                                                                               |
+| `--actor <string>`                             | `RunRequest.actor` / the handle's `actor` (E-09's attribution)                                                                                                                                                            |
+| `--line <lineId>`                              | `RunRequest.lineIds` — exactly one occurrence on `run` (M-02)                                                                                                                                                             |
+| `--plan` / `--attempt`                         | `AttemptHandle.planId` / `AttemptHandle.attemptId`                                                                                                                                                                        |
+| `--step <stepKey>`                             | `resolve`'s `stepKey`                                                                                                                                                                                                     |
+| `--resolution`, `--note`, `--plan-fingerprint` | `BlockedResolution` — `{ kind: "human", note }` or `{ kind: "revalidation", planFingerprint }` (verified union)                                                                                                           |
+| `--reason <string>`                            | `abort`'s reason                                                                                                                                                                                                          |
 
 - `--repo` and `--tag-namespace` are demanded on the git assembly and are
   usage faults on `--assembly memory`, whose stores construct from nothing
@@ -605,6 +607,18 @@ row → 10.
   opens the binding and inherits the floor; it adds no env plumbing of its
   own and exposes no flag that could inject one. Nothing the CLI does can
   make git consult an operator's gitconfig or prompt for a credential.
+- **The publication port's one exception, file-scoped.** `--publish` arms
+  the GitHub transport (`src/cli/github-transport.ts`), and the transport
+  is the one module that reads ambient state — by design, and only there:
+  it spawns a node child (the same bin's `REQUEST_SCRIPT`) with a child
+  environment that carries exactly `GITHUB_TOKEN` (declared, never
+  defaulted — absent without the flag) plus the transport's own bindings,
+  and relays the child's stdout verbatim to the caller. The word "remote"
+  stays out of every flag, output, and module; the exception is the
+  one reviewed file named here and banned everywhere else (the suite pins
+  the scoping: no other module may reference the env name). The release
+  create is the adapter's write over that transport, verified by the
+  adapter's own re-assertion (ADR-0010; phase 13 §2.8).
 - **stdin is declared input, not an ambient read**: `--world -` reads the
   document from stdin, and that is the one stream the CLI reads beyond
   argv. Nothing else is read interactively — no prompt, no confirmation

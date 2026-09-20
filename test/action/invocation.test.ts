@@ -162,6 +162,22 @@ describe("fixture: the argv projection is §2.7's command, exactly", () => {
     expect(projectedArgv({ changelog: "false" })).not.toContain("--changelog");
     expect(projectedArgv({ changelog: "" })).not.toContain("--changelog");
   });
+
+  it("publish true declares the bare flag — the second boolean row sits between changelog and --json", () => {
+    expect(projectedArgv({ changelog: "true", publish: "true" }).slice(-3)).toStrictEqual([
+      "--changelog",
+      "--publish",
+      "--json",
+    ]);
+  });
+
+  it("an undecodable publish spelling is forwarded with its value — the grammar refuses it aloud", () => {
+    expect(projectedArgv({ publish: "1" }).slice(-3)).toStrictEqual(["--publish", "1", "--json"]);
+    // The transport's own spellings: "false" and the empty string omit
+    // the row entirely — the publish leg stays refused, unopened.
+    expect(projectedArgv({ publish: "false" })).not.toContain("--publish");
+    expect(projectedArgv({ publish: "" })).not.toContain("--publish");
+  });
 });
 
 describe("fixture: the multiline transport rule", () => {
@@ -564,6 +580,87 @@ describe("fixture: the planted ambient layer ends at the outer hermeticity line"
 });
 
 // ---------------------------------------------------------------------------
+// #336 — the publish leg's environment gating
+// ---------------------------------------------------------------------------
+describe("fixture: the publish leg opens the child allowlist, and only when declared", () => {
+  const writeEnvEcho = (dir: string): string => {
+    const bin = join(dir, "env-echo.mjs");
+    writeFileSync(bin, ENV_ECHO_BIN);
+    return bin;
+  };
+
+  it("a publish run forwards GITHUB_TOKEN and GITHUB_API_URL into the child's two-declared-names env", () => {
+    withScratchDir((scratch) => {
+      const bin = writeEnvEcho(scratch);
+      const drive = runInvoke(
+        { ...baseInputs({ bin, publish: "true" }), outputsFile: join(scratch, "out") },
+        {
+          env: {
+            ...HOSTILE,
+            PATH: process.env.PATH ?? "",
+            RUNNER_TEMP: scratch,
+            GITHUB_API_URL: "https://api.example.test",
+          },
+        },
+      );
+      const relayed = drive.stdout
+        .toString("utf8")
+        .split("\n")
+        .filter((line) => line.length > 0 && !line.startsWith("::error::"));
+      const echo = JSON.parse(relayed[0] ?? "{}") as { env: Record<string, string | undefined> };
+      // The allowlist widened by the publish declaration: the two names
+      // the leg reads, exactly — and their VALUES are the step env's own
+      // (the HOSTILE plant included), never argv, never a new input.
+      expect(Object.keys(echo.env).sort()).toStrictEqual([
+        "GITHUB_API_URL",
+        "GITHUB_TOKEN",
+        "HOME",
+        "PATH",
+      ]);
+      expect(echo.env.GITHUB_TOKEN).toBe("ghs_hostiletokenvalue");
+      expect(echo.env.GITHUB_API_URL).toBe("https://api.example.test");
+    });
+  });
+
+  it("a non-publish run keeps exactly {HOME, PATH} — a hostile GITHUB_TOKEN never reaches the child", () => {
+    withScratchDir((scratch) => {
+      const bin = writeEnvEcho(scratch);
+      const drive = runInvoke(
+        { ...baseInputs({ bin, publish: "false" }), outputsFile: join(scratch, "out") },
+        {
+          env: { ...HOSTILE, PATH: process.env.PATH ?? "", RUNNER_TEMP: scratch },
+        },
+      );
+      const relayed = drive.stdout
+        .toString("utf8")
+        .split("\n")
+        .filter((line) => line.length > 0 && !line.startsWith("::error::"));
+      const echo = JSON.parse(relayed[0] ?? "{}") as { env: Record<string, string | undefined> };
+      expect(Object.keys(echo.env).sort()).toStrictEqual(["HOME", "PATH"]);
+      expect(echo.env.GITHUB_TOKEN).toBeUndefined();
+    });
+  });
+
+  it("a foreign publish spelling opens no env — the token never reaches a run the grammar will refuse", () => {
+    withScratchDir((scratch) => {
+      const bin = writeEnvEcho(scratch);
+      const drive = runInvoke(
+        { ...baseInputs({ bin, publish: "1" }), outputsFile: join(scratch, "out") },
+        {
+          env: { ...HOSTILE, PATH: process.env.PATH ?? "", RUNNER_TEMP: scratch },
+        },
+      );
+      const relayed = drive.stdout
+        .toString("utf8")
+        .split("\n")
+        .filter((line) => line.length > 0 && !line.startsWith("::error::"));
+      const echo = JSON.parse(relayed[0] ?? "{}") as { env: Record<string, string | undefined> };
+      expect(Object.keys(echo.env).sort()).toStrictEqual(["HOME", "PATH"]);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // §2.3 as amended (#191) — the declared input inventory is closed
 // ---------------------------------------------------------------------------
 
@@ -584,7 +681,7 @@ describe("fixture: an undeclared input key is refused, a declared name changes n
       expect(drive.stdout.toString("utf8")).toBe("");
       expect(drive.stderr.toString("utf8")).toContain('undeclared action input "intent"');
       expect(drive.stderr.toString("utf8")).toContain(
-        "world, line, actor, tag-namespaces, intents, repo, max-retries, changelog, working-directory, claims-fetch",
+        "world, line, actor, tag-namespaces, intents, repo, max-retries, changelog, publish, working-directory, claims-fetch",
       );
       expect(drive.outputs).toHaveLength(0);
     });

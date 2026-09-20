@@ -27,9 +27,14 @@ out. The engine's machinery ships through Phase 9: the append-only ledger
 git binding (Phase 8), and the assembled GitHub adapter — remote
 synchronization, release publication, reconciliation behind
 `openGitHubAdapter` (Phase 9, [ADR-0010](docs/adr/0010-github-adapter.md)).
-Not built yet: this repository's own adoption of the engine for its
-releases. The GitHub action — the composite front door over the run door —
-ships (phase 13), and a dispatch-only rehearsal of that adoption exists:
+The live publication leg ships: `release-craft run --publish` publishes —
+over the GitHub adapter's transport and against the recorded minted tag —
+the GitHub Release for a run that declared it, verified by the adapter's
+own re-assertion ([#336](https://github.com/ecoma-io/release-craft/issues/336)),
+and the Action's `publish` input fronts it behind the gated
+`GITHUB_TOKEN` (phase 13 §2.8). Not built yet: this repository's own
+adoption of the engine for its releases. A dispatch-only rehearsal of that
+adoption exists:
 [`dogfood.yml`](.github/workflows/dogfood.yml)
 ([#187](https://github.com/ecoma-io/release-craft/issues/187)) runs one
 self-release through the released Action and certifies it class-shaped per
