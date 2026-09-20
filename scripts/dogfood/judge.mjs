@@ -452,19 +452,32 @@ export function judge(options) {
         "the survivor does not end in exactly one trailing newline — the preserving write's replay lost or grew bytes",
       );
     }
-    if (!survivor.toLowerCase().includes("ecoma")) {
+    // The boundary law governs product surfaces — policy, world, plan
+    // words, vocabulary, reasoning — never the host-declared identity of
+    // the repository a release names. The envelope's own release URL IS
+    // that identity: the attestation row above pins it verbatim, so on
+    // this repository a published envelope always carries the owner's
+    // name (issue #384). The scanned surface is therefore the envelope
+    // minus its own release URL; a stray Ecoma string anywhere else
+    // still fails.
+    const releaseUrl = envelope?.releaseUrl;
+    const surface =
+      typeof releaseUrl === "string" && releaseUrl !== ""
+        ? survivor.split(releaseUrl).join("")
+        : survivor;
+    if (!surface.toLowerCase().includes("ecoma")) {
       pass(
         rows,
         2,
         "product boundary (invariant 2.12)",
-        "no Ecoma string anywhere in the envelope's bytes — the dogfood surface stays product-neutral",
+        "no Ecoma string in the envelope's product surfaces — the dogfood surface stays product-neutral (the release URL's own repo identity is the host, named by attestation)",
       );
     } else {
       fail(
         rows,
         2,
         "product boundary (invariant 2.12)",
-        "an Ecoma string reached the envelope — invariant 2.12's product-boundary law is broken on the dogfood surface",
+        "an Ecoma string reached the envelope outside the release URL — invariant 2.12's product-boundary law is broken on the dogfood surface",
       );
     }
   }

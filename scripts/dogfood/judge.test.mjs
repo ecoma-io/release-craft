@@ -351,6 +351,45 @@ describe("the honest capture", () => {
       rmSync(other, { recursive: true, force: true });
     }
   });
+
+  it("lets the release URL's own repo identity through the product boundary", () => {
+    const { tail, envelope } = honestCapture();
+    // The published envelope the run door really produces: the release
+    // URL names this repository — the owner's name is the host identity
+    // the attestation row pins verbatim (#384), never a product surface.
+    const withUrl = {
+      ...envelope,
+      releaseUrl: `https://github.com/ecoma-io/release-craft/releases/tag/${TAG}`,
+    };
+    const repo = buildLedgerRepo(tail);
+    try {
+      const run = runJudge(repo, survivorOf(withUrl), "success");
+      assert.equal(run.status, 0, run.stdout + run.stderr);
+      assert.match(run.stdout, /verdict: CERTIFIED/);
+      assert.equal(rowState(run.stdout, "product boundary (invariant 2.12)"), "PASS");
+      assert.equal(rowState(run.stdout, "release attestation"), "PASS");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an Ecoma string outside the release URL — the boundary still bites", () => {
+    const { tail, envelope } = honestCapture();
+    const polluted = {
+      ...envelope,
+      releaseUrl: `https://github.com/ecoma-io/release-craft/releases/tag/${TAG}`,
+      world: { vocabulary: "ecoma-first customer terms leak" },
+    };
+    const repo = buildLedgerRepo(tail);
+    try {
+      const run = runJudge(repo, survivorOf(polluted), "success");
+      assert.equal(run.status, 1);
+      assert.equal(rowState(run.stdout, "product boundary (invariant 2.12)"), "FAIL");
+      assert.match(run.stdout, /outside the release URL/);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the judge bites — the planted bad captures", () => {
