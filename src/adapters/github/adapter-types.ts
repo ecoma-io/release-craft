@@ -68,7 +68,8 @@ export type RefusalReason =
   | "release-conflict"
   | "release-tag-missing"
   | "release-tag-mismatch"
-  | "release-metadata";
+  | "release-metadata"
+  | "changelog-digest-mismatch";
 
 /**
  * The refusal reasons a listing's observation can carry (issue #66;

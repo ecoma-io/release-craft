@@ -48,9 +48,15 @@ const ADAPTER_DIR = join(import.meta.dirname, "..", "..", "..", "src", "adapters
  * upward edge into app or cli. */
 const GIT_BARREL = "@ecoma-io/release-craft/adapters/git";
 
-/** The one Node built-in the frozen contract permits, and the only file. */
-const ONLY_BUILTIN = "node:child_process";
-const ONLY_BUILTIN_FILE = "remote-git.ts";
+/** The Node built-ins the frozen contract permits, each in its one file:
+ * the git binding's spawn in remote-git.ts, and the content-seal's
+ * SHA-256 in publication.ts (issue #294 — the byte-level digest compare
+ * is this layer's second frozen builtin, judged here exactly as the
+ * tsconfig comment says). */
+const ONLY_BUILTINS: ReadonlyMap<string, string> = new Map([
+  ["node:child_process", "remote-git.ts"],
+  ["node:crypto", "publication.ts"],
+]);
 
 /** One scanned-in offense: which file, and what the scan found there. */
 interface Violation {
@@ -121,7 +127,15 @@ function importViolations(file: string, text: string): Violation[] {
       continue;
     }
     if (specifier === GIT_BARREL) continue;
-    if (specifier === ONLY_BUILTIN && file === ONLY_BUILTIN_FILE) continue;
+    const allowedFile = ONLY_BUILTINS.get(specifier);
+    if (allowedFile !== undefined && file === allowedFile) continue;
+    if (specifier.startsWith("node:")) {
+      violations.push({
+        file,
+        detail: `imports "${specifier}" — a builtin outside its frozen file`,
+      });
+      continue;
+    }
     violations.push({ file, detail: `imports "${specifier}"` });
   }
   if (/\bimport\s*\(/.test(text)) {
@@ -131,7 +145,7 @@ function importViolations(file: string, text: string): Violation[] {
 }
 
 describe("the GitHub adapter consumes the binding through the barrel seam", () => {
-  it("imports only its siblings, the git binding's barrel, and remote-git.ts's node:child_process", () => {
+  it("imports only its siblings, the git binding's barrel, and the two frozen builtins in their one files", () => {
     expect(adapterFiles().length).toBeGreaterThan(0);
     expect(
       render(scan(importViolations)),
@@ -186,10 +200,23 @@ describe("the GitHub adapter consumes the binding through the barrel seam", () =
     ).toEqual([
       'src/adapters/github/rogue.ts imports "../../execution/kernel.js" — a relative specifier that resolves outside src/adapters/github is a cross-project import and must name a barrel',
     ]);
-    // The one built-in spawn, outside its one declared file.
+    // A builtin push: the seal's crypto outside its one declared file.
     expect(
-      render(importViolations("sync.ts", 'import { spawnSync } from "node:child_process";\n')),
-    ).toEqual(['src/adapters/github/sync.ts imports "node:child_process"']);
+      render(importViolations("sync.ts", 'import { createHash } from "node:crypto";\n')),
+    ).toEqual([
+      'src/adapters/github/sync.ts imports "node:crypto" — a builtin outside its frozen file',
+    ]);
+    // The allowed diet reports nothing — the binding's barrel, a sibling,
+    // and each frozen builtin in its one declared file.
+    const allowed = [
+      'import { createHash } from "node:crypto";',
+      'import { Rock } from "@ecoma-io/release-craft/adapters/git";',
+      'import { GitRemoteSync } from "./sync.js";',
+    ].join("\n");
+    expect(importViolations("publication.ts", allowed)).toEqual([]);
+    expect(
+      importViolations("remote-git.ts", 'import { spawnSync } from "node:child_process";\n'),
+    ).toEqual([]);
     // A computed specifier is how an import scan gets bypassed.
     expect(
       render(importViolations("rogue.ts", 'const m = await import("./sneaky.js");\n')),

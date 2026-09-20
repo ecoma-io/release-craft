@@ -50,6 +50,7 @@ import type {
   MutationIntent,
   UpdaterFs,
 } from "@ecoma-io/release-craft/execution";
+import { contentSha256 } from "@ecoma-io/release-craft/execution";
 import {
   changelogOf,
   plan as planRelease,
@@ -204,8 +205,13 @@ export const openVersionMutationDriver = (
   // committed changelog file (issue #339 class 3). Written through the
   // binding's runner, exactly as the commit door writes its blobs.
   const git = openGitRun(binding.repo);
+  // The changelog's exact rendered bytes, re-derived once: the digest
+  // seals them through a tree, and the content seal (issue #294) over
+  // the same bytes lets publication compare published content
+  // byte-for-byte without dereferencing the tree.
+  const changelogBytes = renderChangelog(changelog);
   const changelogDigest = (): string => {
-    const blob = writeBlob(git, renderChangelog(changelog));
+    const blob = writeBlob(git, changelogBytes);
     return `git-tree:${git(["mktree"], `100644 blob ${blob}\t${changelogPath}\n`).trim()}`;
   };
   const producers: ReadonlyMap<string, ArtifactProducer> = new Map([
@@ -214,6 +220,7 @@ export const openVersionMutationDriver = (
       (input) => ({
         attribution: { attemptId: input.attemptId, actor: "automation" },
         digest: changelogDigest(),
+        contentSha256: contentSha256(changelogBytes),
       }),
     ],
   ]);

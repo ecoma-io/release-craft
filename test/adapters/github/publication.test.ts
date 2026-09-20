@@ -7,6 +7,7 @@
  * arrives as a returned outcome, never an exception.
  */
 
+import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -193,8 +194,11 @@ const withPublicationRepo = (_name: string, fn: (fixture: PublicationRepo) => vo
 
 /** Records the claim, the changelog generation, and the minted tag —
  *  the §2.8 derivation's whole chain. `withChangelog: false` records
- *  the generation over a tree that holds no CHANGELOG.md. */
-const seed = (fixture: PublicationRepo, withChangelog = true): void => {
+ *  the generation over a tree that holds no CHANGELOG.md; `seal`
+ *  attaches the issue #294 content seal to the recorded completion
+ *  (when absent, the recorded record carries no seal and the body
+ *  compare falls back to the tree digest alone). */
+const seed = (fixture: PublicationRepo, withChangelog = true, seal?: string): void => {
   const binding = fixture.binding();
   const claim = asClaim(
     binding.claims.acquire(
@@ -226,6 +230,7 @@ const seed = (fixture: PublicationRepo, withChangelog = true): void => {
       ...started,
       to: "completed",
       contentFingerprint: digest,
+      ...(seal === undefined ? {} : { contentSha256: seal }),
       artifact: { kind: "changelog-notes", coordinates: "CHANGELOG.md", digest },
     },
   });
@@ -437,6 +442,39 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
         kind: "refused",
         reason: "release-conflict",
         detail: detailContaining("does not match the recorded changelog"),
+      });
+      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
+    });
+  });
+
+  it("publishes when the recorded seal matches the remote bytes — the satisfied path with a seal present (issue #294)", () => {
+    withPublicationRepo("seal-ok", (fixture) => {
+      const seal = `content_sha256:${createHash("sha256").update(CHANGELOG_BODY).digest("hex")}`;
+      seed(fixture, true, seal);
+      const { transport } = fakeTransport((call) =>
+        call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : okResponse(CHANGELOG_BODY, happyRelease(fixture)),
+      );
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({ kind: "ok", url: RELEASE_URL });
+    });
+  });
+  it("refuses the satisfied-path re-run when the recorded seal does not match the remote bytes — changelog-digest-mismatch, no write (issue #294)", () => {
+    withPublicationRepo("seal-mismatch", (fixture) => {
+      const foreignBody = "# v9.9.9\n\n- someone else's changelog\n";
+      const seal = `content_sha256:${createHash("sha256").update(foreignBody).digest("hex")}`;
+      seed(fixture, true, seal);
+      const { transport, calls } = fakeTransport((call) =>
+        call.path === REF_PATH
+          ? tagRefResponse(recordedTagTarget(fixture))
+          : okResponse(CHANGELOG_BODY, happyRelease(fixture)),
+      );
+      const outcome = fixture.adapter(transport).publishRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "changelog-digest-mismatch",
+        detail: detailContaining("seal"),
       });
       expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
     });
@@ -760,6 +798,20 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
         kind: "refused",
         reason: "release-conflict",
         detail: detailContaining("does not match the recorded changelog"),
+      });
+    });
+  });
+  it("refuses verification when the recorded seal does not match the remote bytes — changelog-digest-mismatch (issue #294)", () => {
+    withPublicationRepo("verify-seal-mismatch", (fixture) => {
+      const foreignBody = "# v9.9.9\n\n- someone else's changelog\n";
+      const seal = `content_sha256:${createHash("sha256").update(foreignBody).digest("hex")}`;
+      seed(fixture, true, seal);
+      const { transport } = fakeTransport(() => okResponse(CHANGELOG_BODY, happyRelease(fixture)));
+      const outcome = fixture.adapter(transport).verifyRelease(TAG);
+      expect(outcome).toEqual({
+        kind: "refused",
+        reason: "changelog-digest-mismatch",
+        detail: detailContaining("seal"),
       });
     });
   });

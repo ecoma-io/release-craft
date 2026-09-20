@@ -26,6 +26,7 @@
  * publication door AFTER the commit and the mint — the completion rows
  * above are exactly the recorded state that refusal leaves behind.
  */
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { openVersionMutationDriver, renderChangelog, type UpdaterFs } from "../../src/index.js";
 import type { GitHubTransport } from "@ecoma-io/release-craft/adapters/github";
@@ -174,6 +175,15 @@ describe("the version-carrying driver (issue #339)", () => {
           throw new Error("fixture broken: no completed changelog artifact record");
         }
         expect(vertical.state.binding.content.file(digest, "CHANGELOG.md")).toBe(changelog);
+        // The issue #294 content seal rides the completion record: the
+        // byte-level witness over the same rendered bytes, opaque and
+        // prefix-named, ready for the publication door's compare.
+        if (changelogRecord?.kind !== "step") {
+          throw new Error("fixture broken: no completed changelog step record");
+        }
+        expect(changelogRecord.record.contentSha256).toBe(
+          `content_sha256:${createHash("sha256").update(changelog).digest("hex")}`,
+        );
       });
     },
   );

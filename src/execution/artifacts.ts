@@ -275,6 +275,9 @@ export const scheduleArtifacts = (
         digest: observation.digest,
       },
       contentFingerprint: observation.digest,
+      ...(observation.contentSha256 === undefined
+        ? {}
+        : { contentSha256: observation.contentSha256 }),
       ...(dependencyDigests.length === 0 ? {} : { dependsOn: dependencyDigests }),
     };
     // Postconditions as recorded proofs, the hook's kinds verbatim
