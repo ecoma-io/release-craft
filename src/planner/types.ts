@@ -726,7 +726,8 @@ export type PlannedChannelTransition =
 
 /** One line's entry in a plan (§2.11's closed tuple): the line id, the
  * target the plan mints (stable, streams), the change set that produced it
- * (members with id, lineage, type, bump — the decided inputs), the stream
+ * (members with id, lineage, type, scope, subject, breaking, bump — the
+ * decided inputs; the changelog's plan-derived words, issue #291), the stream
  * states with the seed and pointer base used, and the artifact
  * declarations (declared labels only — never provider state, §2.16). */
 export interface PlanLine {
@@ -737,6 +738,9 @@ export interface PlanLine {
     readonly id: string;
     readonly lineage: readonly string[];
     readonly type: string;
+    readonly scope?: string;
+    readonly subject: string;
+    readonly breaking: boolean;
     readonly bump: Bump;
   }[];
   readonly propagation: PropagationPlan;

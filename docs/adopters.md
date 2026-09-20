@@ -208,7 +208,7 @@ now renders the release:
 
 ```text
 planned
-plan plan_sha256:79e8d5b3aba122d5cc04aee7483d7336d77442f17e895b84b9c87aab43f9add2
+plan plan_sha256:37aa5855aaa692277a57f9a4827fa82ffb8e656c2b44449b722c52c02c2f43f2
 policy my-project-release-policy-1
 line main 0.1.0 (tag 0.1.0)
 ```
@@ -234,7 +234,7 @@ commit:
 
 ```text
 published
-plan plan_sha256:9f9710e51f8260498eb627a78953001949fa87638fcb230cbcebd40e2e26a9e7
+plan plan_sha256:df4eb30944a64c4b684bc2ba42395b6d9e726f31abff1eb0be2d67970cb2e800
 attempt attempt_sha256:c0d7232a7ef2bad412034be1d65b8cf3efd6b9b25a707bba37b36dd984d505b7 (actor Ada Opter <ada@example.com>)
 tag 0.1.0
 stopped at verify (advance)
@@ -250,7 +250,7 @@ engine refuses and names the winner (exit 11, the `denied` stop band):
 
 ```text
 denied
-plan plan_sha256:9f9710e51f8260498eb627a78953001949fa87638fcb230cbcebd40e2e26a9e7
+plan plan_sha256:df4eb30944a64c4b684bc2ba42395b6d9e726f31abff1eb0be2d67970cb2e800
 attempt attempt_sha256:ff83283b6b20b53e663cb4eaa4bd3beb8aaea3e2c97a61758b442bc6ef45ebc8 (actor Ada Opter <ada@example.com>)
 holder attempt_sha256:c0d7232a7ef2bad412034be1d65b8cf3efd6b9b25a707bba37b36dd984d505b7
 ```

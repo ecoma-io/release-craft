@@ -15,8 +15,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   renderChangelog,
+  changelogOf,
   InvalidChangelogInputError,
 } from "@ecoma-io/release-craft/__internal__/planner/changelog.js";
+
+import type { PlanLine } from "@ecoma-io/release-craft/planner";
+import type { ChangelogOptions } from "@ecoma-io/release-craft/__internal__/planner/changelog.js";
 
 import type {
   ChangelogInput,
@@ -454,5 +458,158 @@ describe("same version on two lines (M-02/M-11)", () => {
     expect(again).toBe(first);
     expect(again).toContain("add the bar widget");
     expect(again).toContain("fix the foo rendering");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// §15 — changelogOf (issues #291, #206): the plan-derived projection. The
+//       recorded plan's change set — type, subject, scope, breaking, id —
+//       is the renderer's words, one version per line, the line's stable
+//       target first, else its first prerelease stream; a line with
+//       neither contributes nothing. The caller's presentation options
+//       (date/sections/repository/existing/url) ride through untouched.
+// ---------------------------------------------------------------------------
+
+describe("changelogOf — the plan-derived projection", () => {
+  const planLine = (lineId: string, overrides: Record<string, unknown> = {}): PlanLine =>
+    ({
+      lineId,
+      stable: null,
+      streams: [],
+      changes: [],
+      ...overrides,
+    }) as unknown as PlanLine;
+
+  it("reads the recorded change members — the renderer's words, never re-extracted", () => {
+    const line = planLine("main", {
+      stable: { version: "2.0.0", tag: "v2.0.0" },
+      changes: [
+        {
+          id: "abc1",
+          lineage: ["abc1"],
+          type: "feat",
+          scope: "bar",
+          subject: "add the bar widget",
+          breaking: true,
+          bump: "major",
+        },
+        {
+          id: "abc2",
+          lineage: ["abc2"],
+          type: "fix",
+          subject: "fix the foo rendering",
+          breaking: false,
+          bump: "patch",
+        },
+      ],
+    });
+    const input = changelogOf([line]);
+    expect(input.versions).toEqual([
+      {
+        version: "2.0.0",
+        entries: [
+          { type: "feat", subject: "add the bar widget", scope: "bar", breaking: true, id: "abc1" },
+          { type: "fix", subject: "fix the foo rendering", id: "abc2" },
+        ],
+      },
+    ]);
+    // The rendered bytes carry the plan's recorded words.
+    const rendered = renderChangelog(input);
+    expect(rendered).toContain("**bar:** add the bar widget");
+    expect(rendered).toContain("fix the foo rendering");
+    expect(rendered).toContain("### Breaking Changes");
+  });
+
+  it("targets the stable version, else the first stream — a line with neither contributes no version", () => {
+    const stable = planLine("main", {
+      stable: { version: "1.0.0", tag: "v1.0.0" },
+      streams: [{ version: { toString: () => "0.9.9" }, tag: "v0.9.9" }],
+      changes: [
+        {
+          id: "abc3",
+          lineage: ["abc3"],
+          type: "feat",
+          subject: "the stable-only feat",
+          breaking: false,
+          bump: "minor",
+        },
+      ],
+    });
+    const stream = planLine("beta", {
+      streams: [{ version: { toString: () => "0.9.9" }, tag: "v0.9.9" }],
+      changes: [
+        {
+          id: "abc4",
+          lineage: ["abc4"],
+          type: "feat",
+          subject: "the stream feat",
+          breaking: false,
+          bump: "minor",
+        },
+      ],
+    });
+    const empty = planLine("empty", { stable: null, streams: [] });
+    const projected = changelogOf([stable, stream, empty]);
+    expect(projected.versions.map((version) => version.version)).toEqual(["1.0.0", "0.9.9"]);
+    expect(projected.versions[1]?.entries).toEqual([
+      { type: "feat", subject: "the stream feat", id: "abc4" },
+    ]);
+  });
+
+  it("rides the caller's presentation options through untouched — date, sections, repository, existing, url", () => {
+    const line = planLine("main", {
+      stable: { version: "2.0.0", tag: "v2.0.0" },
+      changes: [
+        {
+          id: "abc5",
+          lineage: ["abc5"],
+          type: "feat",
+          subject: "the widget",
+          breaking: false,
+          bump: "minor",
+        },
+      ],
+    });
+    const options: ChangelogOptions = {
+      date: "2026-09-20",
+      sections: [{ type: "feat", section: "Features" }],
+      repository: "https://github.com/ecoma-io/release-craft",
+      existing: "# Changelog\n\n## 1.0.0\n",
+      url: "https://github.com/ecoma-io/release-craft/releases/v2.0.0",
+    };
+    const projected = changelogOf([line], options);
+    expect(projected.sections).toEqual(options.sections);
+    expect(projected.repository).toBe(options.repository);
+    expect(projected.existing).toBe(options.existing);
+    expect(projected.versions[0]?.date).toBe("2026-09-20");
+    expect(projected.versions[0]?.url).toBe(options.url);
+    // The declared date and link render into the heading — never read from a clock.
+    const rendered = renderChangelog(projected);
+    expect(rendered).toContain(
+      "## [2.0.0](https://github.com/ecoma-io/release-craft/releases/v2.0.0) (2026-09-20)",
+    );
+    expect(rendered).toContain("[abc5](https://github.com/ecoma-io/release-craft/commit/abc5)");
+  });
+
+  it("defaults sections to an empty list and omits absent presentation fields", () => {
+    const line = planLine("main", {
+      stable: { version: "2.0.0", tag: "v2.0.0" },
+      changes: [
+        {
+          id: "abc6",
+          lineage: ["abc6"],
+          type: "feat",
+          subject: "the widget",
+          breaking: false,
+          bump: "minor",
+        },
+      ],
+    });
+    const projected = changelogOf([line]);
+    expect(projected.sections).toEqual([]);
+    expect(projected).not.toHaveProperty("repository");
+    expect(projected).not.toHaveProperty("existing");
+    expect(projected.versions[0]).not.toHaveProperty("date");
+    expect(projected.versions[0]).not.toHaveProperty("url");
   });
 });

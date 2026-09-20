@@ -155,17 +155,19 @@ function birthStable(
 }
 
 /** The §2.11 change entries: the release decision's contributing pending set,
- * each member carrying id, recorded lineage, type, and its OWN resolved bump
- * (reviewer m-3): the decision's group winner (§2.7) records the line's
- * release class, while each entry re-resolves that member alone under the
- * declared mapping — a fix inside a minor-graded group is a patch, not the
- * winner's minor. Identity is the kernel change id when the member carries
- * one, the commit sha otherwise; lineage records the provenance the
- * extraction wrote (`originCommit`), falling back to the member's own sha.
- * Non-release decisions contribute no change set. A member whose bump does
- * not resolve is a caller contract violation — the decision graded the line,
- * so the member must grade too; surfacing null would fake a resolvable
- * mapping. */
+ * each member carrying id, recorded lineage, type, the renderer's words —
+ * scope, subject, breaking (issue #291: the plan records what the changelog
+ * renders, so the bytes stay plan-derived, never re-extracted from the
+ * input) — and its OWN resolved bump (reviewer m-3): the decision's group
+ * winner (§2.7) records the line's release class, while each entry
+ * re-resolves that member alone under the declared mapping — a fix inside a
+ * minor-graded group is a patch, not the winner's minor. Identity is the
+ * kernel change id when the member carries one, the commit sha otherwise;
+ * lineage records the provenance the extraction wrote (`originCommit`),
+ * falling back to the member's own sha. Non-release decisions contribute no
+ * change set. A member whose bump does not resolve is a caller contract
+ * violation — the decision graded the line, so the member must grade too;
+ * surfacing null would fake a resolvable mapping. */
 function changesOf(decision: LineDecision, policy: PolicyInput): PlanLine["changes"] {
   if (decision.kind !== "release") {
     return [];
@@ -184,6 +186,9 @@ function changesOf(decision: LineDecision, policy: PolicyInput): PlanLine["chang
       id: parsed.change?.id ?? parsed.sha,
       lineage: [parsed.change?.lineage.originCommit ?? parsed.sha],
       type: parsed.type ?? "untyped",
+      ...(parsed.scope !== undefined ? { scope: parsed.scope } : {}),
+      subject: parsed.subject,
+      breaking: parsed.breaking,
       bump,
     };
   });

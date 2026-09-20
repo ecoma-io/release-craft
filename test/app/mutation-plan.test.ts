@@ -20,10 +20,15 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { DeclaredMutation, MutationIntent, PlanLine } from "../../src/index.js";
-import { bindMutationsToPlan, plannedVersionBump } from "../../src/index.js";
-import { liveWorld } from "../vertical/matrix.js";
+import type {
+  DeclaredMutation,
+  MutationIntent,
+  PlanLine,
+  RunDeclarations,
+} from "../../src/index.js";
+import { bindMutationsToPlan, plannedVersionBump, plannedChangelog } from "../../src/index.js";
 import { beta, freshAssembly, runRequest } from "./harness.js";
+import { liveWorld } from "../vertical/matrix.js";
 
 const lineId = "main";
 
@@ -135,5 +140,113 @@ describe("the plan→mutation middle term (issue #289)", () => {
     expect(outcome.handle).toBeNull();
     expect(outcome.detail).toContain("version-bump");
     expect(outcome.detail).toContain("5.0.0-beta.1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #291's changelog-render row: the plan's recorded change set is the
+// WHAT of the `changelog-render` mutation — the declaration's produced
+// bytes must equal the plan-derived render under the caller's declared
+// options, faithful passes, contradiction refuses before the walk opens.
+// ---------------------------------------------------------------------------
+
+describe("the changelog-render bind (issue #291)", () => {
+  /** A plan line carrying the recorded change words. */
+  const changeLine: PlanLine = {
+    lineId,
+    stable: { version: "5.0.0-beta.1", tag: "v5.0.0-beta.1" },
+    streams: [],
+    changes: [
+      {
+        id: "abc1234def5678",
+        lineage: ["abc1234def5678"],
+        type: "feat",
+        subject: "add the bar widget",
+        breaking: false,
+        bump: "minor",
+      },
+      {
+        id: "chg-fix",
+        lineage: ["chg-fix"],
+        type: "fix",
+        scope: "cli",
+        subject: "fix the foo rendering",
+        breaking: false,
+        bump: "patch",
+      },
+    ],
+  } as unknown as PlanLine;
+
+  const changelogRender = (id: string): DeclaredMutation => ({
+    id,
+    anchor: { stage: "commit", position: "before" },
+    guard: "release-line",
+    postconditions: [],
+  });
+
+  const renderDeclaration = (bytes: string): RunDeclarations => ({
+    mutations: [changelogRender("changelog-render")],
+    mutationIntents: intentsOf([["changelog-render", bytes]]),
+  });
+
+  it("passes the faithful render — the plan's recorded change set, the caller's declared options", () => {
+    const options = { date: "2026-09-20", sections: [{ type: "feat", section: "Features" }] };
+    const planned = plannedChangelog(changeLine, options);
+    expect(planned).toContain("## 5.0.0-beta.1 (2026-09-20)");
+    expect(planned).toContain("* add the bar widget");
+    expect(planned).toContain("* **cli:** fix the foo rendering");
+    expect(
+      bindMutationsToPlan(
+        changeLine,
+        [changelogRender("changelog-render")],
+        intentsOf([["changelog-render", planned]]),
+        options,
+      ),
+    ).toBeNull();
+  });
+
+  it("refuses the contradiction — produce not the plan's recorded words", () => {
+    const refusal = bindMutationsToPlan(
+      changeLine,
+      [changelogRender("changelog-render")],
+      intentsOf([["changelog-render", "something the plan never recorded\n"]]),
+    );
+    expect(refusal).not.toBeNull();
+    expect(refusal).toContain("changelog-render");
+    expect(refusal).toContain("issue #291");
+  });
+
+  it("refuses a plan-bound changelog-render with no intent to check", () => {
+    const refusal = bindMutationsToPlan(
+      changeLine,
+      [changelogRender("changelog-render")],
+      new Map(),
+    );
+    expect(refusal).not.toBeNull();
+    expect(refusal).toContain("changelog-render");
+    expect(refusal).toContain("no intent");
+  });
+
+  it("binds under absent options — the plan-derived defaults are the declared bytes", () => {
+    const planned = plannedChangelog(changeLine);
+    expect(
+      bindMutationsToPlan(
+        changeLine,
+        [changelogRender("changelog-render")],
+        intentsOf([["changelog-render", planned]]),
+      ),
+    ).toBeNull();
+  });
+
+  it("refuses the contradiction before the attempt opens — a refused outcome naming the mutation, never a record", () => {
+    const assembly = freshAssembly();
+    const outcome = assembly.engine.run(
+      runRequest(liveWorld(), lineId, [beta], renderDeclaration("the wrong bytes\n")),
+    );
+    expect(outcome.kind).toBe("refused");
+    if (outcome.kind !== "refused") throw new Error("expected a refused outcome");
+    expect(outcome.handle).toBeNull();
+    expect(outcome.detail).toContain("changelog-render");
+    expect(outcome.detail).toContain("#291");
   });
 });

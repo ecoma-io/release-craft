@@ -51,14 +51,13 @@ import type {
   UpdaterFs,
 } from "@ecoma-io/release-craft/execution";
 import {
-  extract,
+  changelogOf,
   plan as planRelease,
   renderChangelog,
-  type ChangelogEntry,
   type ChangelogInput,
+  type ChangelogOptions,
   type ChangelogSection,
   type OperatorIntent,
-  type ParsedCommit,
   type PlanningInput,
 } from "@ecoma-io/release-craft/planner";
 
@@ -97,10 +96,10 @@ export interface VersionMutationDriver {
    * builds, with the declaration carriage below. */
   readonly engine: Engine;
   /** The run declarations: the version-bump and changelog-render
-   * mutations, their intents, the changelog artifact producer, and the
-   * driver's own memory updater seam. */
+   * mutations, their intents, the declared changelog projection options,
+   * the changelog artifact producer, and the driver's own memory updater
+   * seam. */
   readonly declarations: RunDeclarations;
-  /** The line the declarations drive. */
   readonly lineId: string;
   /** The planned tag of the driven line — the release's own name. */
   readonly tag: string;
@@ -111,15 +110,6 @@ export interface VersionMutationDriver {
    * and the release body. */
   readonly changelog: ChangelogInput;
 }
-
-/** One parsed commit → one changelog note: the recorded words, verbatim. */
-const toEntry = (commit: ParsedCommit): ChangelogEntry => ({
-  type: commit.type ?? "chore",
-  subject: commit.subject,
-  ...(commit.scope !== undefined ? { scope: commit.scope } : {}),
-  ...(commit.breaking ? { breaking: true } : {}),
-  id: commit.sha,
-});
 
 /**
  * Opens the version-carrying driver over the opened git binding, the
@@ -160,23 +150,20 @@ export const openVersionMutationDriver = (
     return null;
   }
   const version = plannedBump.version;
-  // The notes are the extraction's recorded words — self-references
-  // already excluded, exactly as the engine's own plan excludes them —
-  // re-read from the input's commits, never from the plan's change set
-  // (issue #291).
-  const extraction = extract(input.repository.commits, input.policy);
-  const changelog: ChangelogInput = {
-    versions: [
-      {
-        version,
-        ...(options.date !== undefined ? { date: options.date } : {}),
-        entries: extraction.commits.map(toEntry),
-      },
-    ],
-    sections: options.sections ?? [],
+  // The changelog bytes are the plan's recorded projection (issue #291):
+  // the version the plan mints and the change set's own words (type,
+  // subject, scope, breaking, id) rendered under the caller's declared
+  // options — never re-extracted from the input, so the driver's render
+  // is byte-identical to the engine's plan-bound projection, and the
+  // pre-walk binding (issue #289's row) accepts the produce by
+  // construction.
+  const changelogOptions: ChangelogOptions = {
+    ...(options.date !== undefined ? { date: options.date } : {}),
+    ...(options.sections !== undefined ? { sections: options.sections } : {}),
     ...(options.repository !== undefined ? { repository: options.repository } : {}),
     ...(options.existing !== undefined ? { existing: options.existing } : {}),
   };
+  const changelog: ChangelogInput = changelogOf([planLine], changelogOptions);
   // The declared mutations, anchored before the commit stage: the
   // completion's commit door carries their produced bytes over the
   // recorded base, and the tag that follows names the committed tree.
@@ -244,6 +231,7 @@ export const openVersionMutationDriver = (
     ],
     mutations,
     mutationIntents,
+    changelog: changelogOptions,
     producers,
     updaterFs,
   };

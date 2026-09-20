@@ -550,7 +550,16 @@ const streamLine: PlanLine = {
       movesPointer: false,
     },
   ],
-  changes: [{ id: "feat-a", lineage: [], type: "feat", bump: "minor" }],
+  changes: [
+    {
+      id: "feat-a",
+      lineage: [],
+      type: "feat",
+      subject: "adds the feature",
+      breaking: false,
+      bump: "minor",
+    },
+  ],
   propagation: { edges: [], order: [], notMoved: [] },
   preconditions: [],
   artifacts: ["changelog"],

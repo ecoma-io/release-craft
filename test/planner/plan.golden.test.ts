@@ -290,6 +290,9 @@ function planLineOf(world: PlannedWorld, lineId: string): PlanLine {
       id: parsed.change?.id ?? parsed.sha,
       lineage: [parsed.change?.lineage.originCommit ?? parsed.sha],
       type: parsed.type ?? "untyped",
+      subject: parsed.subject,
+      ...(parsed.scope !== undefined ? { scope: parsed.scope } : {}),
+      breaking: parsed.breaking,
       bump,
     };
   });

@@ -17,7 +17,10 @@
  * them within their type's section (§3.4) — classified as a
  * `POLICY DIFFERENCE` in the compatibility matrix's breaking-placement
  * row (issue #293); the baseline's `##`-level section-heading observation
- * versus these `###` sections is the open question [#305]. Row 4 of the
+ * versus these `###` sections was corrected in the baseline's §3.1 in
+ * the change that bound the renderer's plan-derived words (issue #305:
+ * the baseline now observes `###` sections, matching this module's
+ * render). Row 4 of the
  * release-model compatibility matrix adapts the format —
  * "same output format, internally owned template", so the template lives
  * here, byte-exact, not in an external preset dependency.
@@ -28,8 +31,9 @@
  *   the tests beside this file pin it by double-render and by rendering
  *   onto the render's own output (the idempotence half);
  * - no clock, no environment, no filesystem, no network — the module
- *   imports nothing at all, so no ambient value can leak into the bytes.
- *   A date stamp (`date`) and a release link (`url`) are declared per
+ *   imports nothing at runtime (a single type-only import of the plan's
+ *   line type, erased before emit), so no ambient value can leak into the
+ *   bytes. A date stamp (`date`) and a release link (`url`) are declared per
  *   version, never read; author attribution is deliberately omitted
  *   (issue #206: "attribution is recorded evidence or omitted" — the plan
  *   records no actor, so an ambient git config read would be the one way
@@ -48,6 +52,7 @@
  * offending field — the planner's surface-the-violation posture, never a
  * malformed bullet rendered silently.
  */
+import type { PlanLine } from "./types.js";
 
 /** One rendered note — the change set's member projected for the changelog.
  * The caller builds it from recorded evidence (the plan plus the extraction
@@ -137,6 +142,75 @@ export class InvalidChangelogInputError extends Error {
     this.name = "InvalidChangelogInputError";
   }
 }
+/** The host-declared projection options (`changelogOf`): exactly the
+ * `ChangelogInput`'s world-declared fields, kept apart from the
+ * plan-derived half so the bytes' WHAT (the recorded change set) and HOW
+ * (date, sections, repository, existing — the caller's presentation,
+ * #217's boundary) are never confused. The declared `date` is rendered in
+ * the version heading, never read from a clock. */
+export interface ChangelogOptions {
+  /** The declared release date, rendered in every projected version's
+   * heading as release-please does (`(YYYY-MM-DD)`). */
+  readonly date?: string;
+  /** The declared type→section mapping, in render order. */
+  readonly sections?: readonly ChangelogSection[];
+  /** The declared repository base URL for commit links. */
+  readonly repository?: string;
+  /** The existing `CHANGELOG.md` bytes the update prepends into. */
+  readonly existing?: string;
+  /** The declared release link, rendered as `## [version](url)`. */
+  readonly url?: string;
+}
+
+/** The plan-derived changelog input (issues #291, #206): the projection of
+ * the recorded plan's change set — one version per line, in line order,
+ * the line's stable target first, else its first prerelease stream; a
+ * line with neither contributes no version (the whole-plan pass over
+ * lines with nothing to render is not a malformed byte). Entries come
+ * straight from the plan's recorded change members — type, subject,
+ * scope, breaking, id — the renderer's words, never re-extracted from the
+ * repository input: the bytes stay a pure deterministic function of the
+ * plan plus the declared options. */
+export const changelogOf = (
+  lines: readonly PlanLine[],
+  options: ChangelogOptions = {},
+): ChangelogInput => {
+  const versions: ChangelogVersion[] = [];
+  for (const line of lines) {
+    const stable = line.stable;
+    const firstStream = line.streams[0];
+    if (stable === null && firstStream === undefined) {
+      continue;
+    }
+    const version =
+      stable === null
+        ? firstStream === undefined
+          ? undefined
+          : firstStream.version.toString()
+        : stable.version;
+    if (version === undefined) {
+      continue;
+    }
+    versions.push({
+      version,
+      ...(options.date !== undefined ? { date: options.date } : {}),
+      ...(options.url !== undefined ? { url: options.url } : {}),
+      entries: line.changes.map((change) => ({
+        type: change.type,
+        subject: change.subject,
+        ...(change.scope !== undefined ? { scope: change.scope } : {}),
+        ...(change.breaking ? { breaking: true } : {}),
+        id: change.id,
+      })),
+    });
+  }
+  return {
+    versions,
+    sections: options.sections ?? [],
+    ...(options.repository !== undefined ? { repository: options.repository } : {}),
+    ...(options.existing !== undefined ? { existing: options.existing } : {}),
+  };
+};
 
 /** The file header, written on creation and kept in place on prepend —
  * release-please's first-creation shape (§3.5). */

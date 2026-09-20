@@ -255,7 +255,14 @@ describe("M-08 through the door — the rc mint on main beside the stable patch"
     });
     expect(stream.version.toString()).toBe("2.4.0-rc.1");
     expect(mainLine.changes).toEqual([
-      { id: "m08-b", lineage: ["m08-b"], type: "feat", bump: "minor" },
+      {
+        id: "m08-b",
+        lineage: ["m08-b"],
+        type: "feat",
+        subject: "the plugin surface",
+        breaking: false,
+        bump: "minor",
+      },
     ]);
     // The operator's rc demand on the stable-only line is a recorded refusal
     // naming the declared posture — never an exception, never a fallback.
@@ -279,7 +286,14 @@ describe("M-08 through the door — the rc mint on main beside the stable patch"
     expect(libLine.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
     expect(libLine.streams).toEqual([]);
     expect(libLine.changes).toEqual([
-      { id: "m08-fix", lineage: ["m08-fix"], type: "fix", bump: "patch" },
+      {
+        id: "m08-fix",
+        lineage: ["m08-fix"],
+        type: "fix",
+        subject: "the stable-only fix",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     expect(assembled.lines.map((entry) => entry.lineId)).toEqual(["main", "1.9"]);
     expect(mainLine.propagation.edges).toEqual([]);
@@ -360,7 +374,15 @@ describe("PL-07 through the door — the withheld commit pins the range, the unf
     const minted = planLineFor(outcome, "1.9");
     expect(minted.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
     expect(minted.changes).toEqual([
-      { id: "pl7-cli", lineage: ["pl7-cli"], type: "fix", bump: "patch" },
+      {
+        id: "pl7-cli",
+        lineage: ["pl7-cli"],
+        type: "fix",
+        scope: "cli",
+        subject: "the released-prefix fix",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     // The withheld surface is two-fold (D18, PL-07): the decision record
     // carries the raw commits, and the plan's persisted explanation curates
@@ -706,7 +728,14 @@ describe("M-10 through the door — the renamed line releases normally", () => {
     const renamed = planLineFor(outcome, "1.9-lts");
     expect(renamed.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
     expect(renamed.changes).toEqual([
-      { id: "m10r-fix", lineage: ["m10r-fix"], type: "fix", bump: "patch" },
+      {
+        id: "m10r-fix",
+        lineage: ["m10r-fix"],
+        type: "fix",
+        subject: "the lts fix",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     expect(plannedOf(outcome).plan.lines.map((entry) => entry.lineId)).toEqual(["1.9-lts"]);
   });

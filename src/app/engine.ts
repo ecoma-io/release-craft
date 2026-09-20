@@ -1178,17 +1178,20 @@ export const createEngine = (ports: EnginePorts, config: AssemblyConfig): Engine
         null,
       );
     }
-    // Issue #289's pre-walk row: the plan is the WHAT — a mutation that
-    // reserves the plan-bound `version-bump` id must produce exactly the
-    // plan's recorded version bytes, and the id over a line that plans no
-    // version has nothing to bind. The bind verifies, it never invents
-    // (ADR-0007 decision 2); refusing before the attempt opens keeps the
-    // contradiction out of every record — no start, no claim, no ledger
-    // row names a mutation the plan did not sanction.
+    // Issue #289's pre-walk row, completed for changelog-render by #291:
+    // the plan is the WHAT — a mutation that reserves a plan-bound id
+    // (`version-bump`, `changelog-render`) must produce exactly the plan's
+    // recorded bytes, the changelog under the caller's declared options
+    // (`declarations.changelog`), and the version-bump id over a line that
+    // plans no version has nothing to bind. The bind verifies, it never
+    // invents (ADR-0007 decision 2); refusing before the attempt opens
+    // keeps the contradiction out of every record — no start, no claim,
+    // no ledger row names a mutation the plan did not sanction.
     const mutationBinding = bindMutationsToPlan(
       planLine,
       request.declarations?.mutations,
       request.declarations?.mutationIntents,
+      request.declarations?.changelog,
     );
     if (mutationBinding !== null) {
       return refusedOutcome(mutationBinding, planId, null);

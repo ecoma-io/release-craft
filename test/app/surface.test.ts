@@ -213,6 +213,7 @@ function render(violations: readonly Violation[]): string[] {
 describe("obligation 2 — the surface is doors and records, never a store or a primitive", () => {
   it("the boundary barrel's runtime exports are exactly the contract's closed set", () => {
     expect(Object.keys(app).sort()).toStrictEqual([
+      "CHANGELOG_RENDER_MUTATION_ID",
       "InvalidAssemblyConfigError",
       "MemoryRecordSink",
       "ReleasePRScopeError",
@@ -224,6 +225,7 @@ describe("obligation 2 — the surface is doors and records, never a store or a 
       "claimScopeForLine",
       "openReleasePRGate",
       "parseIdentityClaim",
+      "plannedChangelog",
       "plannedChannelMoves",
       "plannedVersionBump",
       "renderReleasePRProjection",
