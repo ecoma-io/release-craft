@@ -159,8 +159,9 @@ function parseProtocol(argv) {
 /**
  * The action metadata's declared input keys (phase 13 contract §2.3's
  * table, verbatim) — the closed inventory the composite maps onto this
- * argv protocol (`working-directory` rides the step's own cwd and reaches
- * no flag here). The runner injects every `with:` key — declared or not —
+ * argv protocol (`working-directory` rides the step's own cwd and
+ * `claims-fetch` rides the fetch composite step's own gated `if:` — phase
+ * 13 §2.9 — so both reach no flag and no argv here).
  * as an `INPUT_<NAME>` environment variable into this step (documented
  * runner behavior), so a misspelled key (`intent:` for `intents:`)
  * arrives as an unknown ambient name while the declared input's default
@@ -188,6 +189,7 @@ const DECLARED_INPUTS = new Set([
   "max-retries",
   "changelog",
   "working-directory",
+  "claims-fetch",
 ]);
 
 /**

@@ -55,9 +55,11 @@ import { resolve } from "node:path";
 
 const ACTION_FILE = "action.yml";
 
-/** §2.3's input inventory, row by row: the demanded four carry no default
- * (their omission must stop the step), the optional five each declare one. */
-const DEMANDED_INPUTS = ["world", "line", "actor", "tag-namespaces"];
+/** §2.3's input inventory, row by row: the demanded five carry no default
+ * (their omission must stop the step — `claims-fetch` most of all: an
+ * undeclared fetch posture would be the unenforced precondition returning
+ * by omission), the optional five each declare one. */
+const DEMANDED_INPUTS = ["world", "line", "actor", "tag-namespaces", "claims-fetch"];
 const OPTIONAL_INPUTS = ["intents", "repo", "max-retries", "changelog", "working-directory"];
 
 /** The invocation step's id — the one the `outputs:` declaration reads. */
@@ -197,7 +199,7 @@ export function analyzeActionMetadata(source) {
     }
   }
 
-  // — the input inventory, exactly §2.3's nine rows —
+  // — the input inventory, exactly §2.3's ten rows —
   const inputsStart = lines.findIndex((line) => /^inputs:\s*$/.test(line));
   const runsStart = lines.findIndex((line) => /^runs:\s*$/.test(line));
   // The block ends at the NEXT top-level key (outputs: sits between inputs:
