@@ -4,7 +4,14 @@
 // `git tag --no-sign`, the records are local CAS ref appends, and nothing
 // in the engine names a remote. This script is the workflow's own next
 // step, not an Action surface: it pushes exactly the refs the run minted
-// locally — the pairs of the snapshot diff — and nothing else.
+// that origin does not already carry at the same sha — the snapshot
+// diff's pairs, filtered against a fresh `git ls-remote` — and nothing
+// else. The filter is what keeps the Action's `claims-fetch` leg (issue
+// #237) honest here: the register's untouched refs the fetch materialized
+// mid-run are origin's own refs at origin's own shas, so a diff against a
+// before-state captured pre-fetch would count them as new; the remote
+// read carries no pair origin already holds, and the run actually pushed
+// is the mint alone.
 //
 //     node scripts/dogfood/publish-mint.mjs --local-before <file>
 //
@@ -25,6 +32,14 @@
 // from the mint, is a fault: an envelope claiming a mint the substrate
 // does not carry is never published over.
 //
+// The snapshot the diff reads is the before-state of the pre-invocation
+// substrate (the workflow's snapshot step runs BEFORE the invocation, so
+// the fetched register is not in it). The remote filter therefore closes
+// the same gap the invocation's fetch opens: the register tip the run's
+// compare-and-set append moved is a child of origin's tip and differs
+// from it, so it is pushed fast-forward; every OTHER fetched ref, at
+// origin's own sha, is dropped — never pushed, never counted as a mint.
+//
 // The credential travels exactly the in-tree precedent's class (phase 13
 // §2.8, `src/adapters/github/remote-git.ts`): an inline credential helper
 // answering from the spawned git's own child environment, behind the
@@ -34,8 +49,13 @@
 // `GIT_TERMINAL_PROMPT=0` so a remote that would prompt fails instead of
 // hanging. Imports `node:` modules only.
 import { spawnSync } from "node:child_process";
-
-import { currentRefs, mintedPairs, readSnapshot, parseForEachRef } from "./refs-snapshot.mjs";
+import {
+  currentRefs,
+  mintedPairs,
+  readSnapshot,
+  parseForEachRef,
+  parseLsRemote,
+} from "./refs-snapshot.mjs";
 
 /** The usage fault's exit (phase 12 §3.2, inherited). */
 const EXIT_USAGE = 64;
@@ -131,7 +151,27 @@ try {
       throw new Error("a published envelope must name the minted tag as a nonempty string");
     }
     const before = readSnapshot(localBeforePath, parseForEachRef);
-    const minted = mintedPairs(before, currentRefs("."));
+    // The before-state predates the fetch leg (the snapshot step runs
+    // before the invocation), so the diff alone would count the fetched
+    // register — origin's own refs — as minted. A fresh remote read
+    // narrows the push to pairs origin does not already carry at the same
+    // sha: the register tip the run's append moved (a child of origin's
+    // tip, fast-forwardable), the minted tag, and the run's own records —
+    // never the fetch's untouched refs. Same credential class as the push
+    // below, so a private origin reads as it pushes.
+    const remote = parseLsRemote(
+      git([
+        "-c",
+        "credential.helper=",
+        "-c",
+        `credential.helper=${CREDENTIAL_HELPER}`,
+        "ls-remote",
+        "origin",
+      ]),
+    );
+    const minted = mintedPairs(before, currentRefs(".")).filter(
+      (pair) => remote.get(pair.ref) !== pair.sha,
+    );
     if (minted.length === 0) {
       throw new Error(
         "the run rendered published and minted no ref — a publish without a substrate is not a publish",

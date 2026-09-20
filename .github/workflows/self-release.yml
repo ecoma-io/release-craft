@@ -10,15 +10,18 @@ name: self-release
 # journey is decided empty). This workflow is the real leg beside it: the
 # same caller-side world closure, the same pinned Action, the same in-job
 # judgment — plus the caller-side steps the dogfood does not carry: the
-# claims-register integration, a read that builds the run's local register
-# on the shared tip origin already carries (#274, decision-log D65); the
 # publish step that carries the run's local mint to origin — the one step
 # the dogfood refuses by design, a remote write — and the origin
 # verification that reads origin back against the run's claims
 # (`scripts/dogfood/publish-mint.mjs`, `scripts/dogfood/verify-origin.mjs`).
+# The shared claims register the run claims against is materialized by the
+# Action's own `claims-fetch` step (issue #237): the fetch rides the same
+# caller-side substrate posture the workflow's own step always exercised
+# (#274, decision-log D65), now a declared action input instead of a
+# workflow step.
 #
-# The Action's surface does not grow to make this possible: no token input
-# exists (§2.8's decided-empty journey; the input inventory is closed and
+# The Action's surface carries no token input through this reliance: §2.8's
+# decided-empty journey is untouched (the input inventory is closed and
 # unknown inputs are refused — #191, #252), so the credential is the
 # workflow's own, step-scoped through `env:` and spent by the publish
 # script exactly the in-tree precedent's class (phase 13 §2.8,
@@ -106,33 +109,34 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # The shared claims register is integrated before the run (#274,
-      # decision-log D65): the register is ONE ref per release line —
-      # `refs/release-craft/claims/<sha256 of the lineId>` — so its refname
-      # is stable across every release on the line, while the checkout
-      # materializes no `refs/release-craft/**` (branches and tags only). A
-      # register built from empty has no ancestry with origin's tip, and the
-      # publish step's atomic, never-forced push then dies non-fast-forward,
-      # taking the minted tag down with it (run 34625474965's loss). The
-      # fetch builds the local register on the shared tip instead: the run's
-      # compare-and-set append lands a child of origin's tip, the mint's
-      # push of that ref is a fast-forward, and — the engine never releasing
-      # a completed claim — the register accumulates one record per released
-      # version, the cross-checkout released-version record (a version-
-      # scoped claim excludes no different version, so the next release
-      # acquires normally). The world closure declares none of the fetched
-      # history — a register commit is off the line's ancestry — so the
-      # run's plan identity is unchanged, and the planner stays pure: this
-      # is caller-side substrate posture, not a read the engine learns.
-      # Unauthenticated by the same posture the snapshot step below already
-      # proves: the checkout keeps no credential and the repository is
-      # public, so this read needs no token and none exists to leak.
+      # The shared claims register (#274, decision-log D65) is materialized
+      # by the Action's own fetch leg, not a workflow step (issue #237): a
+      # demanded `claims-fetch: "true"` makes the composite fetch the
+      # register's one-ref-per-line namespace into the checkout before the
+      # invocation — `git fetch --no-tags origin
+      # '+refs/release-craft/claims/*:refs/release-craft/claims/*'`; a fetch
+      # failure fails the job before invoke, so an unobservable namespace
+      # can never read as an unclaimed line. The register is ONE ref per
+      # release line — `refs/release-craft/claims/<sha256 of the lineId>` —
+      # so its refname is stable across every release on the line, while
+      # the checkout materializes no `refs/release-craft/**` (branches and
+      # tags only). Building the local register on the shared tip keeps the
+      # run's compare-and-set append a child of origin's tip: the mint's
+      # push of that ref is a fast-forward, and — the engine never
+      # releasing a completed claim — the register accumulates one record
+      # per released version, the cross-checkout released-version record (a
+      # version-scoped claim excludes no different version, so the next
+      # release acquires normally). The world closure declares none of the
+      # fetched history — a register commit is off the line's ancestry — so
+      # the run's plan identity is unchanged, and the planner stays pure:
+      # this is caller-side substrate posture, not a read the engine
+      # learns. Unauthenticated by the same posture the snapshot step
+      # below proves: the checkout keeps no credential and the repository
+      # is public, so this read needs no token and none exists to leak.
       # `--no-tags` keeps the fetch exactly the claims namespace — the tag
       # set the world closure declares stays the checkout's. Two concurrent
-      # checkouts still race — #237 stays declared; this makes SEQUENTIAL
-      # releases publishable only.
-      - name: Integrate the shared claims register
-        run: git fetch --no-tags origin '+refs/release-craft/claims/*:refs/release-craft/claims/*'
+      # checkouts still race — #237's residual, named in phase 13 §2.9;
+      # the concurrency group serializes SEQUENTIAL releases only.
 
       # The closure, the publish script and the verify script import
       # `node:` modules only — zero installs — but the interpreter is
@@ -151,11 +155,16 @@ jobs:
       # The snapshots every later row reads: the remote's refs, hashed, and
       # the local substrate, listed — the before-state the publish step
       # diffs to choose what to push and the verify step diffs to know what
-      # must have landed. This step runs after the integration step above,
-      # so the listed substrate carries the shared claims register's tip;
-      # the publish diff therefore sees the tip the run's append moved and
-      # pushes it fast-forward (#274). The remote is public; this read needs
-      # no credential, and none exists to leak into it.
+      # must have landed. This step runs BEFORE the invocation, so the
+      # listed substrate does not carry the register the fetch leg
+      # materializes mid-run; `publish-mint` therefore filters its diff
+      # against a fresh `git ls-remote` and pushes only the refs the run
+      # minted that origin does not already carry at the same sha — the
+      # fetched register's untouched refs are origin's own refs, never
+      # counted as a mint. The run's register append lands a child of
+      # origin's tip (the fetch leg's whole point), so the mint's push of
+      # that ref stays a fast-forward (#274). The remote is public; this
+      # read needs no credential, and none exists to leak into it.
       - name: Record the snapshots the verification reads
         run: |
           git ls-remote origin > remote-before.txt
@@ -163,7 +172,8 @@ jobs:
           git for-each-ref --format='%(refname) %(objectname)' > local-refs-before.txt
 
       # A consumer's invocation, spelled as the dogfood spells it — the
-      # same eight the dogfood forwards, plus the declared changelog flag —
+      # same nine the dogfood forwards (its eight, plus the declared
+      # changelog flag and the claims-fetch leg this real leg enables) —
       # the every-tag namespace root as ONE
       # EMPTY LINE, the FULL 40-character SHA this workflow certifies
       # (§2.1: one commit, one behavior; re-pinned by reviewed commits, as
@@ -171,10 +181,13 @@ jobs:
       # identity — §2.4's own spelling ("the workflow author writes
       # `actor: ${{ github.actor }}` when the triggering identity is their
       # declared word"): a bot dispatch records the token identity, never a
-      # human maintainer's name.
+      # human maintainer's name. `claims-fetch: "true"` is this
+      # workflow's declared fetch posture (issue #237, PR #370): the
+      # register the run claims against is materialized by the Action's
+      # composite step before invoke, fail-closed.
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@a00c9e8db4672da9e3838d4b8c10f9340433e118
+        uses: ecoma-io/release-craft@e3822a46f32348ba3b6365221ed9781fc9bd3eb0
         with:
           world: world.json
           line: main
@@ -184,6 +197,7 @@ jobs:
           repo: .
           max-retries: "0"
           changelog: "true"
+          claims-fetch: "true"
 
       # — the publish — the one step the dogfood refuses by design. The
       # authority to push is the envelope's rendered kind (never the
