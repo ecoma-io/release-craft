@@ -548,10 +548,11 @@ export function judge(options) {
     if (typeof releaseUrl === "string" && releaseUrl !== "") {
       // The live publication leg's attestation (#336): the URL must be the
       // GitHub releases page for THIS tag on THIS repository — the exact
-      // shape the API's html_url carries — so a URL for a different tag or
-      // a different owner is a finding, not a pass.
+      // shape the API's html_url carries (`/releases/tag/<tag>`, singular,
+      // unlike the API's `/releases/tags/<tag>` read path) — so a URL for
+      // a different tag or a different owner is a finding, not a pass.
       if (
-        releaseUrl.startsWith("https://github.com/ecoma-io/release-craft/releases/tags/") &&
+        releaseUrl.startsWith("https://github.com/ecoma-io/release-craft/releases/tag/") &&
         releaseUrl.endsWith(`/${tag}`)
       ) {
         pass(

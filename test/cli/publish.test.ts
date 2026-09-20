@@ -56,10 +56,18 @@ interface PublicationStub {
   readonly played: Promise<void>;
   readonly players: readonly string[];
   setRefHead(sha: string): void;
+  /** Arm the stub's missing-tag mode: the git-ref read answers 404
+   *  until the create lands — the wire of a tag the origin does not
+   *  hold yet, where the create itself mints it at the sent commitish. */
+  setMissing(): void;
   close(): Promise<number>;
 }
 
-const openStub = (): PublicationStub => {
+/** Open the wire process. `expected` is the full played length for the
+ *  armed mode (6 — issue #351's read-before-write sequence) unless the
+ *  test arms `setMissing()`, which adds the repository probe and lands
+ *  a 7-request wire (release, refs, repo, POST, refs, release, refs). */
+const openStub = (expected = PLAYED): PublicationStub => {
   const child: ChildProcess = spawn(process.execPath, [STUB_SCRIPT], {
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -99,7 +107,7 @@ const openStub = (): PublicationStub => {
       const played = playedMatch?.[1];
       if (played !== undefined) {
         players.push(played);
-        if (players.length === PLAYED) {
+        if (players.length === expected) {
           playedResolve();
         }
       }
@@ -130,6 +138,9 @@ const openStub = (): PublicationStub => {
     },
     setRefHead(sha: string) {
       child.stdin?.write(`ref ${sha}\n`);
+    },
+    setMissing() {
+      child.stdin?.write("missing\n");
     },
     async close() {
       if (child.exitCode === null) {
@@ -232,6 +243,104 @@ describe("§2.8 — the publish leg's live wire (issue #336)", () => {
         expect(stub.players).toStrictEqual([
           `GET /repos/${OWNER}/${REPO}/releases/tags/${TAG}`,
           `GET /repos/${OWNER}/${REPO}/git/refs/tags/${TAG}`,
+          `POST /repos/${OWNER}/${REPO}/releases`,
+          `GET /repos/${OWNER}/${REPO}/git/refs/tags/${TAG}`,
+          `GET /repos/${OWNER}/${REPO}/releases/tags/${TAG}`,
+          `GET /repos/${OWNER}/${REPO}/git/refs/tags/${TAG}`,
+        ]);
+      } finally {
+        fixture.cleanup();
+        await stub.close();
+      }
+    },
+  );
+
+  it(
+    "a --publish run creates the tag with the release when origin holds none — the missing tag is the create's own to make",
+    { timeout: 45_000 },
+    async () => {
+      const stub = openStub(7);
+      stub.setMissing();
+      const port = await stub.ready;
+      const fixture = createTempRepo();
+      try {
+        const git = fixture.git;
+        const heads = seedLineHeads(git);
+        const channels = new GitChannelStore(fixture.repo);
+        for (const channel of standingChannelStates()) {
+          const outcome = channels.applyTransition({
+            channelId: channel.id,
+            from: null,
+            to: { line: channel.target.line, version: channel.target.version },
+          });
+          if (outcome.kind !== "applied") {
+            throw new Error(`fixture broken: seeding channel ${channel.id} got ${outcome.kind}`);
+          }
+        }
+        writeFileSync(join(fixture.repo, "CHANGELOG.md"), "# Changelog\n");
+        git(["add", "CHANGELOG.md"]);
+        git(["commit", "-m", "ecoma: changelog"]);
+        const head = git(["rev-parse", "HEAD"]).trim();
+        const headsWithChangelog = { ...heads, main: head };
+        // The stub answers 404 here until the create lands; arming the
+        // recorded head still matters — the post-create ref re-assert
+        // and the verify leg read it back, and the tag GitHub mints must
+        // answer the recorded SHA, or the re-assert refuses.
+        stub.setRefHead(head);
+        git(["remote", "add", "origin", ORIGIN]);
+        const child = runCli(
+          [
+            "run",
+            "--assembly",
+            "git",
+            "--repo",
+            fixture.repo,
+            "--tag-namespace",
+            "",
+            "--world",
+            "-",
+            "--actor",
+            "automation",
+            "--line",
+            "main",
+            "--changelog",
+            "--publish",
+            "--json",
+          ],
+          {
+            input: docBytes(gitDoc("main", [betaIntent], headsWithChangelog)),
+            env: {
+              GITHUB_TOKEN: "test-token",
+              GITHUB_API_URL: `http://127.0.0.1:${String(port)}`,
+              PATH: process.env.PATH ?? "",
+              HOME: process.env.HOME ?? "",
+            },
+          },
+        );
+        const release = await stub.created;
+        await stub.played;
+        expect(child.status).toBe(0);
+        expect(child.stderr).toBe("");
+        expect(cliJson(child)).toStrictEqual(
+          expect.objectContaining({
+            kind: "published",
+            tag: TAG,
+            releaseUrl: RELEASE_URL,
+          }),
+        );
+        expect(release.tag_name).toBe(TAG);
+        expect(release.target_commitish).toBe(head);
+        expect(release.body).toBe("# Changelog\n");
+        expect(git(["rev-parse", `refs/tags/${TAG}`]).trim()).toBe(head);
+        // The wire: release read 404, git-ref read 404 (a tag origin
+        // does not hold), the repository probe (issue #176 — what makes
+        // the miss determinate), the create minting tag and release
+        // together, then the post-create re-assert, the verify leg's
+        // release read-back, and its own ref re-assert.
+        expect(stub.players).toStrictEqual([
+          `GET /repos/${OWNER}/${REPO}/releases/tags/${TAG}`,
+          `GET /repos/${OWNER}/${REPO}/git/refs/tags/${TAG}`,
+          `GET /repos/${OWNER}/${REPO}`,
           `POST /repos/${OWNER}/${REPO}/releases`,
           `GET /repos/${OWNER}/${REPO}/git/refs/tags/${TAG}`,
           `GET /repos/${OWNER}/${REPO}/releases/tags/${TAG}`,

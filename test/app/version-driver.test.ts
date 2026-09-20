@@ -108,15 +108,21 @@ describe("the version-carrying driver (issue #339)", () => {
           ...runRequest(liveWorld(), "main", [beta], driver.declarations),
           targets: { main: target },
         });
-        // The create's precondition (issue #338) reads the remote ref
-        // before any write: the non-syncing fixture holds no
-        // `5.0.0-beta.1` ref, so the completion refuses AT the
-        // publication door — after the commit and the mint, the rows
-        // this suite asserts.
-        expect(outcome.kind).toBe("refused");
+        // The publication door runs over the non-syncing fixture, and
+        // issue #338's amendment (#336's wiring) makes the missing tag
+        // the create's own to make at the recorded commit: the
+        // completion WRITES — the fake remote accepts the create — and
+        // the post-create re-assert refuses when the fixture's remote
+        // holds no tag ref (it never mints one). The refusal lands
+        // after the commit and the mint, the rows this suite asserts —
+        // one write behind it, the create the amendment gives the
+        // door.
         if (outcome.kind !== "refused") {
           throw new Error(`expected a refused outcome, got ${outcome.kind}`);
         }
+        // The refusal names the created release — the create landed, the
+        // re-assert refused over the fixture's tag-less remote.
+        expect(outcome.detail).toContain("was created, but");
         expect(outcome.detail).toContain("origin holds no tag");
 
         // The mint names the committed oid — the run's target, never the
@@ -234,7 +240,6 @@ describe("the version-carrying driver (issue #339)", () => {
         }
         expect(outcome.cause).toContain("write-verify");
         // No commit, no mint: nothing landed over the base.
-        expect(vertical.state.binding.refs.tags()).toStrictEqual([]);
         expect(vertical.state.binding.refs.tags()).toStrictEqual([]);
       });
     },

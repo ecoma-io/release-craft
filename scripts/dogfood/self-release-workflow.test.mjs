@@ -202,13 +202,14 @@ describe("the self-release workflow's law", () => {
       "intents",
       "line",
       "max-retries",
+      "publish",
       "repo",
       "tag-namespaces",
       "world",
       // working-directory stays at its declared default — the eight names
-      // phase 13 §2.3 declares, plus the #332 changelog declaration and
-      // the #237 claims-fetch posture this workflow demands, and nothing
-      // beside them
+      // phase 13 §2.3 declares, plus the #332 changelog declaration, the
+      // #237 claims-fetch posture, and the #336 publish leg this
+      // workflow arms, and nothing beside them
     ]);
   });
 });

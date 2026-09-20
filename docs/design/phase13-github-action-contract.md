@@ -665,9 +665,17 @@ same rules serve:
   for exactly that consumer), and an Action that pushed would be a second,
   unreviewed projection. The publish leg is the adapter's own projection —
   the approved one, composed over the API and this contract's row; the
-  remote push of the minted ref stays refused, the binding's
-  recorded-target truth being what the adapter asserts instead
-  ([§2.8](#28-the-tokens-journey-decided-empty)'s precondition, issue #338).
+  remote push of the minted ref stays refused. A tag the origin does not
+  hold is the create's own to make AT the recorded commit — the create
+  carries the recorded target as `target_commitish`, GitHub mints the
+  missing tag from the sent commitish ("Unused if the Git tag already
+  exists"), and the tag-at-recorded-SHA invariant issue #338 named is
+  enforced after the write it cannot precede: the post-create re-assert
+  (D89) and the verify leg's own re-assert (D91) both re-read the tag and
+  refuse anything but `proceed` — a tag existing at a different object, or
+  a target the transport cannot observe, refuses as before (#176's
+  discipline), and the satisfied-path refusal stands un-narrowed
+  ([§2.8](#28-the-tokens-journey-decided-empty)'s precondition series).
 
 - The org's `persist-credentials: false` law reaches this composite
   vacuously: it performs **no checkout at all** — the consumer's repository

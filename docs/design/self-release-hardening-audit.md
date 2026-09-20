@@ -436,6 +436,10 @@ not carried from §8 or §9.
   of _deletions_ that are main's later work. Neither the tenth `publish`
   input, nor the token env amendment, nor the judge's release attestation
   exists anywhere. Planning must not treat #336 as partially landed.
+  (**Superseded by §14**: PR #375 shipped the whole live leg — the tenth
+  `publish` input, the token env amendment, and the judge's release
+  attestation — at `92946cc`; this record is the historical pre-#375
+  state, kept verbatim against the "PR #337" name.)
 
 ### New ground truth this addendum records
 
@@ -530,6 +534,7 @@ recordedTarget` → `proceed`; 404 → `release-tag-missing` over an
 
 All 27 tracked issues reconciled against merged HEAD `b286796` (read-only;
 each verdict cites the owning source or the measured command output):
+| PARTIAL | #336 (engine half merged; Action leg unwired — PR #337 empty, superseded by §14: fully wired), #294 (changelog bytes digest-sealed on the driver path only), #291 (rendered changelog reachable via driver; `planLine.changes` shape unchanged), #289 (driver binds its mutations; host-declared corridors plan-blind), #237 (workflow-level fetch only) |
 
 | Verdict             | Issues                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -552,19 +557,19 @@ each verdict cites the owning source or the measured command output):
 
 ### Posture delta over §1–§3
 
-| Capability                                        | Was (§8/§9)                           | Now (merged HEAD `b286796`)                            |
-| ------------------------------------------------- | ------------------------------------- | ------------------------------------------------------ |
-| Version mutation (producer exists)                | branch (working tree)                 | main, merged + CI-verified (#339/#348)                 |
-| Changelog renderer (production caller)            | branch (working tree)                 | main, merged (driver tier)                             |
-| Release commit                                    | branch (working tree)                 | main, merged (real git)                                |
-| Commit→mint ordering                              | branch (working tree)                 | main, merged — verified ordering                       |
-| Publication port (engine half)                    | implemented + tested (fake transport) | unchanged — still fake-transport only                  |
-| Create carries `target_commitish` + tag gate      | absent (§8 claim)                     | present at HEAD (`publication.ts:429-441`, `:255-287`) |
-| Tag-gate TOCTOU / idempotent-ok skip              | unnamed                               | named, open — Phase 1 scope                            |
-| Live publish leg (REST transport + token ingress) | absent (#336)                         | absent — PR #337 empty, work not started               |
-| #307 adopted-updater visibility to commit door    | named                                 | verified filter (`engine.ts:589-624`) — open           |
-| Claims-register fetch (#237)                      | absent (workflow-level fetch only)    | unchanged — open                                       |
-| GitHub Release object ever created (any leg)      | none recorded                         | none recorded — unproven surface                       |
+| Capability                                        | Was (§8/§9)                           | Now (merged HEAD `b286796`)                                                    |
+| ------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ |
+| Version mutation (producer exists)                | branch (working tree)                 | main, merged + CI-verified (#339/#348)                                         |
+| Changelog renderer (production caller)            | branch (working tree)                 | main, merged (driver tier)                                                     |
+| Release commit                                    | branch (working tree)                 | main, merged (real git)                                                        |
+| Live publish leg (REST transport + token ingress) | absent (#336)                         | absent — PR #337 empty, work not started (superseded by §14: wired at 92946cc) |
+| Publication port (engine half)                    | implemented + tested (fake transport) | unchanged — still fake-transport only                                          |
+| Create carries `target_commitish` + tag gate      | absent (§8 claim)                     | present at HEAD (`publication.ts:429-441`, `:255-287`)                         |
+| Tag-gate TOCTOU / idempotent-ok skip              | unnamed                               | named, open — Phase 1 scope                                                    |
+| Live publish leg (REST transport + token ingress) | absent (#336)                         | absent — PR #337 empty, work not started                                       |
+| #307 adopted-updater visibility to commit door    | named                                 | verified filter (`engine.ts:589-624`) — open                                   |
+| Claims-register fetch (#237)                      | absent (workflow-level fetch only)    | unchanged — open                                                               |
+| GitHub Release object ever created (any leg)      | none recorded                         | none recorded — unproven surface                                               |
 
 ## 11. Re-audit addendum — the tag-gate closure (issue #351, this PR)
 
@@ -608,12 +613,11 @@ each verdict cites the owning source or the measured command output):
 
 ### Posture delta over §10
 
-| Capability                                  | Was (§10)                                   | Now (this PR)                                     |
-| ------------------------------------------- | ------------------------------------------- | ------------------------------------------------- |
-| Tag-gate TOCTOU / idempotent-ok skip        | named, open — Phase 1 scope                 | closed — re-assert on both `ok` paths (#351, D89) |
-| Post-create re-assert unreadable            | unnamed (the TOCTOU half)                   | `ambiguous` — resumable, idempotent read resolves |
-| Engine outcome mapping                      | refusals `refused`, indeterminate `blocked` | unchanged                                         |
-| Live publish leg (REST transport + ingress) | absent (#336)                               | absent — still the largest unproven surface       |
+| Capability | Was (§10) | Now (this PR) |
+| Live publish leg (REST transport + ingress) | absent (#336) | absent — still the largest unproven surface (superseded by §14: wired, not yet certified-exercised) |
+| Tag-gate TOCTOU / idempotent-ok skip | named, open — Phase 1 scope | closed — re-assert on both `ok` paths (#351, D89) |
+| Post-create re-assert unreadable | unnamed (the TOCTOU half) | `ambiguous` — resumable, idempotent read resolves |
+| Engine outcome mapping | refusals `refused`, indeterminate `blocked` | unchanged |
 
 ## 12. Re-audit addendum — the plan→mutation middle term (issue #289, this PR)
 
@@ -718,3 +722,59 @@ release-PR projection's body and `CHANGELOG.md` bytes change shape
 | ----------------------------------- | --------------------------------- | ---------------------------------------------------------------- |
 | Changelog content seal (#294)       | driver-path tree digest only      | tree digest + `content_sha256` byte seal, refused at publication |
 | Release-PR changelog content (#206) | renderer produced, PR hand-shaped | PR renders renderer bytes + plan words + digest line             |
+
+## 14. Re-audit addendum — the publish leg landed (issue #336, this PR)
+
+### What changed since §13
+
+- **PR #375 shipped the whole live leg** (`feat(core)` at `92946cc`): the
+  tenth `publish` input (default `"false"`, the one arming spelling
+  `"true"`), the `GITHUB_TOKEN: ${{ github.token }}` env row and the
+  `RC_PUBLISH`/`RC_CHANGELOG` forwarding in the invoke program, and the
+  judge's release attestation (the release URL checked against a created
+  Release once this leg runs; NOT ASSERTED without one). The §10 bullet's
+  "PR #337 empty" record described the pre-#375 state — superseded above,
+  kept verbatim for the history. This addendum's PR re-pins both
+  workflows to `92946cc`, arms the self-release's `publish: "true"`, and
+  closes #336.
+- **The create is the missing tag's own to make (issue #338 amended).**
+  The create gate's `tagRefVerdict` verdict on a 404 over an observable
+  repository — `release-tag-missing` — now PROCEEDS to the create instead
+  of refusing: the create carries `target_commitish: recordedTarget.target`,
+  GitHub mints a missing tag from the sent commitish ("Unused if the Git
+  tag already exists"), and the tag-at-recorded-SHA invariant #338 named
+  is enforced AFTER the write it cannot precede — the post-create
+  re-assert (§11 ground truth 2) and the verify leg's own re-assert both
+  re-read the tag and refuse on any divergence or unobservability. The
+  #338 hazard ("a target-less create mints at the default branch's HEAD")
+  never existed in this adapter — the create always carried the recorded
+  target (D87) — what #338 gated was the refusal itself; this PR narrows
+  it to the classes the invariant still needs.
+
+### New ground truth this addendum records
+
+1. **The refusal classes narrowed, not loosened.** `release-tag-missing`
+   survives on the satisfied path (§11 ground truth 1), in
+   `verifyRelease`, and in the post-create re-assert's "created, but …"
+   arm — the missing case is the create's own to make ONLY at the create
+   door, never a verify-time acceptance.
+2. **A tag the origin holds is still never rewritten.** The create runs
+   only when the gate saw a 404 over an observable repository (or
+   `proceed`); a 200-match routes through the satisfied path, a mismatch
+   refuses — GitHub's create over an existing tag stays unreachable from
+   this adapter.
+3. **The live leg is wired, not yet certified-exercised.** Certified
+   self-release runs so far executed the pre-#375 pin; a certified run
+   over this pin is the first exercise of the release-object mint, and
+   the judge's attestation flips from NOT ASSERTED only on that run's
+   evidence. This addendum records the mechanism and the narrowing; it
+   claims no certification.
+
+### Posture delta over §13
+
+| Capability                                  | Was (§13)                         | Now (this PR)                                                       |
+| ------------------------------------------- | --------------------------------- | ------------------------------------------------------------------- |
+| Live publish leg (REST transport + ingress) | absent — largest unproven surface | wired (PR #375), pinned + armed here — not yet certified-exercised  |
+| Missing-tag create (issue #338)             | refused at the create gate        | the create's own — target-bearing, re-asserted post-create + verify |
+| Workflow pins                               | pre-#375 SHAs                     | `92946cc` both workflows; self-release arms `publish: "true"`       |
+| Judge release attestation                   | NOT ASSERTED (no leg)             | wired — ASSERTED only on a certified run's Release evidence         |
