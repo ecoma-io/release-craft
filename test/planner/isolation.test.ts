@@ -153,10 +153,11 @@ function importViolations(file: string, text: string): Violation[] {
  * on the value read too (`const locale = Intl`), not only on
  * `Intl.DateTimeFormat` — a scan at the property-access granularity,
  * `process`'s, would let the namespace leak out as a value first.
- * Residual, stated rather than hidden: the scan judges names, not
- * calls — `value.localeCompare(other)` is a locale-sensitive read of
- * the same class and is not on the list yet, recorded here so the gap
- * stays a decision rather than an oversight. The gate fails closed: a
+ * Residual, stated rather than hidden: the two gaps recorded here are
+ * closed — the legacy `Date()` call is on the list, a clock read of
+ * the same class as `Date.now` and `new Date`, and so is
+ * `value.localeCompare(other)`, a locale-sensitive read of the same
+ * class as the toLocale* family. The gate fails closed: a
  * hit means the layer names the API, in code or in prose, and both are
  * refused.
  */
@@ -167,6 +168,7 @@ const FORBIDDEN_GLOBALS: readonly {
 }[] = [
   { token: "Date.now", pattern: /\bDate\.now\s*\(/, why: "clock read" },
   { token: "new Date", pattern: /\bnew\s+Date\s*\(/, why: "clock read via construction" },
+  { token: "Date()", pattern: /\bDate\s*\(/, why: "clock read via legacy call" },
   { token: "Math.random", pattern: /\bMath\.random\s*\(/, why: "randomness" },
   { token: "process", pattern: /\bprocess\s*[.[]/, why: "process or environment access" },
   { token: "globalThis", pattern: /\bglobalThis\b/, why: "global escape hatch" },
@@ -196,6 +198,7 @@ const FORBIDDEN_GLOBALS: readonly {
     pattern: /\btoLocaleLowerCase\s*\(/,
     why: "locale-sensitive read",
   },
+  { token: "localeCompare", pattern: /\blocaleCompare\s*\(/, why: "locale-sensitive read" },
 ];
 
 /** Name-and-shame scan: every forbidden global the file's text trips. */
@@ -379,7 +382,7 @@ describe("contract §4 A3 — the planner is an isolated layer", () => {
     const violations = render(scan(sideEffectViolations));
     expect(
       violations,
-      "the planner layer names no Date.now, no new Date, no Math.random, no process, no globalThis, no Intl and no toLocale* read — identical inputs must decide identically (invariant 2, §2.14)",
+      "the planner layer names no Date.now, no new Date, no Date(), no Math.random, no process, no globalThis, no Intl, no toLocale* read and no localeCompare — identical inputs must decide identically (invariant 2, §2.14)",
     ).toEqual([]);
   });
 
@@ -423,6 +426,21 @@ describe("contract §4 A3 — the planner is an isolated layer", () => {
         ),
       ),
     ).toEqual([]);
+  });
+
+  it("the gate bites: localeCompare and the legacy Date() call are refused (invariant 2, #299)", () => {
+    // The planted vectors: before these entries, a bare `Date()` — the
+    // legacy call spelling of the clock `Date.now` and `new Date`
+    // read — and `localeCompare`, the one locale-sensitive read of the
+    // toLocale* class the list still missed — passed the gate. One
+    // assertion per entry, so removing any single entry reddens exactly
+    // its own pin.
+    expect(render(sideEffectViolations("rogue.ts", "const d = Date();\n"))).toEqual([
+      "src/planner/rogue.ts names Date() — clock read via legacy call",
+    ]);
+    expect(render(sideEffectViolations("rogue.ts", "const order = a.localeCompare(b);\n"))).toEqual(
+      ["src/planner/rogue.ts names localeCompare — locale-sensitive read"],
+    );
   });
 
   it("the live tree stays clean with the locale entries active (invariant 2, #292)", () => {
