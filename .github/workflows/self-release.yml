@@ -172,22 +172,29 @@ jobs:
           git for-each-ref --format='%(refname) %(objectname)' > local-refs-before.txt
 
       # A consumer's invocation, spelled as the dogfood spells it — the
-      # same nine the dogfood forwards (its eight, plus the declared
-      # changelog flag and the claims-fetch leg this real leg enables) —
-      # the every-tag namespace root as ONE
+      # same ten the dogfood forwards (its eight, plus the declared
+      # changelog flag, the claims-fetch leg this real leg enables, and
+      # the publish leg that makes this the live self-release) — the
+      # every-tag namespace root as ONE
       # EMPTY LINE, the FULL 40-character SHA this workflow certifies
       # (§2.1: one commit, one behavior; re-pinned by reviewed commits, as
       # the dogfood's pin is). The actor is the dispatch's invoking
       # identity — §2.4's own spelling ("the workflow author writes
       # `actor: ${{ github.actor }}` when the triggering identity is their
       # declared word"): a bot dispatch records the token identity, never a
-      # human maintainer's name. `claims-fetch: "true"` is this
-      # workflow's declared fetch posture (issue #237, PR #370): the
+      # human maintainer's name. `publish: "true"` arms the live
+      # publication leg (PR #375's input, re-pinned here once more by
+      # this review): the release is created over the recorded target at
+      # the default-branch tip this run certifies — a tag the origin
+      # does not hold yet is the create's own to make at the recorded
+      # commit (issue #336's wiring, the #338 amendment), re-asserted
+      # before the published envelope lands. `claims-fetch: "true"` is
+      # this workflow's declared fetch posture (issue #237, PR #370): the
       # register the run claims against is materialized by the Action's
       # composite step before invoke, fail-closed.
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@e3822a46f32348ba3b6365221ed9781fc9bd3eb0
+        uses: ecoma-io/release-craft@92946cc8c277f97960eefdcceab3e33af3f47842
         with:
           world: world.json
           line: main
@@ -197,6 +204,7 @@ jobs:
           repo: .
           max-retries: "0"
           changelog: "true"
+          publish: "true"
           claims-fetch: "true"
 
       # — the publish — the one step the dogfood refuses by design. The

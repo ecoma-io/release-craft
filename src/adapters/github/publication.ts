@@ -29,14 +29,19 @@
  *   race-loss the idempotent re-run resolves; issue #178), and
  *   the create's 404 is the unobservable repository (#176) — a
  *   determinate non-land, never the retryable class;
- * - the create's precondition (issue #338): the remote git ref for the
- *   tag is read before any write — a ref origin does not hold is
- *   `refused("release-tag-missing")` over an observable repository (the
- *   create-release API otherwise creates a missing tag at the default
- *   branch's HEAD, the wrong-commit hazard), a ref answering a
- *   different object is `refused("release-tag-mismatch")`, and the
- *   create carries the recorded target as `target_commitish` — the
- *   create never fires unverified;
+ * - the create's precondition (issue #338, as amended by issue #336's
+ *   wiring PR): the remote git ref for the tag is read before any
+ *   write. A tag the repository demonstrably does not hold
+ *   (`release-tag-missing` — a 404 discriminated over an observable
+ *   repository, issue #176's discipline) is the create's own to make:
+ *   the create carries the recorded target as `target_commitish`, and
+ *   GitHub creates a missing tag from exactly that commitish — "Unused
+ *   if the Git tag already exists" — so the default-branch-HEAD hazard
+ *   #338 named is the _target-less_ create, and the post-create
+ *   re-assert re-reads the tag before ok. A ref answering a different
+ *   object is `refused("release-tag-mismatch")`, and an unobservable
+ *   target still refuses: the create never rewrites an existing tag,
+ *   and an unreadable state never reads as absent;
  * - `verifyRelease` reports a release that does not exist as `absent`
  *   (issue #60; D28): a determinate read, and the caller's action is the
  *   publication itself. The verdict is discriminated before it is
@@ -517,18 +522,33 @@ export function GitReleasePublication(
       if (existing.status !== 404) {
         return failureTail(existing);
       }
-      // The create's precondition (issue #338): the release may only be
-      // created over a tag origin already holds at the recorded commit —
-      // GitHub's create-release API otherwise creates the missing tag at
-      // the default branch's HEAD, the wrong-commit hazard. The binding's
-      // recorded target is the truth the sync pushes; the remote git ref
-      // must answer exactly it, or the create never fires.
+
+      // The create's precondition (issue #338, amended by issue #336's
+      // wiring PR): the release is created over a tag answering the
+      // recorded target — never over the default branch's HEAD. #338's
+      // hazard ("GitHub's create-release API otherwise creates the
+      // missing tag at the default branch's HEAD") is the _target-less_
+      // create; this create carries the recorded target as
+      // `target_commitish`, so a tag origin demonstrably does not hold
+      // is the create's own to make AT the recorded commit — GitHub
+      // creates the missing tag from the sent commitish, "Unused if the
+      // Git tag already exists". The post-create re-assert below
+      // re-reads the tag before ok, and the verify leg's own
+      // tagRefVerdict re-reads it again — the tag-at-recorded-SHA
+      // invariant #338 named is enforced after the write it cannot
+      // precede. A tag that EXISTS at a different object — or a target
+      // the transport cannot observe — still refuses: the create never
+      // rewrites an existing tag, and an unreadable state never reads
+      // as absent (#176's discipline).
       const recordedTarget = recordedTagTarget(binding, tag);
       if (!recordedTarget.ok) {
         return { kind: "refused", reason: recordedTarget.reason, detail: recordedTarget.detail };
       }
       const gate = tagRefVerdict(transport, credentials, tag, recordedTarget.target);
-      if (gate.kind !== "proceed") {
+      if (
+        gate.kind !== "proceed" &&
+        !(gate.kind === "refused" && gate.reason === "release-tag-missing")
+      ) {
         return gate;
       }
       // The create: the one write this unit performs. A lost response is

@@ -23,9 +23,14 @@ const TAG = "5.0.0-beta.1";
 const OWNER = "ecoma-io";
 const REPO = "release-craft";
 const RELEASE_URL = `https://github.com/${OWNER}/${REPO}/releases/tag/${TAG}`;
-
 let refHead = "0".repeat(40);
 let created = undefined;
+/** Armed by the controller's `missing` command: the git-ref read
+ *  answers 404 until the create lands — the wire shape of a tag the
+ *  origin does not hold yet, the case where the create itself mints
+ *  the tag at the sent commitish. The release read keeps answering 404
+ *  until the create in both modes. */
+let tagMissing = false;
 
 const server = createServer((req, res) => {
   const method = req.method ?? "GET";
@@ -34,8 +39,21 @@ const server = createServer((req, res) => {
   const refsPath = `/repos/${OWNER}/${REPO}/git/refs/tags/${TAG}`;
   const releasePath = `/repos/${OWNER}/${REPO}/releases/tags/${TAG}`;
   if (method === "GET" && path === refsPath) {
+    if (tagMissing && created === undefined) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ message: "Not Found" }));
+      return;
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ref: `refs/tags/${TAG}`, object: { sha: refHead, type: "commit" } }));
+    return;
+  }
+  if (method === "GET" && path === `/repos/${OWNER}/${REPO}`) {
+    // The repository probe the adapter runs when a read 404s (issue
+    // #176): an observable repository is what makes `release-tag-missing`
+    // determinate — the tag the create is about to mint.
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ full_name: `${OWNER}/${REPO}` }));
     return;
   }
   if (method === "GET" && path === releasePath) {
@@ -93,6 +111,8 @@ process.stdin.on("data", (chunk) => {
     pending = pending.slice(newline + 1);
     if (line.startsWith("ref ")) {
       refHead = line.slice("ref ".length);
+    } else if (line === "missing") {
+      tagMissing = true;
     } else if (line === "bye") {
       server.close(() => process.exit(0));
     }

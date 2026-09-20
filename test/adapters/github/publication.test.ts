@@ -35,7 +35,7 @@ import { createTempRepo } from "../git/temp-repo.js";
 const CHANGELOG_BODY = "# v1.2.3\n\n- the recorded changelog\n";
 const TAG = "v1.2.3";
 const ATTEMPT = "attempt_sha256:publish-a";
-const RELEASE_URL = "https://github.com/ecoma-io/release-craft/releases/tags/v1.2.3";
+const RELEASE_URL = "https://github.com/ecoma-io/release-craft/releases/tag/v1.2.3";
 const RELEASE_PATH = "/repos/ecoma-io/release-craft/releases/tags/v1.2.3";
 const REPO_PATH = "/repos/ecoma-io/release-craft";
 const REF_PATH = "/repos/ecoma-io/release-craft/git/refs/tags/v1.2.3";
@@ -937,32 +937,47 @@ describe("the release publication (§2.2 rows 4–6, 8–9, 13; §2.8)", () => {
       expect(outcome).toEqual({ kind: "transport-failure" });
     });
   });
-  it("refuses when origin holds no tag at the recorded target — release-tag-missing — and the create never fires (#338)", () => {
-    withPublicationRepo("missing-tag", (fixture) => {
+  it("creates over a tag origin does not hold — the missing tag is the create's own to make, at the recorded commit (#338 amendment)", () => {
+    withPublicationRepo("missing-tag-create", (fixture) => {
       seed(fixture);
+      const target = recordedTagTarget(fixture);
+      let refReads = 0;
       const { transport, calls } = fakeTransport((call) => {
         if (call.path === REF_PATH) {
-          return notFoundResponse();
+          // The pre-create read answers absent — a tag origin does not
+          // hold, discriminated over an observable repository (#176).
+          // The post-create re-assert answers the recorded target: the
+          // tag the create minted at the sent commitish.
+          refReads += 1;
+          return refReads === 1 ? notFoundResponse() : tagRefResponse(target);
         }
-        return call.path === REPO_PATH ? observableRepoResponse() : notFoundResponse();
+        if (call.path === REPO_PATH) {
+          return observableRepoResponse();
+        }
+        if (call.init?.method === "POST") {
+          return createdResponse(CHANGELOG_BODY, happyRelease(fixture));
+        }
+        return notFoundResponse();
       });
       const outcome = fixture.adapter(transport).publishRelease(TAG);
-      expect(outcome).toEqual({
-        kind: "refused",
-        reason: "release-tag-missing",
-        detail: detailContaining("origin holds no tag"),
-      });
-      if (outcome.kind !== "refused") {
-        throw new Error(`expected a refusal, got ${outcome.kind}`);
-      }
-      expect(outcome.detail).toContain("unpushed");
-      // The gate never lets the create fire: no write may land over a
-      // tag the origin does not hold.
-      expect(calls.filter((call) => call.init?.method === "POST")).toHaveLength(0);
-      // The absence verdict is discriminated on the wire (issue #176):
-      // the ref read 404'd, and the repository probe answered before
-      // the determinate `release-tag-missing` was claimed.
-      expect(calls.map((call) => call.path)).toEqual([RELEASE_PATH, REF_PATH, REPO_PATH]);
+      expect(outcome).toEqual({ kind: "ok", url: RELEASE_URL });
+      // The gate's determinacy is settled on the wire: the ref 404'd,
+      // the repository probe answered, and only then did the create
+      // fire — carrying the recorded target, so the tag GitHub mints is
+      // at the recorded commit, never the default branch's HEAD.
+      expect(calls.map((call) => call.path)).toEqual([
+        RELEASE_PATH,
+        REF_PATH,
+        REPO_PATH,
+        "/repos/ecoma-io/release-craft/releases",
+        REF_PATH,
+      ]);
+      const writes = calls.filter((call) => call.init?.method === "POST");
+      expect(writes).toHaveLength(1);
+      const createBody = JSON.parse(String(writes[0]?.init?.body)) as {
+        target_commitish?: string;
+      };
+      expect(createBody.target_commitish).toBe(target);
     });
   });
 

@@ -116,7 +116,7 @@ jobs:
       # claim against.
       - name: Invoke the run door
         id: invoke
-        uses: ecoma-io/release-craft@e3822a46f32348ba3b6365221ed9781fc9bd3eb0
+        uses: ecoma-io/release-craft@92946cc8c277f97960eefdcceab3e33af3f47842
         with:
           world: world.json
           line: main

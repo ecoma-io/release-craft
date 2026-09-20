@@ -46,8 +46,11 @@ inputs:
     default: "false"
     description: Declare the CHANGELOG.md artifact the run mints
   publish:
+    description: >-
+      Whether the run also publishes the GitHub Release for the minted
+      tag (self-release only — the credential rides the job's own
+      scoped token through the runner's env, never an input).
     default: "false"
-    description: Whether the run also publishes the GitHub Release (self-release only)
   working-directory:
     default: "\${{ github.workspace }}"
     description: Where the run stands
