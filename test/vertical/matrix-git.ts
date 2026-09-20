@@ -537,14 +537,21 @@ export function walkStages(
       // ADR-0012 decision 3's order, exactly: the write-ahead start is
       // durable above; the application executes the recorded plan's moves
       // through the binding's channel store here; the kernel's completion
-      // appends below. A plan that names no moves records nothing.
-      applyPlannedChannelTransitions({
+      // appends below. A plan that names no moves records nothing. A
+      // `conflict`/`ambiguous` refusal stops the walk at this stage — the
+      // refused move records nothing and nothing farther appends
+      // (invariants 2.5/2.6).
+      const transitions = applyPlannedChannelTransitions({
         attempt: ctx.attempt,
         planLine: ctx.planLine,
+        actor: "automation",
         ...(ctx.token === "" ? {} : { claim: ctx.token }),
         channels: ctx.state.binding.channels,
         ledger: ctx.stores.ledger,
       });
+      if (transitions.kind !== "applied") {
+        return stage;
+      }
     }
     const outcome = ledgerRequestStep(
       ctx.attempt,

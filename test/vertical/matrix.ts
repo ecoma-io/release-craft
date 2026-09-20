@@ -7,7 +7,11 @@
  * golden, and no fixture reads a clock or the environment (§5's laws).
  */
 import { Channel, Version } from "@ecoma-io/release-craft/domain";
-import { stageContentFingerprint } from "@ecoma-io/release-craft/app";
+import {
+  stageContentFingerprint,
+  type AppliedChannelMove,
+  type ChannelStageResult,
+} from "@ecoma-io/release-craft/app";
 
 import {
   CANONICAL_STAGES,
@@ -25,8 +29,6 @@ import {
   type ArtifactProducer,
   type ArtifactStep,
   type Attribution,
-  type ChannelApplyOutcome,
-  type ChannelState,
   type ChannelStore,
   type Claim,
   type ClaimScope,
@@ -548,15 +550,6 @@ export function driveStage(
 // The channel-transition stage's application half (ADR-0012 decisions 3–6)
 // ---------------------------------------------------------------------------
 
-/** One decided channel move as the application drove it: the channel, the
- * store's outcome, and the prior target the store's own read observed (the
- * record's `from`). */
-export interface AppliedChannelMove {
-  readonly channelId: string;
-  readonly from: ChannelState["target"];
-  readonly outcome: ChannelApplyOutcome;
-}
-
 /** The application half of the `channel-transition` stage — the vertical's
  * stand-in for the application layer ADR-0012 decision 6 wires to the store
  * (invariant 2.1: the kernel never consumes the channel store; it names the
@@ -567,13 +560,17 @@ export interface AppliedChannelMove {
  * observes — never a trusted `from` from the plan (ADR-0012 decision 2: the
  * plan names `to`, never `from`). `applied` proceeds; `noop` is the replay
  * case (the move already stands, ADR-0012 decision 4); `conflict` and
- * `ambiguous` fail loudly — a half-moved promotion is never reported green
- * (invariants 2.5/2.6). Every decided move appends one `channel-transition`
- * ledger record whose `contentFingerprint` is the store outcome's — the
- * record's idempotency key is what the store observed deciding, never what
- * the plan assumed (decision 4). A plan that names no moves records
- * nothing: the stage is byte-identical to its pre-V4 behavior for every
- * non-promoting run.
+ * `ambiguous` return the first undecidable move as the row that stops the
+ * walk — that move records nothing, and the stage's completion never appends
+ * after it (invariants 2.5/2.6, ADR-0012 decision 7) — a half-moved
+ * promotion is never reported green. Every decided move appends one
+ * `channel-transition` ledger record whose `contentFingerprint` is the store
+ * outcome's — the record's idempotency key is what the store observed
+ * deciding, never what the plan assumed (decision 4). The `guards` row is
+ * the check the stage's guard actually performed: `claim-held` passes only
+ * when the caller carried the claim token. A plan that names no moves
+ * records nothing: the stage is byte-identical to its pre-V4 behavior for
+ * every non-promoting run.
  *
  * The `promoted-from` edge and the stream close ride the same decision as
  * recorded plan content — they are line-level facts, independent of any
@@ -582,12 +579,14 @@ export interface AppliedChannelMove {
 export function applyPlannedChannelTransitions(application: {
   readonly attempt: ReleaseAttempt;
   readonly planLine: PlanLine;
+  /** The attribution the stage's records carry — the run's own. */
+  readonly actor: string;
   /** The held claim token the stage's guards verified — carried like every
    * mutating record (§2.9). */
   readonly claim?: string;
   readonly channels: ChannelStore;
   readonly ledger: ExecutionLedger;
-}): readonly AppliedChannelMove[] {
+}): ChannelStageResult {
   const moves = (application.planLine.channels ?? []).filter(
     (planned): planned is PlannedChannelMove => planned.kind === "channel-move",
   );
@@ -601,20 +600,26 @@ export function applyPlannedChannelTransitions(application: {
       to,
     });
     if (outcome.kind === "conflict") {
-      throw new Error(
-        `the channel store refused the planned move of ${JSON.stringify(move.channelId)}: the ` +
+      return {
+        kind: "conflict",
+        channelId: move.channelId,
+        detail:
+          `the channel store refused the planned move of ${JSON.stringify(move.channelId)}: the ` +
           `observed prior target ${JSON.stringify(outcome.observed)} matches neither the move's ` +
           `prior nor its target — a divergent promotion fails closed (invariant 2.5)`,
-      );
+      };
     }
     if (outcome.kind === "ambiguous") {
-      throw new Error(
-        `the channel store cannot determine whether the move of ${JSON.stringify(move.channelId)} ` +
+      return {
+        kind: "ambiguous",
+        channelId: move.channelId,
+        detail:
+          `the channel store cannot determine whether the move of ${JSON.stringify(move.channelId)} ` +
           `landed: ${outcome.detail} — the promotion does not race forward on uncertainty ` +
           `(invariant 2.6, ADR-0012 decision 7)`,
-      );
+      };
     }
-    applied.push({ channelId: move.channelId, from: observed.target, outcome });
+    applied.push({ channelId: move.channelId, from: observed.target, to, outcome: outcome.kind });
     application.ledger.append({
       kind: "channel-transition",
       record: {
@@ -623,14 +628,14 @@ export function applyPlannedChannelTransitions(application: {
         channelId: move.channelId,
         from: observed.target,
         to,
-        attribution: actor(application.attempt),
-        guards: [{ guard: "claim-held", passed: true }],
+        attribution: { attemptId: application.attempt.attemptId, actor: application.actor },
+        guards: [{ guard: "claim-held", passed: application.claim !== undefined }],
         ...(application.claim === undefined ? {} : { claim: application.claim }),
         contentFingerprint: outcome.contentFingerprint,
       },
     });
   }
-  return applied;
+  return { kind: "applied", moves: applied };
 }
 
 /** The deterministic effects: each observation carries the postcondition
@@ -867,26 +872,60 @@ export function walkStages(
       return stage;
     }
     if (stage === "channel-transition") {
-      // ADR-0012 decision 3's order, exactly: the write-ahead start is
-      // durable above; the application executes the recorded plan's moves
-      // through the channel store here; the kernel's completion appends
-      // below. A plan that names no moves records nothing.
-      applyPlannedChannelTransitions({
-        attempt: ctx.attempt,
-        planLine: ctx.planLine,
-        ...(ctx.token === undefined ? {} : { claim: ctx.token }),
-        channels: ctx.stores.channels,
-        ledger: ctx.stores.ledger,
-      });
-    }
-    const drive = driveStage(ctx.attempt, stage, ctx.stores, ctx.planLine, preconditions);
-    drives.push(drive);
-    if (drive.outcome.kind !== "advance") {
-      // E-02's replay: re-running a stage whose write-ahead start is
-      // already durable replays `noop` for its recorded completion — the
-      // walk continues past it. Any other non-advance outcome stops the walk.
-      if (drive.outcome.kind !== "noop" || stage !== skipStartFor) {
+      // The engine's §2.4 order (ADR-0012 decision 3, post-#209): the
+      // stage's guard drive runs FIRST — the request classifies against the
+      // ledger and the claim view — and only a verified `advance` lets the
+      // application execute the recorded plan's moves through the channel
+      // store (the CAS lands after the guard, never ahead of it, and a
+      // completed stage's noop replay is not re-applied). A
+      // `conflict`/`ambiguous` refusal stops the walk AT this stage: the
+      // refused move records nothing and the stage's completion never
+      // appends after it — the durable `started` record is what a resume
+      // re-judges (invariants 2.5/2.6, ADR-0012 decision 7). A plan that
+      // names no moves records nothing.
+      const outcome = requestStep(
+        ctx.attempt,
+        {
+          stepKey: stage,
+          attribution: actor(ctx.attempt),
+          contentFingerprint: stageContentFingerprint(stage, ctx.planLine),
+          ...(preconditions === undefined ? {} : { preconditions }),
+        },
+        ctx.stores.claims.viewFor(ctx.attempt.attemptId),
+        // The kernel consumes the durable ledger's projection (§2.3) — the
+        // schedulers' extension records live here, never only in the log
+        // mirror.
+        ctx.stores.ledger.stepView(),
+      );
+      drives.push({ stepKey: stage, outcome });
+      if (outcome.kind === "advance") {
+        const transitions = applyPlannedChannelTransitions({
+          attempt: ctx.attempt,
+          planLine: ctx.planLine,
+          actor: "automation",
+          ...(ctx.token === undefined ? {} : { claim: ctx.token }),
+          channels: ctx.stores.channels,
+          ledger: ctx.stores.ledger,
+        });
+        if (transitions.kind !== "applied") {
+          return stage;
+        }
+        ctx.stores.log.append(outcome.record);
+        ctx.stores.ledger.append({ kind: "step", record: outcome.record });
+      } else if (outcome.kind !== "noop" || stage !== skipStartFor) {
         return stage;
+      }
+    } else {
+      const drive = driveStage(ctx.attempt, stage, ctx.stores, ctx.planLine, preconditions);
+      drives.push(drive);
+      if (drive.outcome.kind !== "advance") {
+        // E-02's replay: re-running a stage whose write-ahead start is
+        // already durable replays `noop` for its recorded completion — the
+        // walk continues past it. Any other non-advance outcome stops the
+        // walk.
+        if (drive.outcome.kind !== "noop" || stage !== skipStartFor) {
+          return stage;
+        }
       }
     }
     if (boundary(ctx, stage, "after", opts.crashAfterStartOfExtension)) {

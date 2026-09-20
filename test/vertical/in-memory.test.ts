@@ -450,13 +450,17 @@ describe("V4 — promotion", () => {
     const replay = applyPlannedChannelTransitions({
       attempt: promote.attempt,
       planLine: promote.planLine,
+      actor: "automation",
       claim: promote.token,
       channels: promote.stores.channels,
       ledger: promote.stores.ledger,
     });
-    expect(replay.map((move) => move.channelId)).toStrictEqual(["stable", "next"]);
-    for (const move of replay) {
-      expect(move.outcome.kind).toBe("noop");
+    if (replay.kind !== "applied") {
+      throw new Error(`fixture broken: the replay refused: ${replay.detail}`);
+    }
+    expect(replay.moves.map((move) => move.channelId)).toStrictEqual(["stable", "next"]);
+    for (const move of replay.moves) {
+      expect(move.outcome).toBe("noop");
       // The noop observed the MOVED target — from equals to, and the record
       // keys exactly that state.
       expect(move.from).toStrictEqual({ line: "main", version: "5.0.0" });
@@ -488,6 +492,47 @@ describe("V4 — promotion", () => {
       );
       expect(record.guards).toStrictEqual([{ guard: "claim-held", passed: true }]);
       expect(record.claim).toBe(promote.token);
+    }
+  });
+  it("V4 · claim-held guard · a run carrying no claim token records passed false — the guards row is a real check (ADR-0012 decision 6)", () => {
+    const world = liveWorld();
+    runLadder(world, 2);
+    runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "prerelease", stream: "rc", lineId: "main" }],
+    });
+    const promote = runRelease({
+      world,
+      lineId: "main",
+      intents: [{ kind: "promote", lineId: "main" }],
+    });
+    const tailBefore = promote.stores.ledger
+      .tail(promote.attempt.attemptId)
+      .filter((record) => record.kind === "channel-transition").length;
+    // The application re-driven over the same recorded plan and the moved
+    // store WITHOUT the claim token: the guards row records the check the
+    // stage's guard actually performed — nothing is hardcoded passed.
+    const replay = applyPlannedChannelTransitions({
+      attempt: promote.attempt,
+      planLine: promote.planLine,
+      actor: "automation",
+      channels: promote.stores.channels,
+      ledger: promote.stores.ledger,
+    });
+    if (replay.kind !== "applied") {
+      throw new Error(`fixture broken: the replay refused: ${replay.detail}`);
+    }
+    const replayed: ChannelTransitionRecord[] = [];
+    for (const record of promote.stores.ledger.tail(promote.attempt.attemptId)) {
+      if (record.kind === "channel-transition") {
+        replayed.push(record.record);
+      }
+    }
+    expect(replayed.length).toBe(tailBefore + 2);
+    for (const record of replayed.slice(tailBefore)) {
+      expect(record.guards).toStrictEqual([{ guard: "claim-held", passed: false }]);
+      expect(record.claim).toBeUndefined();
     }
   });
 
@@ -567,9 +612,22 @@ describe("V4 — promotion", () => {
       planLine: planLineFor(assembled, "main"),
       token: settled.token,
     };
-    expect(() =>
+    // The ambiguous classification stops the walk AT the channel-transition
+    // stage — the refusal returns the stage key, nothing further appends,
+    // and no step completion lands after it (invariant 2.6).
+    expect(
       walkStages(ctx, "plan", { world: copyWorld(world), lineId: "main", intents: [] }, []),
-    ).toThrow(/cannot determine whether the move/);
+    ).toBe("channel-transition");
+    expect(
+      stores.ledger
+        .tail(attempt.attemptId)
+        .filter(
+          (record) =>
+            record.kind === "step" &&
+            record.record.stepKey === "channel-transition" &&
+            record.record.to === "completed",
+        ),
+    ).toStrictEqual([]);
     // Fail closed: the first move stood still and the second never ran.
     expect(stores.channels.read("stable").target).toStrictEqual({
       line: "main",
@@ -635,9 +693,22 @@ describe("V4 — promotion", () => {
       planLine: planLineFor(assembled, "main"),
       token: settled.token,
     };
-    expect(() =>
+    // The divergent refusal stops the walk AT the channel-transition stage —
+    // the refusal returns the stage key, nothing further appends, and no
+    // step completion lands after it (invariant 2.5).
+    expect(
       walkStages(ctx, "plan", { world: copyWorld(world), lineId: "main", intents: [] }, []),
-    ).toThrow(/refused the planned move of "stable"/);
+    ).toBe("channel-transition");
+    expect(
+      stores.ledger
+        .tail(attempt.attemptId)
+        .filter(
+          (record) =>
+            record.kind === "step" &&
+            record.record.stepKey === "channel-transition" &&
+            record.record.to === "completed",
+        ),
+    ).toStrictEqual([]);
     // Fail closed: the divergent pointer stands untouched and the second
     // move never ran — no channel-transition record exists for the attempt.
     expect(stores.channels.read("stable").target).toStrictEqual({
@@ -1010,10 +1081,14 @@ describe("V7 — recovery", () => {
     const replay = applyPlannedChannelTransitions({
       attempt: ctx.attempt,
       planLine: ctx.planLine,
+      actor: "automation",
       channels: ctx.stores.channels,
       ledger: ctx.stores.ledger,
     });
-    expect(replay.map((move) => move.outcome.kind)).toStrictEqual(["noop", "noop"]);
+    if (replay.kind !== "applied") {
+      throw new Error(`fixture broken: the replay refused: ${replay.detail}`);
+    }
+    expect(replay.moves.map((move) => move.outcome)).toStrictEqual(["noop", "noop"]);
     const replayedRecords = stopped.stores.ledger
       .tail(stopped.attempt.attemptId)
       .flatMap((record) => (record.kind === "channel-transition" ? [record.record] : []));
