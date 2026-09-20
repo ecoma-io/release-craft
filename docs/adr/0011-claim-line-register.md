@@ -85,13 +85,12 @@ nothing less.
    consumer's push — a non-fast-forward rejection, outside the engine's
    verdict vocabulary. A caller may fetch the namespace into its checkouts
    first and put them on the one shared space the register already
-   arbitrates: the self-release surface does exactly that, before the run
-   (decision-log D65) — its sequential second dispatch adjudicates against
-   the fetched register, a replay of a released version blocking at the
-   planning boundary and a new version acquiring normally (a completed
-   claim's version-scoped record excludes no different version), while its
-   concurrent dispatches queue on the workflow's concurrency group. That
-   sharing is the caller's substrate posture, not the register's.
+   arbitrates; the GitHub Action now performs that fetch as product
+   behavior — the decided claims-fetch step (phase 13 §2.9, decision-log
+   D98) materializes `refs/release-craft/claims/*` into the consumer's
+   checkout before the invocation when declared, fail-closed, with the
+   self-release caller's own fetch (decision-log D65) its precedent.
+   That sharing is the caller's substrate posture, not the register's.
    Serializing across checkouts is a declared precondition of every
    surface above the binding (the CLI's law, phase 12 §5; the Action's
    posture, phase 13 §2.9), met caller-side where it is met at all — never

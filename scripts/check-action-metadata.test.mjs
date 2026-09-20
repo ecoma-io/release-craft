@@ -46,6 +46,9 @@ inputs:
   working-directory:
     default: "\${{ github.workspace }}"
     description: Where the run stands
+  claims-fetch:
+    required: true
+    description: Whether the composite materializes the claim namespace into the run's checkout first (declared true or false, never guessed)
 outputs:
   outcome:
     description: The run outcome's --json envelope, byte for byte
@@ -72,6 +75,13 @@ runs:
       shell: bash
       working-directory: \${{ github.action_path }}
       run: pnpm exec tsc -p tsconfig.build.json
+    - name: Fetch the claim namespace
+      if: \${{ inputs.claims-fetch == 'true' }}
+      shell: bash
+      working-directory: \${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        git fetch --no-tags origin '+refs/release-craft/claims/*:refs/release-craft/claims/*'
 
     - name: Invoke the run door
       id: invoke
@@ -211,6 +221,26 @@ test("a demanded input with a default, or an optional input without one, is a fi
     findings.some((violation) => violation.includes('input "world" does not demand a value')),
   );
   assert.ok(findings.some((violation) => violation.includes('input "world" declares a default')));
+});
+test("the claims-fetch row is demanded — a default or an omitted row is a finding", () => {
+  const defaulted = CLEAN.replace(
+    "  claims-fetch:\n    required: true",
+    '  claims-fetch:\n    default: "true"',
+  );
+  assert.ok(
+    analyzeActionMetadata(defaulted).some((violation) =>
+      violation.includes('input "claims-fetch" does not demand a value'),
+    ),
+  );
+  const omitted = CLEAN.replace(
+    "  claims-fetch:\n    required: true\n    description: Whether the composite materializes the claim namespace into the run's checkout first (declared true or false, never guessed)\n",
+    "",
+  );
+  assert.ok(
+    analyzeActionMetadata(omitted).some((violation) =>
+      violation.includes('input "claims-fetch" is missing'),
+    ),
+  );
 });
 
 test("a missing inventory row is a finding", () => {

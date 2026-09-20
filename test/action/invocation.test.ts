@@ -584,7 +584,7 @@ describe("fixture: an undeclared input key is refused, a declared name changes n
       expect(drive.stdout.toString("utf8")).toBe("");
       expect(drive.stderr.toString("utf8")).toContain('undeclared action input "intent"');
       expect(drive.stderr.toString("utf8")).toContain(
-        "world, line, actor, tag-namespaces, intents, repo, max-retries, changelog, working-directory",
+        "world, line, actor, tag-namespaces, intents, repo, max-retries, changelog, working-directory, claims-fetch",
       );
       expect(drive.outputs).toHaveLength(0);
     });
@@ -601,6 +601,7 @@ describe("fixture: an undeclared input key is refused, a declared name changes n
           "INPUT_WORKING-DIRECTORY": "/somewhere",
           "INPUT_TAG-NAMESPACES": "v",
           INPUT_CHANGELOG: "true",
+          "INPUT_CLAIMS-FETCH": "true",
         },
       });
       // The echo bin's stdout is no envelope, so the script still concludes

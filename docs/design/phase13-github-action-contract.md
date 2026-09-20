@@ -323,6 +323,7 @@ exact decided flags; nothing else exists. The Action drives **one door**:
 | `max-retries`       | no       | `0`                       | `--max-retries <inputs.max-retries>` — `AssemblyConfig.maxRetries`                                                                                                          |
 | `changelog`         | no       | `false`                   | bare `--changelog` when `true`, omitted when `false`/empty, the value forwarded otherwise (the boolean row — a foreign spelling reaches the grammar and usage-faults aloud) |
 | `working-directory` | no       | `${{ github.workspace }}` | no flag — the invocation step's own cwd ([§4](#4-hermeticity-in-ci-the-two-lines))                                                                                          |
+| `claims-fetch`      | yes      | —                         | no flag — the composite's one fetch, gated on this declaration ([§2.9](#29-what-the-action-never-does-and-the-one-fetch-it-performs-when-declared))                         |
 
 The multiline rule: `intents` and `tag-namespaces` are newline-separated,
 one value per line, lines forwarded verbatim as one flag occurrence each —
@@ -357,7 +358,7 @@ stays value-blind in the same spirit the inventory is (the closed grammar is
 the values' only validation), so the refusal is the grammar's, not the
 program's.
 
-The demanded rows (`world`, `line`, `actor`, `tag-namespaces`) are declared
+The demanded rows (`world`, `line`, `actor`, `tag-namespaces`, `claims-fetch`) are declared
 `required` in the metadata — and the metadata is _not_ the enforcement
 layer: the grammar's own demands stand behind every invocation, and an
 input that arrives empty where the runner's `required` check was satisfiable
@@ -381,6 +382,15 @@ default — the declared set is the Action's own, and nothing outside
 `with:` may speak in an input's name. Widening the declared set is a
 reviewed change paired with `action.yml`, never an ambient permission.
 
+The `claims-fetch` demand earns its place in that list: the fetch posture is
+the enforcement of #237 and must be declared, never guessed — the composite
+fetches only when the input is given as exactly the spelling `"true"`, and
+the skip is an explicit `"false"` in the consumer's own workflow. An omitted
+row would be the unenforced precondition returning by omission — the #182
+shape the decided step exists to close — so the demanded no-default row makes
+the choice visible in the declared `with:` block
+([§2.9](#29-what-the-action-never-does-and-the-one-fetch-it-performs-when-declared)).
+
 Sketch of the decided metadata shape (the implementation slice's file, not
 this contract's artifact):
 
@@ -397,6 +407,7 @@ inputs:
   max-retries:      { default: "0", description: "Claim sequence retry bound" }
   changelog:        { default: "false", description: "Declare the CHANGELOG.md artifact in the run" }
   working-directory:{ default: "${{ github.workspace }}", description: "Where the run stands" }
+  claims-fetch:     { required: true, description: "Materialize the claim namespace before the run — true fetches, false skips (never guessed)" }
 runs:
   using: composite
   steps: [provision…, invoke…]
@@ -581,7 +592,10 @@ copy; the run's writes are the walk's writes, all local.
 
 **Decided: the Action has no token input in v1, configures no credential,
 touches no secret, and runs no git of its own against the target repository**
-— no fetch, no push, no tag, no config write. What "published" means through
+— no push, no tag, no config write, and no fetch beyond the one decided
+claim-namespace fetch ([§2.9](#29-what-the-action-never-does-and-the-one-fetch-it-performs-when-declared)),
+which rides the consumer's checkout credential — no token, no new secret
+input, the decided-empty journey unchanged. What "published" means through
 this surface, stated so nobody discovers it in a release run: the walk
 completed and the tag ref exists in the runner's copy of the repository. It
 does **not** mean a remote tag exists, a GitHub Release exists, or anything
@@ -645,7 +659,7 @@ but outcome fields and fault text. The suite's token-journey pin
 ([§6](#6-test-obligations), fixture 5) is the negative inventory, executable,
 so the day a token input is proposed the suite that forbids it fails loudly.
 
-### 2.9 What the Action never does
+### 2.9 What the Action never does — and the one fetch it performs when declared
 
 The inherited pass-through law, stated as an inventory the implementation
 slice's suite pins:
@@ -658,35 +672,53 @@ slice's suite pins:
 - **No claim-store or ledger access outside the doors.** No reading recorded
   refs to "check" anything; an observation is the `show` door's, and this
   inventory drives `run` only.
-- **No fetch of the claim namespace — the exclusion is one shared ref
-  space (#182).** The claim store's arbitration is enforced by
-  compare-and-set over the target repository's own `refs/release-craft/*`,
-  and this surface's posture — no fetch, no push, no ref write by the
-  Action's own hand ([§5](#5-laws); a standard clone fetches only
-  `refs/heads/*` and `refs/tags/*` into the workspace) — never makes one
-  run's claim refs visible to another. The declared precondition this
-  posture therefore owes the engine: the runs of one release line share
-  one checkout's ref space. Its named failure mode — the no-fetch caller's
-  shape, where nothing beyond the Action's own posture populates the
-  checkout: a bare clone, or a consumer workflow that stands the Action up
-  without performing a caller-side claims fetch. There, two
-  `workflow_dispatch` runs of the same line in two separate checkouts each
-  acquire the claim in their own ref space, both mint locally, and both
-  render a published outcome — the divergence first surfacing at the
-  consumer's own push as a non-fast-forward rejection, outside the
-  engine's verdict vocabulary. The Action does not verify the precondition
-  and v1 adds no enforcement for it; the boundary is pinned by the
-  binding's negative capability test. One hosted consumer answers the
-  precondition from its own caller-side hand — a hand this law does not
-  govern (decision-log D65): the self-release workflow fetches
-  `refs/release-craft/claims/*` into its checkout before the run and
-  serializes dispatches through its concurrency group
-  (`cancel-in-progress: false`), so its sequential second dispatch
-  adjudicates against the fetched register — a replay of a released
-  version blocks at the planning boundary, never as a claim denial, and
-  the never-forced atomic publish stays the refusal guarding the shared
-  ref. Two checkouts without such a caller fetch ride exactly the failure
-  mode above; the cross-checkout racing residue is #237, still declared.
+- **The one fetch it performs — the claim namespace, when declared
+  (#237).** The claim register arbitrates over one shared ref space,
+  `refs/release-craft/claims/*` (ADR-0011 decision 2); a standard clone
+  fetches only `refs/heads/*` and `refs/tags/*` into the workspace, and
+  the adapter never fetches remote claim state (ADR-0010 decision 3), so
+  two checkouts of one repository each acquire the space in a disjoint
+  ref space — the #182 negative pin. Enforcement therefore sits at this
+  surface: the composite performs the fetch itself, before the
+  invocation, when the demanded `claims-fetch` input declares exactly
+  the spelling `"true"`. One step, in the declared
+  `working-directory`, `shell: bash`, running `set -euo pipefail` and
+  `git fetch --no-tags origin '+refs/release-craft/claims/*:refs/release-craft/claims/*'`.
+  Fail-closed: a failing fetch fails the job before the invocation — no
+  run, no verdict — and an unobservable namespace never reads as
+  unclaimed. The fetch rides the consumer's checkout credential; the
+  decided-empty journey stands
+  ([§2.8](#28-the-tokens-journey-decided-empty)) — no token, no new
+  secret input. The residuals, named honestly:
+  - **Concurrency stays caller-side.** Two consumers that both declare
+    `claims-fetch: "true"` both fetch and then arbitrate against their
+    local registers; the loser retries per `max-retries`. The composite
+    neither serializes dispatches nor opens a gate on the engine's
+    behalf — that composition is the caller's, as before.
+  - **The `+` force-refspec is a clobber.** On a retained checkout, an
+    unpushed local claim ref is overwritten by origin's tip — the
+    idempotence that makes re-runs converge, a ref mutation the walk
+    itself never performs ([§5](#5-laws)).
+  - **An origin that never carried the namespace is legitimately
+    unclaimed.** The empty register reads as an unclaimed line, the twin
+    of an absent one (ADR-0011 decision 4) — a repository the claim
+    space never reached reads as never-claimed, which is the true state
+    the fetch exists to make visible.
+  - **A foreign spelling is the runner's skip.** The demanded row names
+    exactly two spellings — `"true"` fetches, `"false"` skips — and the
+    step's gate (`== 'true'`) is the whole grammar: any other spelling
+    runs the skip arm, visible in the consumer's own workflow, never a
+    default that took over silently.
+    The named failure mode of the pre-#237 surface survives only where the
+    skip is itself declared: with `claims-fetch: "false"` (or any spelling
+    the gate skips), the checkout's ref space is the old no-fetch caller
+    shape — two `workflow_dispatch` runs of the same line in two separate
+    checkouts each acquire the claim in their own ref space, both mint
+    locally, and both render a published outcome — the divergence first
+    surfacing at the consumer's own push as a non-fast-forward rejection,
+    outside the engine's verdict vocabulary. That shape now needs an
+    explicit `"false"` in the consumer's workflow to exist; the decided
+    step is the enforcement.
 - **No GitHub API composition into the engine.** No `gh`, no REST, no
   checks or releases API. The `::error::` annotation is the runner's log
   protocol, not an API call.
@@ -930,9 +962,13 @@ review of the list.
   an allowlist; `github.workspace` is declared metadata. The runner's
   ambient layer reaches nothing past the provisioning steps.
 - **No git outside the binding's runner, against the target repository.** No
-  fetch, no push, no tag, no config write by the Action's own hand — the
-  binding's spawns are the only git the target repository sees from this
-  surface.
+  push, no tag, no config write by the Action's own hand — the binding's
+  spawns are the only git the target repository sees from this surface,
+  with one named carve-out: the decided claims-fetch composite step
+  ([§2.9](#29-what-the-action-never-does-and-the-one-fetch-it-performs-when-declared)),
+  gated on the declared `claims-fetch == 'true'`, fail-closed, fetching
+  only `refs/release-craft/claims/*` into the declared working-directory
+  before the invocation.
 - **No retry policy of its own.** E-08's bounded sequence retry is the
   kernel's clause, driven by the declared `max-retries`; the Action neither
   retries a door nor loops a command, and this contract publishes no
@@ -1032,7 +1068,13 @@ already cover those; phase 11 §5, phase 12 §6).
    consumer's is the caller's step; the Action's own sources arrive as the
    runner's materialization), so `persist-credentials` is vacuously
    satisfied and pinned as such; the invocation script names no `git`
-   invocation of its own.
+   invocation of its own. The #237 amendment adds the one fetch's shape to
+   the pin: the composite's fetch step precedes the invocation, gates on
+   exactly `inputs.claims-fetch == 'true'`, runs `set -euo pipefail` plus
+   the decided refspec in the declared working-directory, carries no
+   `continue-on-error`, and its failure means the invocation never runs —
+   no `outcome` output exists, which is the fail-closed reading of the
+   no-verdict law (the fetch-leg fixture, executing the step's own line).
 6. **The inputs' negative inventory.** The refused inputs
    ([§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar)) are
    asserted absent from the metadata — `assembly`, `command`, `json`,
@@ -1054,8 +1096,11 @@ already cover those; phase 11 §5, phase 12 §6).
    the action metadata: schema, the org-law rows (40-character SHA pins on
    any `uses:` step, `persist-credentials: false` on any checkout, no
    secrets in `run:`), the input inventory of
-   [§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar), and the
-   provisioning steps' `with:` rows by name — the declared toolchain values
+   [§2.3](#23-the-inputs-action-metadata-onto-the-closed-grammar) — the
+   demanded rows (`world`, `line`, `actor`, `tag-namespaces`,
+   `claims-fetch`) required with no default, a default or an omission being
+   a finding — and the provisioning steps' `with:` rows by name
+   — the declared toolchain values
    (`node-version`, `version`) and the absence of any file-path resolution
    input (`node-version-file`, `package_json_file` — the mangled-join
    mechanism of [§2.2](#22-the-kind-composite-hermeticity-deciding) must be

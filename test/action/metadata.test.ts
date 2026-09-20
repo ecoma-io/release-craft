@@ -75,6 +75,7 @@ describe("fixture 1 — the toolchain pins are declared values, single-sourced",
       "${{ github.action_path }}",
       "${{ github.action_path }}",
       "${{ inputs.working-directory }}",
+      "${{ inputs.working-directory }}",
     ]);
     // The invocation step runs the script AND the bin from the same
     // materialization — the one tree the consumer's pin resolved.
@@ -220,6 +221,26 @@ describe("fixture 6 — the refused inputs are absent from the metadata", () => 
     },
   );
 });
+describe("fixture 7 — the claims-fetch posture is demanded, declared never guessed", () => {
+  it("the input inventory carries a required claims-fetch row with no default", () => {
+    const inputs = inputsBlock(ACTION_METADATA);
+    expect(inputs.has("claims-fetch")).toBe(true);
+    const row = inputsRow(ACTION_METADATA, "claims-fetch");
+    expect(row).toContain("required: true");
+    // The demanded law: an omitted value must stop the step — a default here
+    // would be the unenforced precondition returning by omission (§2.9).
+    expect(row).not.toContain("default:");
+  });
+});
+
+/** The raw YAML block of one declared input row. */
+function inputsRow(metadata: string, name: string): string {
+  const lines = metadata.split("\n");
+  const start = lines.findIndex((line) => line === `  ${name}:`);
+  expect(start).toBeGreaterThan(0);
+  const end = lines.findIndex((line, index) => index > start && /^ {2}[a-z-]+:$/.test(line));
+  return lines.slice(start, end).join("\n");
+}
 
 /** The input names declared under the top-level `inputs:` block. */
 function inputsBlock(metadata: string): Set<string> {

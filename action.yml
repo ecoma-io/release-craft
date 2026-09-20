@@ -27,6 +27,13 @@
 #     `git tag --no-sign`, the run's writes are the walk's local writes, and
 #     the credential row a checkout would carry holds vacuously because this
 #     composite performs no checkout of any repository;
+#   - the claim namespace is materialized when declared (§2.9): one
+#     demanded input `claims-fetch` (`"true"`/`"false"`, declared never
+#     guessed), one composite step before the invocation — `git fetch
+#     --no-tags origin '+refs/release-craft/claims/*:refs/release-craft/claims/*'`
+#     in the declared working-directory — fail-closed: a fetch failure fails
+#     the job before the run, and no verdict exists (a namespace the fetch
+#     could not materialize never reads as unclaimed);
 #   - the toolchain is pinned by VALUE, not by file path (§2.2):
 #     `node-version: 24` and `version: 11.25.0` mirror this repository's own
 #     `.node-version` and `packageManager` — a join of a file input onto
@@ -67,6 +74,9 @@ inputs:
   working-directory:
     default: "${{ github.workspace }}"
     description: Where the run stands
+  claims-fetch:
+    required: true
+    description: Whether the composite materializes the claim namespace into the run's checkout first — declared true or false, never guessed, with a fetch failure failing the job before the invocation (no verdict); true (the only spelling that fetches) runs git fetch --no-tags origin '+refs/release-craft/claims/*:refs/release-craft/claims/*'
 # §3.1: ONE output, `outcome`, carrying the --json envelope byte-for-byte.
 # A composite exposes a step's $GITHUB_OUTPUT value to the consuming
 # workflow only through this declaration — the plumbing `steps.<id>.outputs.
@@ -125,6 +135,28 @@ runs:
       shell: bash
       working-directory: ${{ github.action_path }}
       run: pnpm exec tsc -p tsconfig.build.json
+
+    # — the claim-namespace fetch (§2.9) — the one git the composite itself
+    # performs, standing in the consumer's checkout (the declared
+    # working-directory), before the invocation. The register arbitrates
+    # over one shared ref space, refs/release-craft/claims/* (ADR-0011 D2);
+    # a standard clone fetches only heads and tags, and the adapter never
+    # fetches remote claim state (ADR-0010 D3), so without this step two
+    # checkouts of one repository would each acquire the space disjunctively
+    # and the register's CAS could never see the other side (#237). The
+    # fetch rides the checkout credential the caller's own workflow left in
+    # this checkout — unauthenticated for a public repository, the persisted
+    # credential for a private one (§2.8: the decided-empty token journey
+    # stands, no new secret input). Fail-closed: a failing fetch fails this
+    # step, the job never reaches the invocation, and no verdict exists — a
+    # namespace the fetch could not materialize is never read as unclaimed.
+    - name: Fetch the claim namespace
+      if: ${{ inputs.claims-fetch == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        git fetch --no-tags origin '+refs/release-craft/claims/*:refs/release-craft/claims/*'
 
     # — the invocation (§2.7, §4) — the one step past the outer hermeticity
     # line. The declared inputs enter as argv through this step's `env:` block

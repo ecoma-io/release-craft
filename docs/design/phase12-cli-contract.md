@@ -645,15 +645,13 @@ row → 10.
   no-fetch caller's shape: both acquire the same line, both mint
   locally, and the divergence first surfaces at the consumer's push as a
   non-fast-forward rejection, a git refusal outside the engine's verdict
-  vocabulary. One hosted caller answers the precondition from its own
-  caller-side hand — a hand this law does not govern (decision-log D65):
-  the self-release workflow fetches `refs/release-craft/claims/*` into
-  its checkout before the run and serializes dispatches through its
-  concurrency group (`cancel-in-progress: false`), so its sequential
-  second dispatch adjudicates against the fetched register — a replay of
-  a released version blocks at the planning boundary, never as a claim
-  denial — and the never-forced atomic publish stays the refusal
-  guarding the shared ref. Serializing across checkouts is a declared
+  vocabulary. The hosted surface answers the precondition from the
+  Action's decided claims-fetch step — phase 13 §2.9, decision-log D98:
+  the composite materializes `refs/release-craft/claims/*` into the
+  checkout before the invocation when the demanded declaration says so,
+  fail-closed (a fetch failure is no run, no verdict), with the
+  self-release caller's own caller-side fetch (decision-log D65) its
+  precedent. Serializing across checkouts is a declared
   precondition of the caller (phase 13 §2.9 names the Action's posture),
   not a mechanism this surface provides.
 - **No retry policy of its own.** E-08's bounded sequence retry is the
