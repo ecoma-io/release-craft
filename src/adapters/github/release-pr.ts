@@ -1173,7 +1173,24 @@ export function GitReleasePR(
         releaseLine: reading.claim.releaseLine,
         targetBranch: reading.claim.targetBranch,
       });
-      if (derived.ok && derived.branch !== current.headRef) {
+      if (!derived.ok) {
+        // The claim parses but its identity cannot name a head branch the
+        // port owns (#309): no derived branch exists to compare against,
+        // so the tamper check below would be skipped, not passed. The
+        // loud refusal hits the same release-conflict class the mismatch
+        // does — an underivable claim is refused, never silently
+        // bypassed (#311).
+        throw new GitHubReleasePRFault("updatePR", {
+          state: "refused",
+          reason: "release-conflict",
+          detail:
+            `pull request #${String(current.number)} carries the claim ` +
+            `(component ${JSON.stringify(reading.claim.component)}, line ${JSON.stringify(reading.claim.releaseLine)}, ` +
+            `target ${JSON.stringify(reading.claim.targetBranch)}) whose identity cannot derive a head branch: ` +
+            derived.detail,
+        });
+      }
+      if (derived.branch !== current.headRef) {
         throw new GitHubReleasePRFault("updatePR", {
           state: "refused",
           reason: "release-conflict",
