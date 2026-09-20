@@ -778,3 +778,111 @@ release-PR projection's body and `CHANGELOG.md` bytes change shape
 | Missing-tag create (issue #338)             | refused at the create gate        | the create's own — target-bearing, re-asserted post-create + verify |
 | Workflow pins                               | pre-#375 SHAs                     | `92946cc` both workflows; self-release arms `publish: "true"`       |
 | Judge release attestation                   | NOT ASSERTED (no leg)             | wired — ASSERTED only on a certified run's Release evidence         |
+
+## 15. Re-audit addendum — the certified public-path self-release (2026-09-20)
+
+### What changed since §14
+
+- **The first certified runs over live pins.** §14 armed the publish leg
+  and re-pinned both workflows to `92946cc`; the pin discipline
+  (a merged change to Action-consumed scripts is re-pinned before the next
+  dispatch — issue #382) carried the leg forward through two more heads:
+  `cf65c21` (publish-mint accepts the create's server-side tag mint,
+  #379/#380) and `a9f221c` (the judge's product-boundary fix, #384/#385,
+  re-pinned via #386/#387).
+- **Run 35498898979 (tag `0.4.1`)** — the pipeline's first full live pass
+  but not a certified one: the run door published (Release live on origin,
+  recorded refs pushed, verify-origin rows all PASS), then the judge's
+  product-boundary row failed — the row scanned the whole envelope for the
+  bytes `ecoma` while the envelope's own `releaseUrl` (which the
+  attestation row pins verbatim) is `https://github.com/ecoma-io/
+release-craft/releases/tag/<tag>`. A published envelope on this
+  repository always carries the owner's name in its own URL — the row
+  could not pass the posture the release path produces, by construction
+  (issue #384). The survivor's only `ecoma` occurrence was that URL.
+- **Run 35499784625 (tag `0.4.2`) — certified.** After the judge fix
+  (#385) and the re-pin (#387), the same dispatch from `main` (`7431fe8`)
+  concluded `success` with `verdict: CERTIFIED`: every mechanically
+  available row PASS, including the product boundary (the scan strips the
+  envelope's own release URL — the host identity — and still refuses a
+  stray Ecoma string anywhere else) and the release attestation (ASSERTED
+  on the live Release object, flipping the §14 NOT ASSERTED row).
+- **The create-missing-tag leg exercised on origin twice.** `0.4.1` and
+  `0.4.2` were both created by the publish leg's own create (GitHub mints
+  the missing tag at the recorded `target_commitish`); `publish-mint`
+  accepted the server-side-minted tag on both pushes, and the second run's
+  log names the idempotent path explicitly: `tag 0.4.2 already on origin
+at 7431fe88… — the create minted it; the push carries the remaining
+minted refs`.
+
+### New ground truth this addendum records
+
+1. **A certified published run exists.** Run 35499784625: envelope
+   `{"kind":"published","tag":"0.4.2",…}`, plan
+   `plan_sha256:fbca70226877…`, attempt
+   `attempt_sha256:47cf6fd4f056…`, ledger
+   `refs/release-craft/ledger/attempt_sha256%3A47cf6fd4…` at
+   `1d4bc2ee`, register `plan_sha256:fbca7022…` at `0f28f73a`,
+   Release `https://github.com/ecoma-io/release-craft/releases/tag/0.4.2`
+   (`draft:false`, `prerelease:false`, `published_at
+2026-09-20T08:31:43Z`, `target_commitish 7431fe88` = the run's `main`
+   head). Tag `0.4.2` dereferences to `7431fe88`.
+2. **The judge's product boundary is self-consistent.** The boundary law
+   (product-boundary.md) governs product surfaces — policy, world, plan
+   words, vocabulary — never the host-declared repository identity a
+   release names; the row now scans the surface minus that identity and
+   still fails on a stray Ecoma string anywhere else (suite rows
+   `judge.test.mjs`: the real published shape certifies; a polluted
+   envelope is refused).
+3. **Recovery and idempotency are proven across cycles.** `0.4.0`
+   (server-side tag mint, ledger recorded), `0.4.1` (recovery re-run over
+   a satisfied posture), and `0.4.2` (create satisfied path again) all
+   landed on origin without tag rewrite or force push; every run pushed or
+   re-asserted the same ref namespaces; the crash-window and
+   cross-process recovery suites (x-06, #355) stay green.
+4. **The §14 "not yet certified-exercised" posture is closed.** The live
+   publish leg, the missing-tag create, and the judge attestation are now
+   certified-exercised on real origin evidence, at `7431fe8`.
+5. **Changelog bodies are still the header-only template** (issue #381):
+   the release-object body records the unchanged `CHANGELOG.md` bytes and
+   the changelog content seal stays internally consistent — a cosmetic
+   gap on the release page, tracked separately, not a certification
+   blocker.
+
+### Baseline — implemented vs tested vs verified vs proven
+
+| Capability                    | Implemented | Tested (suite)                                 | Verified (real run)         | Proven (certified run) |
+| ----------------------------- | ----------- | ---------------------------------------------- | --------------------------- | ---------------------- |
+| Deterministic planner         | yes         | planner suites                                 | plan ids on runs #3/#4      | run #4 plan record     |
+| Execution kernel + ledger     | yes         | execution + certification (x-06 crash windows) | 21-record tails both runs   | run #4 tail + claims   |
+| Git binding (commit identity) | yes         | binding suites (#170)                          | substrate commits on origin | run #4 ledger blobs    |
+| GitHub adapter (publication)  | yes         | adapter isolation suites                       | Releases 0.4.1/0.4.2 live   | run #4 Release object  |
+| Publish-mint (server tag)     | yes         | self-release dogfood suites                    | "already on origin" path    | run #4 push log        |
+| Verify-origin                 | yes         | verify-origin suites                           | unchanged-origin PASS       | run #4 rows            |
+| Judge (four classes)          | yes         | judge suite (35 rows)                          | run #3 bite, run #4 pass    | run #4 CERTIFIED       |
+| Changelog content seal        | yes         | changelog seal suites (#294/#206)              | recorded tree both runs     | run #4 changelog pair  |
+
+### Reconciliations taken with this addendum
+
+- **Archkeep.** The `arch` gate (module-boundaries, exact pin) ran green in
+  every CI check of this session's PRs (#380, #383, #385, #387) and in the
+  local `pnpm check`; no suppression added — the domain kernel still
+  imports nothing (§4 invariant).
+- **Issue #381 (changelog body)** stays open as the next unit: extending
+  `GitArtifactProducer` to render recorded changelog words is an engine
+  contract change (ADR-0008 decision 7) via its own issue + design.
+- **History kept verbatim.** §9's "PR #337 empty" record, §14's
+  "not yet certified-exercised" wording, and run #3's failed judge row are
+  all preserved above as the honest record; this addendum supersedes only
+  their current-value claims.
+
+### Posture delta over §14
+
+| Capability                | Was (§14)                           | Now (this PR)                                     |
+| ------------------------- | ----------------------------------- | ------------------------------------------------- |
+| Live publish leg          | wired, not certified-exercised      | certified-exercised (runs #3/#4, Releases live)   |
+| Missing-tag create        | the create's own, asserted          | exercised twice on origin, never rewritten        |
+| Judge release attestation | ASSERTED only on certified evidence | ASSERTED — PASS on run #4's live Release          |
+| Judge product boundary    | self-defeating (issue #384)         | host identity excluded from the scan; still bites |
+| Workflow pins             | `92946cc`                           | `a9f221c` (judge fix head)                        |
+| Certification             | none (NOT CERTIFIED run #3)         | **CERTIFIED — run 35499784625 (tag 0.4.2)**       |
