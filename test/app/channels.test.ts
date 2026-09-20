@@ -13,6 +13,8 @@ import {
   assembleMemoryStores,
   channelStateFingerprint,
   MemoryChannelStore,
+  type ChannelApplyOutcome,
+  type ChannelMove,
   type ChannelTransitionRecord,
   type Claim,
   type ClaimDenied,
@@ -41,6 +43,40 @@ function ambiguousAssembly(): ReturnType<typeof freshAssembly> & { channels: Mem
     channels: standingChannelStates(),
     ambiguousNext: "the CAS confirmation was lost after the write",
   });
+  const engine = assembleMemoryStores(
+    {
+      register: stores.register,
+      ledger: stores.ledger,
+      claims: stores.claims,
+      channels,
+    },
+    { maxRetries: 2 },
+  );
+  return { engine, stores, channels };
+}
+
+/** A channel store whose SECOND `applyTransition` answers `ambiguous` —
+ * the crash window inside the stage: the first move lands and records, the
+ * second cannot be confirmed, and the stage never completes. */
+class FaultySecondTransitionStore extends MemoryChannelStore {
+  #calls = 0;
+
+  override applyTransition(move: ChannelMove): ChannelApplyOutcome {
+    this.#calls += 1;
+    if (this.#calls === 2) {
+      return { kind: "ambiguous", detail: "the CAS confirmation was lost after the write" };
+    }
+    return super.applyTransition(move);
+  }
+}
+
+/** A promote assembly wired to the faulting store above, seeded with §3.1's
+ * standing channels — the run's first move lands, the second stops it. */
+function midStageCrashAssembly(): ReturnType<typeof freshAssembly> & {
+  channels: FaultySecondTransitionStore;
+} {
+  const stores = freshStores();
+  const channels = new FaultySecondTransitionStore({ channels: standingChannelStates() });
   const engine = assembleMemoryStores(
     {
       register: stores.register,
@@ -526,5 +562,103 @@ describe("§2.4 — a completed channel stage is never re-executed (issue #192's
       "started",
       "completed",
     ]);
+  });
+});
+
+describe("§2.4 — a resumed re-apply carries the recorded prior target (issue #223)", () => {
+  it("an out-of-band drift past the recorded prior classifies conflict, records nothing, and never re-points", () => {
+    const assembly = midStageCrashAssembly();
+    const world = liveWorld();
+    stageLadder(assembly.engine, world);
+    // The run stops inside the channel stage: stable's move lands and
+    // records, the second move's write is undeterminable, the stage never
+    // completes — the resume will re-execute the re-apply.
+    const stopped = assembly.engine.run(runRequest(world, "main", [promote]));
+    expect(stopped.kind).toBe("ambiguous");
+    if (stopped.kind !== "ambiguous" || stopped.handle === null) {
+      throw new Error("expected the second move's write to stop the run");
+    }
+    const attemptId = stopped.handle.attemptId;
+    expect(assembly.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "5.0.0" },
+    });
+    expect(assembly.channels.read("next")).toStrictEqual({
+      id: "next",
+      target: { line: "main", version: "4.9.2" },
+    });
+    const movesBefore = channelRecordsOf(assembly.stores.ledger.tail(attemptId));
+    expect(movesBefore.map((record) => record.channelId)).toStrictEqual(["stable"]);
+
+    // Between the runs a concurrent writer moves stable past the recorded
+    // prior — the drift ADR-0012 decision 4 names, invisible to the
+    // resume's own read.
+    const drifted = assembly.channels.applyTransition({
+      channelId: "stable",
+      from: { line: "main", version: "5.0.0" },
+      to: { line: "main", version: "6.0.0" },
+    });
+    expect(drifted.kind).toBe("applied");
+
+    // The resume re-executes the stage. The re-apply carries the recorded
+    // prior (5.0.0) into the CAS: the store observes 6.0.0, matching
+    // neither the prior nor the target — the run fails closed, never a
+    // silent re-point of the drifted ref.
+    const outcome = assembly.engine.resume(stopped.handle, runRequest(world, "main", [promote]));
+    expect(outcome.kind).toBe("conflict");
+    if (outcome.kind !== "conflict" || outcome.handle === null) {
+      throw new Error("expected the drifted resume to stop on the channel conflict");
+    }
+    expect(outcome.detail).toContain("stable");
+    // Nothing re-pointed, nothing recorded: stable stands drifted, next
+    // untouched, and the tail is exactly the run's recorded move.
+    expect(assembly.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "6.0.0" },
+    });
+    expect(assembly.channels.read("next")).toStrictEqual({
+      id: "next",
+      target: { line: "main", version: "4.9.2" },
+    });
+    expect(channelRecordsOf(assembly.stores.ledger.tail(outcome.handle.attemptId))).toStrictEqual(
+      movesBefore,
+    );
+  });
+  it("the idempotent re-apply of an already-standing move stays noop and never re-points", () => {
+    const assembly = midStageCrashAssembly();
+    const world = liveWorld();
+    stageLadder(assembly.engine, world);
+    const stopped = assembly.engine.run(runRequest(world, "main", [promote]));
+    expect(stopped.kind).toBe("ambiguous");
+    if (stopped.kind !== "ambiguous" || stopped.handle === null) {
+      throw new Error("expected the second move's write to stop the run");
+    }
+    // No drift: the world still stands exactly where the stopped run left
+    // it — the replay's own crash-window case, where the recorded prior
+    // equals the standing target.
+    const outcome = assembly.engine.resume(stopped.handle, runRequest(world, "main", [promote]));
+    expect(outcome.kind).toBe("published");
+    if (outcome.kind !== "published" || outcome.handle === null) {
+      throw new Error("expected the resumed run to publish");
+    }
+    expect(outcome.tag).toBe("5.0.0");
+    // The re-apply carried the recorded prior into the CAS: stable answers
+    // noop (the move already stands — its resumed record quotes the same
+    // from and to), next applies on the standing prior — and nothing
+    // re-points.
+    const recorded = channelRecordsOf(assembly.stores.ledger.tail(outcome.handle.attemptId));
+    expect(recorded.map((record) => record.channelId)).toStrictEqual(["stable", "stable", "next"]);
+    expect(recorded[1]?.from).toStrictEqual({ line: "main", version: "5.0.0" });
+    expect(recorded[1]?.to).toStrictEqual({ line: "main", version: "5.0.0" });
+    expect(recorded[2]?.from).toStrictEqual({ line: "main", version: "4.9.2" });
+    expect(recorded[2]?.to).toStrictEqual({ line: "main", version: "5.0.0" });
+    expect(assembly.channels.read("stable")).toStrictEqual({
+      id: "stable",
+      target: { line: "main", version: "5.0.0" },
+    });
+    expect(assembly.channels.read("next")).toStrictEqual({
+      id: "next",
+      target: { line: "main", version: "5.0.0" },
+    });
   });
 });

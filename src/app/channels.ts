@@ -29,17 +29,27 @@
  *
  * The move assumes the prior target the store's own read observes — never
  * a trusted `from` from the plan (ADR-0012 decision 2: the plan names `to`,
- * never `from`). Every decided move appends one `channel-transition` ledger
- * record whose `contentFingerprint` is the store outcome's — the record's
- * idempotency key is what the store observed deciding, never what the plan
- * assumed (decision 4). `applied` proceeds; `noop` is an ADVANCING stage's
- * own replay case — the crash window between the moves and the completion,
- * where the verified claim stands and each already-landed move answers
- * `noop`; a COMPLETED channel stage is never re-executed at all (the walk's
- * CAS gate is the verified advance alone), so this function never runs over
- * one and an out-of-band drifted ref is never re-pointed here — the silent
- * second move the replay ladder forbids. A `conflict` or `ambiguous` stops
- * the walk as a returned outcome — never a throw, never a quiet second
+ * never `from`) — unless the attempt's ledger already records this
+ * channel's prior move: a resumed re-apply carries that recorded prior
+ * target (the prior `channel-transition` record's `to`) into the CAS, so
+ * an out-of-band drift past the recorded prior classifies `conflict`
+ * instead of a silent re-point (decision 4's promise; the replay ladder's
+ * name). A fresh apply — no prior record for the channel — still assumes
+ * the store-observed prior, exactly as decision 2's refusal to trust a
+ * plan `from` demands. Every decided move appends one `channel-transition`
+ * ledger record whose `contentFingerprint` is the store outcome's — the
+ * record's idempotency key is what the store observed deciding, never
+ * what the plan assumed (decision 4). `applied` proceeds; `noop` is an
+ * ADVANCING stage's own replay case — the crash window between the moves
+ * and the completion, where the verified claim stands and each
+ * already-landed move answers `noop` (the recorded prior equals the
+ * standing target, so the carry preserves it); a COMPLETED channel stage
+ * is never re-executed at all (the walk's CAS gate is the verified
+ * advance alone), so this function never runs over one and an out-of-band
+ * drifted ref is never re-pointed here — the silent second move the
+ * replay ladder forbids.
+ * A `conflict` or `ambiguous` stops the walk as a returned outcome — never
+ * a throw, never a quiet second
  * move: a half-moved promotion is never reported green (invariants 2.5/2.6),
  * and the recorded `started` record is what a resume re-judges. The
  * `promoted-from` edge and the stream close are line-level facts needing no
@@ -50,12 +60,39 @@
  */
 import type {
   ChannelApplyOutcome,
+  ChannelState,
   ChannelStore,
   ExecutionLedger,
   ReleaseAttempt,
 } from "@ecoma-io/release-craft/execution";
 import type { PlannedChannelMove, PlanLine } from "@ecoma-io/release-craft/planner";
 import type { AppliedChannelMove, ChannelStageResult } from "./types.js";
+/**
+ * The recorded prior target for one channel — the LAST `channel-transition`
+ * record the attempt appended for it (the ledger is append-ordered), or
+ * null when the attempt recorded no move for the channel. A resumed
+ * re-apply carries this recorded prior into the store's CAS instead of the
+ * bare store read's target, so an out-of-band drift past the recorded
+ * prior classifies `conflict` (ADR-0012 decision 4's promise) rather than
+ * a silent re-point: the store's CAS alone can only catch read-to-CAS
+ * interleavings, never drift that predates this re-apply's read. A fresh
+ * apply — no recorded prior — still assumes the store-observed target
+ * (decision 2: the plan names `to`, never `from`).
+ */
+const recordedPriorTarget = (
+  ledger: ExecutionLedger,
+  attemptId: string,
+  channelId: string,
+): ChannelState["target"] | null => {
+  const tail = ledger.tail(attemptId);
+  for (let index = tail.length - 1; index >= 0; index -= 1) {
+    const record = tail[index];
+    if (record?.kind === "channel-transition" && record.record.channelId === channelId) {
+      return record.record.to;
+    }
+  }
+  return null;
+};
 
 /**
  * The plan line's declared channel moves, in declaration order — the only
@@ -94,7 +131,9 @@ export const applyPlannedChannelTransitions = (application: {
     const to = { line: move.to.line, version: move.to.version };
     const outcome: ChannelApplyOutcome = application.channels.applyTransition({
       channelId: move.channelId,
-      from: observed.target,
+      from:
+        recordedPriorTarget(application.ledger, application.attempt.attemptId, move.channelId) ??
+        observed.target,
       to,
     });
     if (outcome.kind === "conflict") {
