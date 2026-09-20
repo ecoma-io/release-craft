@@ -36,7 +36,16 @@ function planLine(lineId: string, changeId: string): PlanLine {
         movesPointer: false,
       },
     ],
-    changes: [{ id: changeId, lineage: [changeId], type: "feat", bump: "minor" }],
+    changes: [
+      {
+        id: changeId,
+        lineage: [changeId],
+        type: "feat",
+        subject: "the change",
+        breaking: false,
+        bump: "minor",
+      },
+    ],
     propagation: { edges: [], order: [], notMoved: [] },
     preconditions: [{ kind: "tag-absent", tag: "v1.3.0" }],
     artifacts: ["changelog"],
@@ -130,7 +139,16 @@ describe("planFingerprint — §2.11 plan identity", () => {
       artifacts: ["changelog"],
       preconditions: [{ kind: "tag-absent", tag: "v1.3.0" }],
       propagation: { edges: [], order: [], notMoved: [] },
-      changes: [{ id: "sha-1", lineage: ["sha-1"], type: "feat", bump: "minor" }],
+      changes: [
+        {
+          id: "sha-1",
+          lineage: ["sha-1"],
+          type: "feat",
+          subject: "the change",
+          breaking: false,
+          bump: "minor",
+        },
+      ],
       streams: [
         {
           identifier: "rc",

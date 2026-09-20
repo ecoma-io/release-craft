@@ -39,6 +39,7 @@ import type {
   UpdaterFs,
 } from "@ecoma-io/release-craft/execution";
 import type {
+  ChangelogOptions,
   OperatorIntent,
   PlanLine,
   PlanningInput,
@@ -206,6 +207,11 @@ export interface RunDeclarations {
   /** The updater mutation intents, keyed by mutation id — demanded by
    * every uncompleted declared updater mutation the walk reaches. */
   readonly mutationIntents?: ReadonlyMap<string, MutationIntent>;
+  /** The declared changelog projection options (issue #291) — the HOW the
+   * plan-bound `changelog-render` mutation's planned bytes render under
+   * (date, sections, repository, existing); the WHAT stays the recorded
+   * plan. Present when the run declares a changelog render. */
+  readonly changelog?: ChangelogOptions;
   /** The injectable filesystem seam the updater layer writes through —
    * demanded when declared mutations are present. */
   readonly updaterFs?: UpdaterFs;

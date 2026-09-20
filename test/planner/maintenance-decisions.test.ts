@@ -234,7 +234,15 @@ describe("M-01 through the door — the fix lands on the maintenance line by anc
     const line19 = planLineFor(outcome, "1.9");
     expect(line19.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
     expect(line19.changes).toEqual([
-      { id: "m01-f", lineage: ["m01-f"], type: "fix", bump: "patch" },
+      {
+        id: "m01-f",
+        lineage: ["m01-f"],
+        type: "fix",
+        scope: "parser",
+        subject: "handle empty input",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     // main is evaluated in the same pass and records the no-op: an empty
     // effective change set, nothing ignored, and no mint — the plan's only
@@ -489,7 +497,15 @@ describe("M-04 through the door — the clean backport releases 1.9 only, main m
     const line19 = planLineFor(outcome, "1.9");
     expect(line19.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
     expect(line19.changes).toEqual([
-      { id: "m04-f", lineage: ["m04-f"], type: "fix", bump: "patch" },
+      {
+        id: "m04-f",
+        lineage: ["m04-f"],
+        type: "fix",
+        scope: "parser",
+        subject: "handle empty input",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     // main's record is the no-op with the 2.3.0 cut still bounding its
     // released span — the pass marked nothing released for main: F remains
@@ -599,7 +615,15 @@ describe("M-06 through the door — the backport of an already-released change a
     const line19 = planLineFor(outcome, "1.9");
     expect(line19.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
     expect(line19.changes).toEqual([
-      { id: "m06-f", lineage: ["m06-f"], type: "fix", bump: "patch" },
+      {
+        id: "m06-f",
+        lineage: ["m06-f"],
+        type: "fix",
+        scope: "parser",
+        subject: "handle empty input",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     // main's record carries F as already-released the way the record can:
     // the range's released bound IS F's commit (F sits inside the released

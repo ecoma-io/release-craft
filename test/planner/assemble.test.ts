@@ -310,9 +310,30 @@ describe("S-02 through the door — the un-bootstrapped first release", () => {
       stable: { version: "1.0.0", tag: "1.0.0" },
       streams: [],
       changes: [
-        { id: "s02-feat-core", lineage: ["s02-feat-core"], type: "feat", bump: "minor" },
-        { id: "s02-feat-cli", lineage: ["s02-feat-cli"], type: "feat", bump: "minor" },
-        { id: "s02-fix", lineage: ["s02-fix"], type: "fix", bump: "patch" },
+        {
+          id: "s02-feat-core",
+          lineage: ["s02-feat-core"],
+          type: "feat",
+          subject: "the core workflow",
+          breaking: false,
+          bump: "minor",
+        },
+        {
+          id: "s02-feat-cli",
+          lineage: ["s02-feat-cli"],
+          type: "feat",
+          subject: "the command surface",
+          breaking: false,
+          bump: "minor",
+        },
+        {
+          id: "s02-fix",
+          lineage: ["s02-fix"],
+          type: "fix",
+          subject: "the parser edge",
+          breaking: false,
+          bump: "patch",
+        },
       ],
       propagation: { edges: [], order: ["release-craft"], notMoved: [] },
       preconditions: [{ kind: "tag-absent", tag: "1.0.0" }],
@@ -387,9 +408,18 @@ describe("S-03 through the door — the healthy patch release", () => {
       lineId: "1.x",
       stable: { version: "1.9.6", tag: "1.9.6" },
       streams: [],
-      changes: [{ id: "s03-fix-main", lineage: ["s03-fix-main"], type: "fix", bump: "patch" }],
-      propagation: { edges: [], order: ["release-craft"], notMoved: [] },
       preconditions: [{ kind: "tag-absent", tag: "1.9.6" }],
+      propagation: { edges: [], order: ["release-craft"], notMoved: [] },
+      changes: [
+        {
+          id: "s03-fix-main",
+          lineage: ["s03-fix-main"],
+          type: "fix",
+          subject: "guard empty config",
+          breaking: false,
+          bump: "patch",
+        },
+      ],
       artifacts: ["1.9.6"],
     });
     // Invariant 6: tag history outranks the manifest — 1.9.0 (its only
@@ -569,8 +599,22 @@ describe("M-07 through the door — two lines, own ranges, divergent histories",
       stable: { version: "1.10.0", tag: "1.10.0" },
       streams: [],
       changes: [
-        { id: "m07-divergent-feat", lineage: ["m07-divergent-feat"], type: "feat", bump: "minor" },
-        { id: "m07-divergent-fix", lineage: ["m07-divergent-fix"], type: "fix", bump: "patch" },
+        {
+          id: "m07-divergent-feat",
+          lineage: ["m07-divergent-feat"],
+          type: "feat",
+          subject: "the divergent minor",
+          breaking: false,
+          bump: "minor",
+        },
+        {
+          id: "m07-divergent-fix",
+          lineage: ["m07-divergent-fix"],
+          type: "fix",
+          subject: "the divergent follow-up",
+          breaking: false,
+          bump: "patch",
+        },
       ],
       propagation: { edges: [], order: ["release-craft"], notMoved: [] },
       preconditions: [{ kind: "tag-absent", tag: "1.10.0" }],
@@ -760,7 +804,14 @@ describe("M-08 through the door — the refused rc beside the stable mint", () =
     expect(minted.stable).toEqual({ version: "1.9.1", tag: "1.9.1" });
     expect(minted.streams).toEqual([]);
     expect(minted.changes).toEqual([
-      { id: "m08-fix", lineage: ["m08-fix"], type: "fix", bump: "patch" },
+      {
+        id: "m08-fix",
+        lineage: ["m08-fix"],
+        type: "fix",
+        subject: "the stable-only fix",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     expect(minted.propagation).toEqual({
       edges: [],
@@ -817,7 +868,14 @@ describe("D18 §2.8 through the door — the allow-list posture", () => {
     const minted = planLineOf(outcome);
     expect(minted.stable).toBeNull();
     expect(minted.changes).toEqual([
-      { id: "lst-fix", lineage: ["lst-fix"], type: "fix", bump: "patch" },
+      {
+        id: "lst-fix",
+        lineage: ["lst-fix"],
+        type: "fix",
+        subject: "the joining fix",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     expect(minted.streams.map((stream) => stream.identifier)).toEqual(["beta"]);
     const stream = minted.streams[0];
@@ -1228,7 +1286,14 @@ describe("P-07 through the door — the suppressed stable publishes the componen
     expect(stream.version.equals(Version.parse("1.2.4-rc.2"))).toBe(true);
     expect(stream.tag).toBe("1.2.4-rc.2");
     expect(assembled.changes).toEqual([
-      { id: "p07-c2", lineage: ["p07-c2"], type: "fix", bump: "patch" },
+      {
+        id: "p07-c2",
+        lineage: ["p07-c2"],
+        type: "fix",
+        subject: "the joining fix",
+        breaking: false,
+        bump: "patch",
+      },
     ]);
     expect(assembled.propagation).toEqual({
       edges: [],

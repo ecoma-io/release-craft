@@ -33,7 +33,9 @@ export { plannedChannelMoves } from "./channels.js";
 export {
   bindMutationsToPlan,
   plannedVersionBump,
+  plannedChangelog,
   VERSION_BUMP_MUTATION_ID,
+  CHANGELOG_RENDER_MUTATION_ID,
   type PlannedVersionBump,
 } from "./mutation-plan.js";
 export { stageContentFingerprint } from "./engine.js";

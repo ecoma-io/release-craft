@@ -188,7 +188,7 @@ version.
 **OBSERVED** — The default changelog builder (`src/changelog-notes/default.ts`)
 uses `conventional-changelog-writer` with the `conventional-changelog-conventionalcommits` preset.
 The output follows the standard [Conventional Changelog](https://www.conventionalcommits.org/)
-format: a `## <version>` header, `## Features` / `## Bug Fixes` etc. sections
+format: a `## <version>` header, `### Features` / `### Bug Fixes` etc. sections
 with bulleted entries linking to commits and PRs.
 
 **OBSERVED** — The `, closes` keyword is replaced with `, refs` in the commit

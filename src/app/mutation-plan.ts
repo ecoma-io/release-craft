@@ -9,33 +9,45 @@
  * mutation the plan did not sanction, and the half-mutated tree is never
  * committed beside it.
  *
- * The binding is by id, not by declaration shape: `version-bump` is the
- * reserved name of the plan's own version mutation, and any declaration
- * using the id answers to the plan — the driver's derived mutations are
- * the same names, so the driver's own corridor is bound by construction
- * while a foreign declaration contradicting the plan is refused. An
- * unbound id (a host's own mutation name) stays host-domain exactly as
- * the updater contract declares it. The check verifies, it never
- * invents: the produced bytes are compared to the plan's recorded value,
- * never to a value the engine derives at run time (ADR-0007 decision 2),
- * and the walk still re-derives and write-verifies the bytes at its own
- * seam — the binding refuses before any record, the updater's
- * verification remains the recorded proof.
+ * The binding is by id, not by declaration shape: `version-bump` and
+ * `changelog-render` are the reserved names of the plan's own mutations,
+ * and any declaration using an id answers to the plan — the driver's
+ * derived mutations are the same names, so the driver's own corridor is
+ * bound by construction while a foreign declaration contradicting the
+ * plan is refused. An unbound id (a host's own mutation name) stays
+ * host-domain exactly as the updater contract declares it. The check
+ * verifies, it never invents: the produced bytes are compared to the
+ * plan's recorded value, never to a value the engine derives at run time
+ * (ADR-0007 decision 2), and the walk still re-derives and
+ * write-verifies the bytes at its own seam — the binding refuses before
+ * any record, the updater's verification remains the recorded proof.
  *
- * The changelog-render mutation is deliberately NOT bound here: the plan
- * record carries no renderer fields (subject/scope/breaking — the
- * `planLine.changes` projection drops them at assemble; issue #291's
- * change-shape binding is its own slice, audit §9), so no plan-recorded
- * value exists to check the rendered bytes against. The version is the
- * plan-recorded value this middle term binds today.
+ * The changelog-render binding (issue #291) completes the middle term: the
+ * plan record now carries the renderer's words (subject, scope, breaking
+ * — the `planLine.changes` projection, #291's change-shape binding), so
+ * the rendered bytes are a plan-recorded function of the line plus the
+ * caller's declared options (`declarations.changelog`), and a
+ * `changelog-render` declaration must produce exactly those bytes. The
+ * options stay host-domain (the WHAT/HOW boundary — the plan decides the
+ * change set, the caller decides date, sections, repository, existing);
+ * only the plan-derived projection is checked.
  */
 import type { DeclaredMutation, MutationIntent } from "@ecoma-io/release-craft/execution";
-import type { PlanLine } from "@ecoma-io/release-craft/planner";
+import {
+  changelogOf,
+  renderChangelog,
+  type ChangelogOptions,
+  type PlanLine,
+} from "@ecoma-io/release-craft/planner";
 
 /** The reserved, plan-bound mutation id — the plan's own version bump. A
  * declaration using the id binds to the recorded plan; any other id stays
  * host-domain. */
 export const VERSION_BUMP_MUTATION_ID = "version-bump";
+
+/** The reserved, plan-bound mutation id — the plan's own changelog
+ * render. A declaration using the id binds to the recorded plan. */
+export const CHANGELOG_RENDER_MUTATION_ID = "changelog-render";
 
 /** The plan's projection of its own version bump: the recorded value and
  * the release's own version bytes — the derived version, newline-
@@ -65,48 +77,90 @@ export const plannedVersionBump = (line: PlanLine): PlannedVersionBump | null =>
   return { id: VERSION_BUMP_MUTATION_ID, version, bytes: `${version}\n` };
 };
 
-/** The pre-walk binding (issue #289): a declared mutation that reserves
- * the plan-bound id must produce exactly the plan's recorded version
- * bytes, and the id over a line that plans no version has nothing to
- * bind. Returns the refusal detail naming the contradiction, or null
- * when every plan-bound declaration is faithful. Unbound ids are
- * untouched. The check runs each bound mutation's producer exactly once —
- * pure per the `MutationIntent` contract — and the walk still re-derives
- * the bytes at its own write-verify seam. */
+/** The plan's projection of its own changelog render (issue #291): the
+ * rendered bytes of the line's recorded change set under the caller's
+ * declared options — `changelogOf` over the plan line, rendered. The plan
+ * decides the change set (WHAT); the options decide date, sections,
+ * repository, and existing bytes (HOW, host-declared). A line with no
+ * version target projects no version block — the header-only/existing
+ * identity, exactly what the renderer would write for nothing to render;
+ * the bind compares a declared `changelog-render` mutation against these
+ * bytes whatever they are. */
+export const plannedChangelog = (line: PlanLine, options: ChangelogOptions = {}): string =>
+  renderChangelog(changelogOf([line], options));
+
+/** The pre-walk binding (issue #289, completed for changelog-render by
+ * #291): a declared mutation that reserves a plan-bound id must produce
+ * exactly the plan's recorded bytes — the version bump's planned bytes,
+ * and the changelog render's planned projection under the caller's
+ * declared options. A version-bound id over a line that plans no version
+ * has nothing to bind. Returns the refusal detail naming the
+ * contradiction, or null when every plan-bound declaration is faithful.
+ * Unbound ids are untouched. The check runs each bound mutation's
+ * producer exactly once — pure per the `MutationIntent` contract — and
+ * the walk still re-derives the bytes at its own write-verify seam. */
 export const bindMutationsToPlan = (
   line: PlanLine,
   mutations: readonly DeclaredMutation[] | undefined,
   intents: ReadonlyMap<string, MutationIntent> | undefined,
+  changelogOptions?: ChangelogOptions,
 ): string | null => {
-  const bound = (mutations ?? []).filter((mutation) => mutation.id === VERSION_BUMP_MUTATION_ID);
-  if (bound.length === 0) {
+  const declared = mutations ?? [];
+  const versionBumps = declared.filter((mutation) => mutation.id === VERSION_BUMP_MUTATION_ID);
+  const changelogRenders = declared.filter(
+    (mutation) => mutation.id === CHANGELOG_RENDER_MUTATION_ID,
+  );
+  if (versionBumps.length === 0 && changelogRenders.length === 0) {
     return null;
   }
   const planned = plannedVersionBump(line);
-  if (planned === null) {
+  if (versionBumps.length > 0 && planned === null) {
     return (
       `line ${line.lineId}'s plan records no version target, but the run declares a ` +
       `${VERSION_BUMP_MUTATION_ID} mutation — the plan-bound id names the release's own ` +
       `version bump, so the run refuses before the walk starts (issue #289)`
     );
   }
-  for (const mutation of bound) {
+  for (const mutation of versionBumps) {
     const intent = intents?.get(mutation.id);
     if (intent === undefined) {
+      const version = planned === null ? "none" : planned.version;
       return (
         `the ${VERSION_BUMP_MUTATION_ID} mutation declares no intent to check against ` +
-        `line ${line.lineId}'s recorded version ${planned.version} — the run refuses ` +
+        `line ${line.lineId}'s recorded version ${version} — the run refuses ` +
         `before the walk starts (issue #289)`
       );
     }
     const produced = intent.produce();
-    if (produced !== planned.bytes) {
+    if (produced !== planned?.bytes) {
+      const bytes = planned === null ? "none" : JSON.stringify(planned.bytes);
       return (
         `the ${VERSION_BUMP_MUTATION_ID} mutation produces ` +
         `${JSON.stringify(produced)}, but line ${line.lineId}'s plan records ` +
-        `${JSON.stringify(planned.bytes)} (version ${planned.version}) — the plan decides ` +
+        `${bytes} (version ${planned === null ? "none" : planned.version}) — the plan decides ` +
         `WHAT, so the run refuses before the walk starts (issue #289)`
       );
+    }
+  }
+  if (changelogRenders.length > 0) {
+    const plannedBytes = plannedChangelog(line, changelogOptions);
+    for (const mutation of changelogRenders) {
+      const intent = intents?.get(mutation.id);
+      if (intent === undefined) {
+        return (
+          `the ${CHANGELOG_RENDER_MUTATION_ID} mutation declares no intent to check ` +
+          `against line ${line.lineId}'s planned changelog bytes — the run refuses ` +
+          `before the walk starts (issue #291)`
+        );
+      }
+      const produced = intent.produce();
+      if (produced !== plannedBytes) {
+        return (
+          `the ${CHANGELOG_RENDER_MUTATION_ID} mutation's produced bytes do not equal ` +
+          `line ${line.lineId}'s plan-derived changelog — the plan records the change ` +
+          `set's words, so the run refuses before the walk starts (issue #291)`
+        );
+      }
     }
   }
   return null;

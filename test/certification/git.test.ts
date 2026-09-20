@@ -967,10 +967,10 @@ describe("the certification fixture · A-git", () => {
         );
         expect(
           attemptIdentity(
-            "plan_sha256:4fe3b941b74fd011eeccf168c5588a4a39489b25cc8d9ea839d2ae74584dcbd4",
+            "plan_sha256:d7785a95f9b75c9a731057fd842f96d2e3784dd1fa7374562b3bfb51eb98fa33",
             1,
           ),
-        ).toBe("attempt_sha256:b6bee33fdd09f26bd37051fb26acce8289f06932386319f5a87c6edf5997651a");
+        ).toBe("attempt_sha256:d5de669248a00ff5d519b471e031352df26b34d49c0f030acd7f0cbc23fed7d2");
 
         // The memory assembly over that world.
         const memory = freshAssembly();
@@ -980,10 +980,10 @@ describe("the certification fixture · A-git", () => {
           throw new Error("expected a published memory outcome");
         }
         expect(memoryOutcome.planId).toBe(
-          "plan_sha256:4fe3b941b74fd011eeccf168c5588a4a39489b25cc8d9ea839d2ae74584dcbd4",
+          "plan_sha256:d7785a95f9b75c9a731057fd842f96d2e3784dd1fa7374562b3bfb51eb98fa33",
         );
         expect(memoryOutcome.handle.attemptId).toBe(
-          "attempt_sha256:b6bee33fdd09f26bd37051fb26acce8289f06932386319f5a87c6edf5997651a",
+          "attempt_sha256:d5de669248a00ff5d519b471e031352df26b34d49c0f030acd7f0cbc23fed7d2",
         );
 
         // The git assembly over the SAME world and repository: the plan
