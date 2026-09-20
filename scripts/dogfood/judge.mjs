@@ -178,6 +178,13 @@ const PROMOTE_COMPLETED_GUARDS = {
 };
 
 /**
+ * The publish cell's generation proof — present on the completed record
+ * exactly when the tail declares artifact steps (the engine's §2.5 proof
+ * that every artifact step completed before the publish advance).
+ */
+const GENERATION_GUARD = "generation-complete";
+
+/**
  * This script's argv protocol. Every flag takes exactly one value; the first
  * three are demanded on every invocation, the fourth keeps its default.
  *
@@ -823,7 +830,15 @@ function judgeProjection(rows, records, envelope, actor, attemptId, repo) {
       shapeHeld = false;
       continue;
     }
-    const expectedGuards = PROMOTE_COMPLETED_GUARDS[cell] ?? [];
+    const expectedGuards = [
+      ...(PROMOTE_COMPLETED_GUARDS[cell] ?? []),
+      // Publish over a declared generation (artifact steps present in the
+      // tail) carries the engine's generation-complete proof — every
+      // artifact step's record underpins the declaration (§2.5, #335). The
+      // walk's artifact pair declares the generation; its absence forbids
+      // the guard, byte-identical to the cell without the wired port.
+      ...(cell === "publish" && declared ? [GENERATION_GUARD] : []),
+    ];
     const guards = done?.record?.guards;
     const guardNames = Array.isArray(guards)
       ? guards.map((guard) => /** @type {any} */ (guard).guard)
