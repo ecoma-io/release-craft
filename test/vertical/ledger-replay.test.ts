@@ -511,13 +511,17 @@ describe("V3/V4 — the ladder and the cut, replayed", () => {
     const replay = applyPlannedChannelTransitions({
       attempt: promoteRun.attempt,
       planLine: promoteRun.planLine,
+      actor: "automation",
       claim: promoteRun.token,
       channels: stores.channels,
       ledger: stores.ledger,
     });
-    expect(replay.map((move) => move.channelId)).toStrictEqual(["stable", "next"]);
-    for (const move of replay) {
-      expect(move.outcome.kind).toBe("noop");
+    if (replay.kind !== "applied") {
+      throw new Error(`fixture broken: the replay refused: ${replay.detail}`);
+    }
+    expect(replay.moves.map((move) => move.channelId)).toStrictEqual(["stable", "next"]);
+    for (const move of replay.moves) {
+      expect(move.outcome).toBe("noop");
       // The noop observed the MOVED target — from equals to.
       expect(move.from).toStrictEqual({ line: "main", version: "5.0.0" });
     }

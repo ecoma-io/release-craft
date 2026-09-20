@@ -534,11 +534,15 @@ describe("V4 — promotion, git-backed", () => {
         const replay = applyPlannedChannelTransitions({
           attempt: promoteRun.attempt,
           planLine: promoteRun.planLine,
+          actor: "automation",
           claim: promoteRun.token,
           channels: reloaded.channels,
           ledger: reloaded.ledger,
         });
-        expect(replay.map((move) => move.outcome.kind)).toStrictEqual(["noop", "noop"]);
+        if (replay.kind !== "applied") {
+          throw new Error(`fixture broken: the replay refused: ${replay.detail}`);
+        }
+        expect(replay.moves.map((move) => move.outcome)).toStrictEqual(["noop", "noop"]);
         // The noop replays are recorded like every attempt (durable evidence,
         // invariant 2.4): exactly two replay records join the reloaded ledger,
         // each self-describing as no movement — from equals to, and the
@@ -840,11 +844,15 @@ describe("V7 — recovery, git-backed", () => {
         const replay = applyPlannedChannelTransitions({
           attempt: resumed.attempt,
           planLine: resumed.planLine,
+          actor: "automation",
           claim: resumed.token,
           channels: state.binding.channels,
           ledger: gitStores(repo).ledger,
         });
-        expect(replay.map((move) => move.outcome.kind)).toStrictEqual(["noop", "noop"]);
+        if (replay.kind !== "applied") {
+          throw new Error(`fixture broken: the replay refused: ${replay.detail}`);
+        }
+        expect(replay.moves.map((move) => move.outcome)).toStrictEqual(["noop", "noop"]);
         const replayedRecords = gitStores(repo)
           .ledger.tail(stopped.attempt.attemptId)
           .flatMap((record) => (record.kind === "channel-transition" ? [record.record] : []));
